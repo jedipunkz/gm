@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/jedipunkz/gm/internal/repo"
 )
@@ -33,8 +32,7 @@ func (a *app) remove(args []string) error {
 }
 
 // removeOne deletes one repository, warning first when there is work in it
-// and asking before anything is lost. The finder's /remove goes through here
-// too, so the two cannot drift apart.
+// and asking before anything is lost.
 func removeOne(r repo.Repo, dryRun, yes bool) error {
 	if dryRun {
 		fmt.Fprintf(os.Stderr, "would remove %s\n", r.Path())
@@ -47,10 +45,9 @@ func removeOne(r repo.Repo, dryRun, yes bool) error {
 		fmt.Fprintln(os.Stderr, "skipped")
 		return nil
 	}
-	if err := os.RemoveAll(r.Path()); err != nil {
+	if err := repo.Delete(r); err != nil {
 		return err
 	}
-	repo.PruneEmptyParents(r.Root, filepath.Dir(r.Path()))
 	fmt.Fprintf(os.Stderr, "removed  %s\n", r.Path())
 	return nil
 }

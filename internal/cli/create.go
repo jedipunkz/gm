@@ -3,7 +3,6 @@ package cli
 import (
 	"flag"
 	"fmt"
-	"os"
 
 	"github.com/jedipunkz/gm/internal/repo"
 )
@@ -18,37 +17,11 @@ func (a *app) create(args []string) error {
 		return fmt.Errorf("usage: gm create [-p] <repo>|<user>/<repo>|<host>/<user>/<repo>")
 	}
 
-	dst, err := a.createRepo(fs.Arg(0), *ssh)
+	r, err := a.tree.Create(fs.Arg(0), *ssh)
 	if err != nil {
 		return err
 	}
-	_ = repo.Bump(dst)
-	fmt.Println(dst)
+	_ = repo.Bump(r.Path())
+	fmt.Println(r.Path())
 	return nil
-}
-
-// createRepo makes an empty repository where ref says it belongs and returns
-// its path. The finder's /create goes through here too, so the two cannot
-// drift apart.
-func (a *app) createRepo(ref string, ssh bool) (string, error) {
-	u, err := repo.NormalizeURL(ref, ssh)
-	if err != nil {
-		return "", err
-	}
-	dst := a.tree.PathFor(repo.RelPathOf(u))
-
-	if entries, err := os.ReadDir(dst); err == nil && len(entries) > 0 {
-		return "", fmt.Errorf("%s already exists and is not empty", dst)
-	}
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return "", err
-	}
-	if err := repo.Git("-C", dst, "init", "--quiet"); err != nil {
-		return "", err
-	}
-	// Set origin up front so the first push needs no extra arguments.
-	if err := repo.Git("-C", dst, "remote", "add", "origin", u.String()); err != nil {
-		return "", err
-	}
-	return dst, nil
 }

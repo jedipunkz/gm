@@ -34,7 +34,7 @@ func (a *app) finder() error {
 	keys := finder.Keys{Worktree: worktreeKey, Remote: remoteKey}
 
 	hist := repo.LoadHistory()
-	res, err := finder.Run(repos, hist, theme, keys)
+	res, err := finder.Run(a.tree, repos, hist, theme, keys)
 	if err != nil {
 		return err
 	}
@@ -49,13 +49,6 @@ func (a *app) act(res finder.Result, hist *repo.History) error {
 	case finder.ActionJump:
 		return a.goTo(res.Arg, hist)
 
-	case finder.ActionCreate:
-		dst, err := a.createRepo(res.Arg, false)
-		if err != nil {
-			return err
-		}
-		return a.goTo(dst, hist)
-
 	case finder.ActionGet:
 		if err := a.get([]string{res.Arg}); err != nil {
 			return err
@@ -66,12 +59,6 @@ func (a *app) act(res finder.Result, hist *repo.History) error {
 		}
 		return a.goTo(a.tree.PathFor(repo.RelPathOf(u)), hist)
 
-	case finder.ActionRemove:
-		r, ok := a.tree.At(res.Arg)
-		if !ok {
-			return fmt.Errorf("%s is not under any root", res.Arg)
-		}
-		return removeOne(r, false, false)
 	}
 	return nil // the user quit
 }

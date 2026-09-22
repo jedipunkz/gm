@@ -87,18 +87,23 @@ completes it as you go, and `Tab` accepts what it offers.
 | Command | What it does |
 |---|---|
 | `/help` | Show the command list; `q` or `Esc` closes it |
-| `/dirty` | Show only repositories with uncommitted work; run it again to show all |
-| `/create <repo>` | Same as `gm create`, then go to the new repository |
+| `/dirty` | Show only repositories with uncommitted work; `Esc` shows all |
+| `/create <repo>` | Create a repository, after asking; adds it to the list |
 | `/get <repo>` | Same as `gm get`, then go to the clone |
-| `/remove` | Same as `gm remove` on the selected repository |
+| `/remove` | Remove the selected repository, after asking |
 | `/worktrees` | Same as `Ctrl-W` |
 | `/remote` | Same as `Ctrl-Alt-B` |
 
-`/create`, `/get` and `/remove` close the finder and run on the terminal you can
-see — a clone's progress, a password prompt and the removal's confirmation all
-belong there rather than inside an alternate screen. `/create` and `/get`
-print the new path when they are done, so the shell binding takes you
-straight there.
+`/create` and `/remove` ask first, in a panel over the list, and answer `y` or
+`n`. They do the work without leaving the finder: the removed row disappears,
+the created one is added and selected, and the line under the prompt says what
+happened. A repository with uncommitted changes says so in the question before
+you agree to lose them.
+
+`/get` is the exception: cloning needs the network, a progress bar and
+sometimes a passphrase, so it closes the finder and runs on the terminal you
+can see, then prints the path of the clone for the shell binding to take you
+to.
 
 `/dirty` asks git about every repository the first time it is used, in
 parallel and off the drawing thread — the list stays usable while the answer

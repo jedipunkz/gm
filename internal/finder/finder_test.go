@@ -32,7 +32,11 @@ func newTestModel(t *testing.T, repos []repo.Repo, bumped string) model {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newModel(repos, hist, theme, testKeys(t))
+	root := ""
+	if len(repos) > 0 {
+		root = repos[0].Root
+	}
+	return newModel(&repo.Tree{Roots: []string{root}}, repos, hist, theme, testKeys(t))
 }
 
 // testKeys are the default chords, parsed the way a real run parses them.
@@ -531,7 +535,7 @@ func TestWorktreeKeyIsConfigurable(t *testing.T) {
 	keys := testKeys(t)
 	keys.Worktree = wt
 
-	m := newModel(repos, hist, theme, keys)
+	m := newModel(&repo.Tree{Roots: []string{root}}, repos, hist, theme, keys)
 	m.w, m.h = 90, 12
 	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
 		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
@@ -575,12 +579,12 @@ func TestRunRejectsReservedKeys(t *testing.T) {
 		}
 		k := keys
 		k.Worktree = c
-		if _, err := Run(nil, hist, theme, k); err == nil {
+		if _, err := Run(nil, nil, hist, theme, k); err == nil {
 			t.Errorf("Run() accepted %s, which the finder already uses", name)
 		}
 		k = keys
 		k.Remote = c
-		if _, err := Run(nil, hist, theme, k); err == nil {
+		if _, err := Run(nil, nil, hist, theme, k); err == nil {
 			t.Errorf("Run() accepted %s for remote_key, which the finder already uses", name)
 		}
 	}
@@ -588,7 +592,7 @@ func TestRunRejectsReservedKeys(t *testing.T) {
 	// Two actions cannot answer to the same chord.
 	k := keys
 	k.Remote = k.Worktree
-	if _, err := Run(nil, hist, theme, k); err == nil {
+	if _, err := Run(nil, nil, hist, theme, k); err == nil {
 		t.Error("Run() accepted the same chord for both keys")
 	}
 }
@@ -805,7 +809,7 @@ func TestHelpPopup(t *testing.T) {
 	m.input.SetValue("/help")
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	open := next.(model)
-	if !open.help {
+	if open.over != overlayHelp {
 		t.Fatal("/help did not open the command list")
 	}
 	if open.result.Action != ActionNone {
@@ -828,13 +832,13 @@ func TestHelpPopup(t *testing.T) {
 	// Moving is impossible while it is up.
 	cursor := open.cursor
 	moved, _ := open.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if moved.(model).cursor != cursor || !moved.(model).help {
+	if moved.(model).cursor != cursor || moved.(model).over != overlayHelp {
 		t.Error("a key reached the list behind the popup")
 	}
 
 	for _, key := range []tea.KeyPressMsg{{Code: 'q'}, {Code: tea.KeyEscape}} {
 		closed, cmd := open.Update(key)
-		if closed.(model).help {
+		if closed.(model).over != overlayNone {
 			t.Errorf("%v did not close the popup", key)
 		}
 		if isQuit(cmd) {
@@ -1108,33 +1112,18 @@ func TestEscLeavesTheWorktreeListFirst(t *testing.T) {
 	}
 }
 
-// TestRepositoryActionsLeaveTheFinder pins the contract for the three
-// commands that change something: the finder closes and hands the work to gm,
-// which runs it on the terminal the user can see.
-func TestRepositoryActionsLeaveTheFinder(t *testing.T) {
+// TestGetLeavesTheFinder: cloning needs the network, a progress bar and
+// sometimes a passphrase, so it is the one action that still happens outside.
+func TestGetLeavesTheFinder(t *testing.T) {
 	root := t.TempDir()
-	repos := []repo.Repo{
-		{Root: root, Rel: "github.com/acme/alpha"},
-		{Root: root, Rel: "github.com/acme/bravo"},
-	}
+	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
 
-	for _, c := range []struct {
-		typed  string
-		action Action
-		arg    string
-	}{
-		{"/create jedipunkz/agx", ActionCreate, "jedipunkz/agx"},
-		{"/get github.com/acme/charlie", ActionGet, "github.com/acme/charlie"},
-		{"/remove", ActionRemove, repos[1].Path()}, // the selected row, the bottom one
-	} {
-		m := newTestModel(t, repos, "")
-		m, cmd := runSlash(t, m, c.typed)
-		if !isQuit(cmd) {
-			t.Errorf("%q did not close the finder", c.typed)
-		}
-		if m.result.Action != c.action || m.result.Arg != c.arg {
-			t.Errorf("%q produced %+v, want {%v %q}", c.typed, m.result, c.action, c.arg)
-		}
+	m, cmd := runSlash(t, m, "/get github.com/acme/charlie")
+	if !isQuit(cmd) {
+		t.Error("/get did not close the finder")
+	}
+	if m.result.Action != ActionGet || m.result.Arg != "github.com/acme/charlie" {
+		t.Errorf("/get produced %+v", m.result)
 	}
 }
 
@@ -1166,7 +1155,7 @@ func TestRemoveIsForRepositories(t *testing.T) {
 	m = next.(model)
 
 	m, cmd := runSlash(t, m, "/remove")
-	if isQuit(cmd) || m.result.Action != ActionNone {
+	if isQuit(cmd) || m.over != overlayNone {
 		t.Error("/remove acted from the worktree list")
 	}
 	if !strings.Contains(m.note, "repository list") {
@@ -1179,7 +1168,7 @@ func TestHelpShowsArguments(t *testing.T) {
 	root := t.TempDir()
 	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
 	m.w, m.h = 90, 24
-	m.help = true
+	m.over = overlayHelp
 
 	view := stripANSI(m.View().Content)
 	for _, want := range []string{"/create <repo>", "/get <repo>", "/remove"} {
@@ -1228,10 +1217,10 @@ func TestFindThenActOnIt(t *testing.T) {
 		t.Fatalf("clearing moved the selection to %q", it.label)
 	}
 
-	// And the command acts on it.
+	// And the command asks about it.
 	m, _ = runSlash(t, m, "/remove")
-	if m.result.Action != ActionRemove || m.result.Arg != repos[0].Path() {
-		t.Errorf("/remove produced %+v, want the selected repository", m.result)
+	if m.over != overlayConfirm || m.ask.arg != repos[0].Path() {
+		t.Errorf("/remove asked about %+v, want the selected repository", m.ask)
 	}
 
 	// With the box empty, Esc quits as it always did.
@@ -1239,4 +1228,133 @@ func TestFindThenActOnIt(t *testing.T) {
 	if _, cmd := empty.Update(tea.KeyPressMsg{Code: tea.KeyEscape}); !isQuit(cmd) {
 		t.Error("Esc should quit when there is nothing to clear")
 	}
+}
+
+// TestConfirmRemove takes the whole path: the question names what will be
+// lost, y does it, the row goes, and the finder says so without leaving.
+func TestConfirmRemove(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{
+		{Root: root, Rel: "github.com/acme/alpha"},
+		{Root: root, Rel: "github.com/acme/bravo"},
+	}
+	for _, r := range repos {
+		if err := os.MkdirAll(filepath.Join(r.Path(), ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := newTestModel(t, repos, "")
+	m.w, m.h = 90, 16
+	m.status[repos[1].Path()] = repo.Status{Dirty: 3}
+
+	m, _ = runSlash(t, m, "/remove") // bravo, the bottom row
+	if m.over != overlayConfirm {
+		t.Fatal("/remove did not ask")
+	}
+	box := stripANSI(m.View().Content)
+	for _, want := range []string{"remove", "acme/bravo", "3 uncommitted changes", "y do it", "n cancel"} {
+		if !strings.Contains(box, want) {
+			t.Errorf("the question does not mention %q:\n%s", want, box)
+		}
+	}
+	// It is a panel over the list, not a screen of its own.
+	if !strings.Contains(box, "❯") {
+		t.Errorf("the panel replaced the whole screen:\n%s", box)
+	}
+
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	m = next.(model)
+	if cmd == nil {
+		t.Fatal("y did not do anything")
+	}
+	if m.over != overlayNone {
+		t.Error("the question stayed on screen")
+	}
+
+	next, _ = m.Update(cmd())
+	m = next.(model)
+	if isQuit(cmd) || m.result.Action != ActionNone {
+		t.Error("removing ended the finder")
+	}
+	if _, err := os.Stat(repos[1].Path()); !os.IsNotExist(err) {
+		t.Errorf("the repository is still on disk: %v", err)
+	}
+	if got := rows(m); len(got) != 1 || got[0] != "github.com/acme/alpha" {
+		t.Errorf("the removed row is still listed: %v", got)
+	}
+	if !strings.Contains(m.note, "removed") {
+		t.Errorf("the finder did not report it: %q", m.note)
+	}
+}
+
+// TestConfirmCancel leaves everything alone.
+func TestConfirmCancel(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+	if err := os.MkdirAll(filepath.Join(repos[0].Path(), ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := newTestModel(t, repos, "")
+
+	m, _ = runSlash(t, m, "/remove")
+	for _, key := range []tea.KeyPressMsg{{Code: 'n', Text: "n"}, {Code: tea.KeyEscape}} {
+		asked, _ := runSlash(t, m, "/remove")
+		next, cmd := asked.Update(key)
+		after := next.(model)
+		if cmd != nil {
+			t.Errorf("%v started the removal anyway", key)
+		}
+		if after.over != overlayNone || after.ask.action != ActionNone {
+			t.Errorf("%v left the question up", key)
+		}
+		if !repoExists(repos[0].Path()) {
+			t.Fatalf("%v removed the repository", key)
+		}
+		if after.note != "cancelled" {
+			t.Errorf("%v said %q", key, after.note)
+		}
+	}
+}
+
+// TestConfirmCreate makes the repository where the reference says, adds the
+// row and selects it, all without leaving the finder.
+func TestConfirmCreate(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+	m := newTestModel(t, repos, "")
+	m.w, m.h = 90, 16
+
+	m, _ = runSlash(t, m, "/create acme/bravo")
+	if m.over != overlayConfirm {
+		t.Fatal("/create did not ask")
+	}
+	box := stripANSI(m.View().Content)
+	for _, want := range []string{"create", "github.com/acme/bravo", "origin https://github.com/acme/bravo"} {
+		if !strings.Contains(box, want) {
+			t.Errorf("the question does not mention %q:\n%s", want, box)
+		}
+	}
+
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	next, _ = next.(model).Update(cmd())
+	m = next.(model)
+
+	dst := filepath.Join(root, "github.com/acme/bravo")
+	if !repoExists(dst) {
+		t.Fatalf("no repository at %s", dst)
+	}
+	if got, _ := repo.GitIn(dst, "remote", "get-url", "origin"); got != "https://github.com/acme/bravo" {
+		t.Errorf("origin is %q", got)
+	}
+	if it, _ := m.current(); it.path != dst {
+		t.Errorf("the new repository is not selected, %q is", it.label)
+	}
+	if !strings.Contains(m.note, "created") {
+		t.Errorf("the finder did not report it: %q", m.note)
+	}
+}
+
+func repoExists(path string) bool {
+	_, err := os.Stat(filepath.Join(path, ".git"))
+	return err == nil
 }
