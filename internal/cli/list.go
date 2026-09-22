@@ -37,22 +37,24 @@ func (a *app) list(args []string) error {
 	sort.Slice(hits, func(i, j int) bool { return hits[i].Rel < hits[j].Rel })
 
 	out := bufio.NewWriter(os.Stdout)
-	defer out.Flush()
 	var short []string
 	if unique {
 		short = repo.ShortestUnique(hits)
 	}
 	for i, r := range hits {
+		// The writes cannot be checked one by one without drowning the loop;
+		// out.Flush below reports whatever went wrong.
 		switch {
 		case full:
-			fmt.Fprintln(out, r.Path())
+			_, _ = fmt.Fprintln(out, r.Path())
 		case unique:
-			fmt.Fprintln(out, short[i])
+			_, _ = fmt.Fprintln(out, short[i])
 		default:
-			fmt.Fprintln(out, r.Rel)
+			_, _ = fmt.Fprintln(out, r.Rel)
 		}
 	}
-	return nil
+	// One check for the lot: a closed pipe or a full disk shows up here.
+	return out.Flush()
 }
 
 func (a *app) root(args []string) error {

@@ -408,8 +408,8 @@ func TestPromptStartsEmpty(t *testing.T) {
 func TestUnselectedRowsAreLifted(t *testing.T) {
 	dist := func(a, b string) int {
 		var ar, ag, ab, br, bg, bb int
-		fmt.Sscanf(a, "#%02x%02x%02x", &ar, &ag, &ab)
-		fmt.Sscanf(b, "#%02x%02x%02x", &br, &bg, &bb)
+		_, _ = fmt.Sscanf(a, "#%02x%02x%02x", &ar, &ag, &ab)
+		_, _ = fmt.Sscanf(b, "#%02x%02x%02x", &br, &bg, &bb)
 		abs := func(n int) int {
 			if n < 0 {
 				return -n
