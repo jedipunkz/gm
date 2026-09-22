@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -144,6 +145,10 @@ func isCommand(s string) bool { return strings.HasPrefix(s, commandPrefix) }
 // confirmWorktree asks about checking a branch out beside the repository.
 // The path is gm's to decide, so the branch name is all it needs.
 func (m model) confirmWorktree(branch string) (model, tea.Cmd) {
+	if !repo.ValidBranch(branch) {
+		m.note = strconv.Quote(branch) + " is not a branch name"
+		return m, nil
+	}
 	r, ok := m.tree.At(m.repoAt)
 	if !ok {
 		m.note = m.repoAt + " is not under any root"

@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -435,5 +436,121 @@ func TestTreeAt(t *testing.T) {
 		if r, ok := tree.At(outside); ok {
 			t.Errorf("At(%q) = %+v, want no match", outside, r)
 		}
+	}
+}
+
+// gitRepo makes a repository with one commit, which is what git wants before
+// it hands out a worktree.
+func gitRepo(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"-c", "user.email=t@e.x", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+}
+
+// captureStderr runs f with stderr redirected and returns what reached it.
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	f()
+	os.Stderr = old
+	_ = w.Close()
+	var b strings.Builder
+	if _, err := io.Copy(&b, r); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+// TestGitOutputStaysOffTheScreen guards the finder's display: these run while
+// the TUI owns the terminal, so git must print nothing and put what it had to
+// say in the error instead.
+func TestGitOutputStaysOffTheScreen(t *testing.T) {
+	base := t.TempDir()
+	main := filepath.Join(base, "github.com/acme/alpha")
+	gitRepo(t, main)
+	tree := &Tree{Roots: []string{base}}
+	r := Repo{Root: base, Rel: "github.com/acme/alpha"}
+	dir := tree.WorktreeDir(r, "feat/login")
+
+	// git says "Preparing worktree (new branch 'feat/login')" on success.
+	if out := captureStderr(t, func() {
+		if err := AddWorktree(main, dir, "feat/login"); err != nil {
+			t.Error(err)
+		}
+	}); out != "" {
+		t.Errorf("AddWorktree printed %q", out)
+	}
+
+	// And a page of hints on failure.
+	var err error
+	if out := captureStderr(t, func() { err = AddWorktree(main, dir, "feat/login") }); out != "" {
+		t.Errorf("a failing AddWorktree printed %q", out)
+	}
+	if err == nil {
+		t.Fatal("adding the same worktree twice should fail")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("the error lost git's explanation: %v", err)
+	}
+
+	if out := captureStderr(t, func() {
+		if _, err := tree.Create("acme/bravo", false); err != nil {
+			t.Error(err)
+		}
+	}); out != "" {
+		t.Errorf("Create printed %q", out)
+	}
+
+	if out := captureStderr(t, func() {
+		if err := RemoveWorktree(main, dir, false); err != nil {
+			t.Error(err)
+		}
+	}); out != "" {
+		t.Errorf("RemoveWorktree printed %q", out)
+	}
+}
+
+// TestValidBranch keeps a name that is not a branch name out of the path a
+// worktree is about to be made at.
+func TestValidBranch(t *testing.T) {
+	for _, ok := range []string{"main", "feat/login", "release-1.2"} {
+		if !ValidBranch(ok) {
+			t.Errorf("ValidBranch(%q) = false", ok)
+		}
+	}
+	for _, bad := range []string{"", "-force", "../../escaped", "a..b", "feat login", "~x", "x:y"} {
+		if ValidBranch(bad) {
+			t.Errorf("ValidBranch(%q) = true", bad)
+		}
+	}
+
+	// And nothing is created on the way to finding out.
+	base := t.TempDir()
+	main := filepath.Join(base, "github.com/acme/alpha")
+	gitRepo(t, main)
+	tree := &Tree{Roots: []string{base}}
+	r := Repo{Root: base, Rel: "github.com/acme/alpha"}
+
+	if err := AddWorktree(main, tree.WorktreeDir(r, "../../escaped"), "../../escaped"); err == nil {
+		t.Fatal("a bogus branch name should be refused")
+	}
+	if _, err := os.Stat(filepath.Join(base, WorktreeRoot)); !os.IsNotExist(err) {
+		t.Errorf("it made directories anyway: %v", err)
 	}
 }
