@@ -32,16 +32,6 @@ jobs:
           # the rest for the changelog.
           fetch-depth: 0
 
-      - name: The tap token has to be set
-        env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
-            echo "HOMEBREW_TAP_TOKEN is not set: the formula could not be written." >&2
-            echo "Add a fine-grained PAT with Contents: write on jedipunkz/homebrew-gm." >&2
-            exit 1
-          fi
-
       - name: Work out the next version
         id: version
         run: |
@@ -81,8 +71,7 @@ jobs:
           version: "~> v2"
           args: release --clean
         env:
-          # The default token publishes the release in this repository...
+          # Everything this workflow touches is in this repository, so the
+          # token it is handed is enough. The Homebrew formula is written by
+          # the tap itself, which needs no credential of ours.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # ...and this one writes the formula in the tap, which the default
-          # token has no access to.
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
