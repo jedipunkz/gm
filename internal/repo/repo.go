@@ -114,37 +114,60 @@ func IsRepo(dir string) bool {
 	return false
 }
 
-// List walks every root and returns the repositories found, never descending
-// into one.
+// FindRepos walks dir and returns the top directory of every working copy
+// under it, never descending into one and never into a dotted directory. A
+// directory that does not exist yields nothing rather than an error: a root
+// gm has not cloned into yet is normal.
+func FindRepos(dir string) ([]string, error) {
+	var found []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil //nolint // unreadable entries are skipped, not fatal
+		}
+		if p != dir && strings.HasPrefix(d.Name(), ".") {
+			return fs.SkipDir
+		}
+		if !IsRepo(p) {
+			return nil
+		}
+		found = append(found, p)
+		return fs.SkipDir
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	return found, nil
+}
+
+// List walks every root and returns the repositories found.
 func (t *Tree) List() ([]Repo, error) {
 	var repos []Repo
 	seen := map[string]bool{}
 	for _, root := range t.Roots {
-		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-			if err != nil || !d.IsDir() {
-				return nil //nolint // unreadable entries are skipped, not fatal
-			}
-			if p != root && strings.HasPrefix(d.Name(), ".") {
-				return fs.SkipDir
-			}
-			if !IsRepo(p) {
-				return nil
-			}
-			rel, err := filepath.Rel(root, p)
-			if err != nil {
-				return nil
-			}
-			if !seen[p] {
-				seen[p] = true
-				repos = append(repos, Repo{Root: root, Rel: filepath.ToSlash(rel)})
-			}
-			return fs.SkipDir
-		})
-		if err != nil && !os.IsNotExist(err) {
+		paths, err := FindRepos(root)
+		if err != nil {
 			return nil, err
+		}
+		for _, p := range paths {
+			rel, err := filepath.Rel(root, p)
+			if err != nil || seen[p] {
+				continue
+			}
+			seen[p] = true
+			repos = append(repos, Repo{Root: root, Rel: filepath.ToSlash(rel)})
 		}
 	}
 	return repos, nil
+}
+
+// Contains reports whether path already lives under one of the roots.
+func (t *Tree) Contains(path string) bool {
+	for _, root := range t.Roots {
+		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // Resolve finds the one repository a query names, erroring on ambiguity so a

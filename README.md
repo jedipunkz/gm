@@ -78,7 +78,7 @@ on), except `Ctrl-W`, which no longer deletes the word before the cursor.
 | `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
 | `gm rm [--dry-run] [-y] <repo>...` | Remove a repository after confirming, pruning empty parents |
 | `gm create [-p] <repo>` | Create and `git init` a repository with `origin` already set |
-| `gm migrate [--dry-run] [-y] <dir>...` | Move an existing clone into the tree, using its `origin` remote |
+| `gm migrate [--dry-run] [-y] [--scan] <dir>...` | Move an existing clone into the tree, using its `origin` remote; `--scan` searches the directory for them |
 | `gm root [--all]` | Print the root directory |
 | `gm shell <fish\|zsh\|bash>` | Print the `Ctrl-G` binding |
 
