@@ -1,12 +1,8 @@
 # gm
 
-Keep every repository you clone in one predictable tree, and jump to any of
-them with `Ctrl-G`.
-
-`gm` is a [ghq](https://github.com/x-motemen/ghq)-style repository manager with
-a built-in fuzzy finder: the same `host/user/repo` layout, plus a
-[Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI that ranks
-repositories by how often and how recently you visit them.
+A [ghq](https://github.com/x-motemen/ghq)-style repository manager with a
+built-in fuzzy finder. Clones land in one predictable `host/user/repo` tree,
+and `Ctrl-G` jumps to any of them.
 
 ```
                                     │ zellij-org/zellij
@@ -28,14 +24,8 @@ repositories by how often and how recently you visit them.
 ╰─────────────────────────────────────────────────────────────────────────╯
 ```
 
-The list takes the left 3/5 and hangs from the prompt; the details pane reads
-top-down, with every value on its own full-width line so long paths and remote
-URLs wrap instead of being cut. Colours come from the theme: ten are built in
-and [Tokyo Night](https://github.com/folke/tokyonight.nvim) is the default —
-see [Theme](#theme).
-
-The best match sits at the **bottom**, right above the prompt where the cursor
-already is, so the repository you most likely want costs zero keystrokes.
+The best match sits at the bottom, next to the prompt, so the repository you
+most likely want costs zero keystrokes.
 
 ## Install
 
@@ -43,11 +33,13 @@ already is, so the repository you most likely want costs zero keystrokes.
 go install github.com/jedipunkz/gm@latest
 ```
 
-## Ctrl-G
+Requires Go 1.25 or newer and `git` on `$PATH`.
 
-`gm` with no arguments opens the finder and prints the chosen path on stdout —
-the TUI itself draws on stderr, so it composes with `$(...)`. Your shell needs
-one binding to turn that into a `cd`:
+## Shell integration
+
+`gm` with no arguments opens the finder and prints the chosen path on stdout;
+the TUI draws on stderr, so it composes with `$(...)`. One binding turns that
+into a `cd`:
 
 ```fish
 # ~/.config/fish/config.fish
@@ -62,8 +54,8 @@ eval "$(gm shell zsh)"
 eval "$(gm shell bash)"
 ```
 
-Keys: type to filter, `↑`/`↓` (or `Ctrl-P`/`Ctrl-N`) to move, `Enter` to jump,
-`Esc` to cancel.
+Type to filter, `↑`/`↓` (or `Ctrl-P`/`Ctrl-N`) to move, `Enter` to jump, `Esc`
+to cancel.
 
 ## Commands
 
@@ -73,7 +65,7 @@ Keys: type to filter, `↑`/`↓` (or `Ctrl-P`/`Ctrl-N`) to move, `Enter` to jum
 | `gm get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...` | Clone into the tree; `-u` updates an existing clone |
 | `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
 | `gm rm [--dry-run] [-y] <repo>...` | Remove a repository after confirming, pruning empty parents |
-| `gm create [-p] <repo>` | Create and `git init` a new repository with `origin` already set |
+| `gm create [-p] <repo>` | Create and `git init` a repository with `origin` already set |
 | `gm migrate [--dry-run] [-y] <dir>...` | Move an existing clone into the tree, using its `origin` remote |
 | `gm root [--all]` | Print the root directory |
 | `gm shell <fish\|zsh\|bash>` | Print the `Ctrl-G` binding |
@@ -83,40 +75,23 @@ Keys: type to filter, `↑`/`↓` (or `Ctrl-P`/`Ctrl-N`) to move, `Enter` to jum
 
 ## Configuration
 
-`~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) says where your
-repositories live:
+`~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) is optional; a file
+that cannot be parsed stops `gm` rather than letting it clone somewhere
+unexpected.
 
 ```toml
-root = "~/ghq"
+root  = "~/ghq"          # or ["~/ghq", "~/src"], searched in order
+theme = "tokyonight"
 ```
 
-```toml
-# or several, searched in order
-root = ["~/ghq", "~/src"]
-```
+Themes: `tokyonight` (default), `solarized-dark`, `solarized-light`,
+`kanagawa-wave`, `catppuccin-latte`, `catppuccin-frappe`,
+`catppuccin-macchiato`, `catppuccin-mocha`, `rose-pine`, `dracula`.
 
-The file is optional, but one that cannot be parsed stops `gm` rather than
-letting it clone somewhere unexpected.
-
-### Theme
-
-`theme` picks the finder's colors (default `tokyonight`):
-
-```toml
-theme = "kanagawa-wave"
-```
-
-`tokyonight`, `solarized-dark`, `solarized-light`, `kanagawa-wave`,
-`catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato`,
-`catppuccin-mocha`, `rose-pine`, `dracula`. An unknown name is an error
-listing the valid ones.
-
-### Root directory
-
-Resolved in this order, so an existing ghq tree works untouched:
+The root is resolved in this order, so an existing ghq tree works untouched:
 
 1. `$GM_ROOT`
-2. `root` in `~/.config/gm/gm.toml`
+2. `root` in `gm.toml`
 3. `git config --get-all gm.root`
 4. `$GHQ_ROOT`
 5. `git config --get-all ghq.root`
@@ -124,43 +99,22 @@ Resolved in this order, so an existing ghq tree works untouched:
 
 ## Ranking
 
-Typing filters by fuzzy match, scored fzy-style: characters that land on a word
-boundary or continue the previous match earn points, gaps cost them, matches
-inside the repository name count for more than the user name, and the `host`
-segment — identical across nearly every repository — counts against a match. A
-literal substring always beats a subsequence pieced together from elsewhere, so
-`miniec` finds `jedipunkz/miniecs` rather than spelling itself out of
-`github.com/jedipunkz/spacex-ipo-checker`. Frecency only breaks ties.
+Typing filters by fuzzy match: word boundaries and consecutive characters earn
+points, gaps cost them, the repository name outweighs the user name, and the
+shared `host` segment counts against a match. A literal substring always beats
+a subsequence pieced together from elsewhere.
 
 Visits are recorded in `$XDG_STATE_HOME/gm/frecency.json` (default
-`~/.local/state/gm/frecency.json`) and scored the way `z` and `zoxide` do —
-frequency weighted by recency, so two visits this hour outrank ten from last
-month. Entries for deleted repositories are pruned on write.
-
-## Layout
-
-```
-main.go              entry point: dispatch and exit status, nothing else
-internal/config/     gm.toml — the root setting and the theme name
-internal/repo/       Tree (the roots), Repo, the visit log, every git call
-internal/finder/     the interactive picker: model, ranking, themes
-internal/cli/        one table of subcommands, one file each
-```
-
-Dependencies run one way: `cli` and `finder` use `repo`, and `repo` uses
-`config`. The roots are resolved once per run and carried in a `repo.Tree`, so
-`gm.toml` is read a single time and every command sees the same answer.
-
-A new subcommand is one entry in `commands` (internal/cli/cli.go) plus its run
-function; the help text is generated from that table. A new theme is one entry
-in `themes` (internal/finder/theme.go).
+`~/.local/state/gm/frecency.json`) and weighted by recency the way `z` and
+`zoxide` do. Frecency only breaks ties between equally good matches. Entries
+for deleted repositories are pruned on write.
 
 ## Differences from ghq
 
-Deliberately not implemented: Mercurial/Subversion/Darcs cloning (they are
-still *listed*), bare clones, partial clones, parallel import, `--vcs`, and
-`ghq.<url>.root` per-URL roots. `gm create` sets up the `origin` remote, which
-ghq leaves to you.
+Not implemented: Mercurial/Subversion/Darcs cloning (they are still *listed*),
+bare clones, partial clones, parallel import, `--vcs`, and `ghq.<url>.root`
+per-URL roots. `gm create` sets up the `origin` remote, which ghq leaves to
+you.
 
 ## License
 
