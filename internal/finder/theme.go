@@ -109,7 +109,7 @@ func ThemeNames() []string {
 // Styles is the theme turned into the lipgloss styles the view draws with.
 // The model owns one, so nothing about the palette is global state.
 type Styles struct {
-	Row     lipgloss.Style // an unselected row
+	Row     lipgloss.Style // an unselected row: the comment colour, lifted
 	RowSel  lipgloss.Style // the selected row
 	Hit     lipgloss.Style // matched characters
 	HitSel  lipgloss.Style // ...inside the selected row
@@ -132,13 +132,37 @@ func fg(hex string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(hex))
 }
 
+// rowLift is how far an unselected row is pulled from the comment colour
+// towards the foreground: far enough to read, not so far that the selected
+// row stops standing out. It works in both polarities, since a light theme's
+// foreground is the darker of the two.
+//
+// ponytail: one global factor, give a theme its own row colour if this lands
+// badly on it.
+const rowLift = 0.35
+
+// blend mixes two #rrggbb colours, t running from a (0) to b (1). An
+// unparseable colour is returned untouched rather than silently becoming
+// black.
+func blend(a, b string, t float64) string {
+	var ar, ag, ab, br, bg, bb int
+	if _, err := fmt.Sscanf(a, "#%02x%02x%02x", &ar, &ag, &ab); err != nil {
+		return a
+	}
+	if _, err := fmt.Sscanf(b, "#%02x%02x%02x", &br, &bg, &bb); err != nil {
+		return a
+	}
+	mix := func(x, y int) int { return int(float64(x) + (float64(y)-float64(x))*t + 0.5) }
+	return fmt.Sprintf("#%02x%02x%02x", mix(ar, br), mix(ag, bg), mix(ab, bb))
+}
+
 // Styles builds the drawing styles for a theme.
 func (t Theme) Styles() Styles {
 	on := func(hex string) lipgloss.Style {
 		return fg(hex).Background(lipgloss.Color(t.BgHi)).Bold(true)
 	}
 	return Styles{
-		Row:     fg(t.Comment),
+		Row:     fg(blend(t.Comment, t.Fg, rowLift)),
 		RowSel:  on(t.Fg),
 		Hit:     fg(t.Orange).Bold(true),
 		HitSel:  on(t.Orange),
