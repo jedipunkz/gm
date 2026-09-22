@@ -430,7 +430,7 @@ func (m model) infoLines(w int) []string {
 		field("remote", s.Remote, m.st.Remote)
 	}
 	field("branch", s.Branch, m.st.Branch)
-	field("commit", s.Commit, m.st.Commit)
+	field("last commit", s.Commit, m.st.Commit)
 	if s.Dirty > 0 {
 		field("status", fmt.Sprintf("%d changed", s.Dirty), m.st.Dirty)
 	} else {

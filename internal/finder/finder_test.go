@@ -118,7 +118,7 @@ func TestInfoPaneStacksAndWraps(t *testing.T) {
 	}
 	joined := strings.Join(plain, "\n")
 
-	for _, label := range []string{"path", "remote", "branch", "commit", "status", "visits"} {
+	for _, label := range []string{"path", "remote", "branch", "last commit", "status", "visits"} {
 		if !strings.Contains(joined, "\n"+label+"\n") && !strings.HasPrefix(joined, label+"\n") {
 			t.Errorf("%q is not on a line of its own:\n%s", label, joined)
 		}
