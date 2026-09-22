@@ -90,11 +90,11 @@ completes it as you go, and `Tab` accepts what it offers.
 | `/dirty` | Show only repositories with uncommitted work; run it again to show all |
 | `/create <repo>` | Same as `gm create`, then go to the new repository |
 | `/get <repo>` | Same as `gm get`, then go to the clone |
-| `/rm` | Same as `gm rm` on the selected repository |
+| `/remove` | Same as `gm remove` on the selected repository |
 | `/worktrees` | Same as `Ctrl-W` |
 | `/remote` | Same as `Ctrl-Alt-B` |
 
-`/create`, `/get` and `/rm` close the finder and run on the terminal you can
+`/create`, `/get` and `/remove` close the finder and run on the terminal you can
 see — a clone's progress, a password prompt and the removal's confirmation all
 belong there rather than inside an alternate screen. `/create` and `/get`
 print the new path when they are done, so the shell binding takes you
@@ -116,7 +116,7 @@ and `acme/alpha` keeps filtering the way it always did.
 | `gm` | Open the fuzzy finder; print the selected path |
 | `gm get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...` | Clone into the tree; `-u` updates an existing clone |
 | `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
-| `gm rm [--dry-run] [-y] <repo>...` | Remove a repository after confirming, pruning empty parents |
+| `gm remove [--dry-run] [-y] <repo>...` | Remove a repository after confirming, pruning empty parents (`gm rm` also works) |
 | `gm create [-p] <repo>` | Create and `git init` a repository with `origin` already set |
 | `gm migrate [--dry-run] [-y] [-r] <dir>...` | Move an existing clone into the tree, using its `origin` remote; `-r` searches the directory for them |
 | `gm root [--all]` | Print the root directory |

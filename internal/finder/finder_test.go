@@ -1125,7 +1125,7 @@ func TestRepositoryActionsLeaveTheFinder(t *testing.T) {
 	}{
 		{"/create jedipunkz/agx", ActionCreate, "jedipunkz/agx"},
 		{"/get github.com/acme/charlie", ActionGet, "github.com/acme/charlie"},
-		{"/rm", ActionRemove, repos[1].Path()}, // the selected row, the bottom one
+		{"/remove", ActionRemove, repos[1].Path()}, // the selected row, the bottom one
 	} {
 		m := newTestModel(t, repos, "")
 		m, cmd := runSlash(t, m, c.typed)
@@ -1154,8 +1154,8 @@ func TestActionsNeedTheirArgument(t *testing.T) {
 	}
 }
 
-// TestRemoveIsForRepositories keeps /rm away from the worktree list, where
-// the selected path is a checkout rather than a clone.
+// TestRemoveIsForRepositories keeps /remove away from the worktree list,
+// where the selected path is a checkout rather than a clone.
 func TestRemoveIsForRepositories(t *testing.T) {
 	root := t.TempDir()
 	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
@@ -1165,9 +1165,9 @@ func TestRemoveIsForRepositories(t *testing.T) {
 	next, _ := m.openWorktrees()
 	m = next.(model)
 
-	m, cmd := runSlash(t, m, "/rm")
+	m, cmd := runSlash(t, m, "/remove")
 	if isQuit(cmd) || m.result.Action != ActionNone {
-		t.Error("/rm acted from the worktree list")
+		t.Error("/remove acted from the worktree list")
 	}
 	if !strings.Contains(m.note, "repository list") {
 		t.Errorf("the note does not explain why: %q", m.note)
@@ -1182,7 +1182,7 @@ func TestHelpShowsArguments(t *testing.T) {
 	m.help = true
 
 	view := stripANSI(m.View().Content)
-	for _, want := range []string{"/create <repo>", "/get <repo>", "/rm"} {
+	for _, want := range []string{"/create <repo>", "/get <repo>", "/remove"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the popup does not show %q:\n%s", want, view)
 		}

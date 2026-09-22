@@ -41,9 +41,9 @@ var commands = []command{
 	{"/get", "<repo>", "clone a repository, then go there", func(m model, arg string) (model, tea.Cmd) {
 		return m.leaveWith(ActionGet, arg)
 	}},
-	{"/rm", "", "remove the selected repository, after confirming", func(m model, _ string) (model, tea.Cmd) {
+	{"/remove", "", "remove the selected repository, after confirming", func(m model, _ string) (model, tea.Cmd) {
 		if m.mode != modeRepos {
-			m.note = "/rm applies to the repository list"
+			m.note = "/remove applies to the repository list"
 			return m, nil
 		}
 		it, ok := m.current()

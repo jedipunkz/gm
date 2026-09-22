@@ -10,14 +10,14 @@ import (
 )
 
 func (a *app) remove(args []string) error {
-	fs := flag.NewFlagSet("gm rm", flag.ExitOnError)
+	fs := flag.NewFlagSet("gm remove", flag.ExitOnError)
 	dryRun := fs.Bool("dry-run", false, "show what would be removed")
 	yes := fs.Bool("y", false, "skip the confirmation prompt")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() == 0 {
-		return fmt.Errorf("usage: gm rm [--dry-run] [-y] <repo>...")
+		return fmt.Errorf("usage: gm remove [--dry-run] [-y] <repo>...")
 	}
 
 	for _, q := range fs.Args() {
@@ -33,8 +33,8 @@ func (a *app) remove(args []string) error {
 }
 
 // removeOne deletes one repository, warning first when there is work in it
-// and asking before anything is lost. The finder's /rm goes through here too,
-// so the two cannot drift apart.
+// and asking before anything is lost. The finder's /remove goes through here
+// too, so the two cannot drift apart.
 func removeOne(r repo.Repo, dryRun, yes bool) error {
 	if dryRun {
 		fmt.Fprintf(os.Stderr, "would remove %s\n", r.Path())
