@@ -7,8 +7,8 @@ import (
 	"github.com/jedipunkz/gm/internal/config"
 )
 
-// DefaultKeybind is the shell key gm binds when gm.toml says nothing.
-const DefaultKeybind = "ctrl-g"
+// DefaultLaunchKey is the shell key gm binds when gm.toml says nothing.
+const DefaultLaunchKey = "ctrl-g"
 
 func (a *app) shell(args []string) error {
 	if len(args) != 1 {
@@ -18,7 +18,7 @@ func (a *app) shell(args []string) error {
 	if !ok {
 		return fmt.Errorf("unsupported shell %q (fish, zsh, bash)", args[0])
 	}
-	k, err := config.ParseChord(a.cfg.Keybind, DefaultKeybind)
+	k, err := config.ParseChord(a.cfg.LaunchKey, DefaultLaunchKey)
 	if err != nil {
 		return err
 	}

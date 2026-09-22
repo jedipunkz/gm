@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -15,14 +17,14 @@ import (
 //
 //	root         = "~/ghq"     # or ["~/ghq", "~/src"], searched in order
 //	theme        = "tokyonight"
-//	keybind      = "ctrl-g"    # the shell key that opens gm
+//	launch_key   = "ctrl-g"    # the shell key that opens gm
 //	worktree_key = "ctrl-w"    # the finder key that lists worktrees
 //
 // Root stays untyped because it takes either form; Roots resolves it.
 type Config struct {
 	Root        any    `toml:"root"`
 	Theme       string `toml:"theme"`
-	Keybind     string `toml:"keybind"`
+	LaunchKey   string `toml:"launch_key"`
 	WorktreeKey string `toml:"worktree_key"`
 }
 
@@ -57,8 +59,19 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	var c Config
-	if _, err := toml.Decode(string(b), &c); err != nil {
+	md, err := toml.Decode(string(b), &c)
+	if err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
+	}
+	// A key gm does not know is a typo or a setting that has been renamed.
+	// Ignoring it silently leaves the user staring at a file that says one
+	// thing while gm does another.
+	if left := md.Undecoded(); len(left) > 0 {
+		names := make([]string, 0, len(left))
+		for _, k := range left {
+			names = append(names, strconv.Quote(k.String()))
+		}
+		return Config{}, fmt.Errorf("%s: unknown key %s", path, strings.Join(names, ", "))
 	}
 	return c, nil
 }

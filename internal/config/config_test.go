@@ -69,6 +69,10 @@ func TestRoots(t *testing.T) {
 		"wrong type": "root = 42\n",
 		"mixed list": "root = [\"/a\", 7]\n",
 		"empty list": "root = []\n",
+		// A key gm does not know is a typo or a renamed setting; either way
+		// the file says one thing and gm would do another.
+		"unknown key": "root = \"/a\"\nkeybind = \"ctrl-g\"\n",
+		"typo":        "root = \"/a\"\nthemes = \"dracula\"\n",
 	} {
 		t.Run(name+" is an error", func(t *testing.T) {
 			write(t, body)
@@ -123,11 +127,14 @@ func TestParseChord(t *testing.T) {
 	}
 }
 
-func TestWorktreeKey(t *testing.T) {
-	write(t, "root = \"/a\"\nworktree_key = \"ctrl-t\"\n")
+func TestKeys(t *testing.T) {
+	write(t, "root = \"/a\"\nlaunch_key = \"ctrl-j\"\nworktree_key = \"ctrl-t\"\n")
 	c, err := Load()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if c.LaunchKey != "ctrl-j" {
+		t.Errorf("LaunchKey = %q, want ctrl-j", c.LaunchKey)
 	}
 	if c.WorktreeKey != "ctrl-t" {
 		t.Errorf("WorktreeKey = %q, want ctrl-t", c.WorktreeKey)

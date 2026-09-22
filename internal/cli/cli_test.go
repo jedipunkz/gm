@@ -47,7 +47,7 @@ func TestShellSnippetsBindTheConfiguredKey(t *testing.T) {
 	}
 	for sh, want := range cases {
 		out := captureStdout(t, func() {
-			a := &app{cfg: config.Config{Keybind: "ctrl-r"}}
+			a := &app{cfg: config.Config{LaunchKey: "ctrl-r"}}
 			if err := a.shell([]string{sh}); err != nil {
 				t.Fatal(err)
 			}
@@ -65,7 +65,7 @@ func TestShellSnippetsBindTheConfiguredKey(t *testing.T) {
 
 	// An unusable key must stop gm rather than print a binding that silently
 	// does nothing.
-	a := &app{cfg: config.Config{Keybind: "alt-r"}}
+	a := &app{cfg: config.Config{LaunchKey: "alt-r"}}
 	if err := a.shell([]string{"zsh"}); err == nil {
 		t.Error("an unsupported chord should be an error")
 	}

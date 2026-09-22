@@ -20,7 +20,7 @@ go install github.com/jedipunkz/gm@latest
 
 `gm` with no arguments opens the finder and prints the chosen path on stdout;
 the TUI draws on stderr, so it composes with `$(...)`. One binding per shell
-turns that into a `cd` on `Ctrl-G`, or on whatever `keybind` says.
+turns that into a `cd` on `Ctrl-G`, or on whatever `launch_key` says.
 
 ### fish
 
@@ -87,13 +87,14 @@ on), except `Ctrl-W`, which no longer deletes the word before the cursor.
 ## Configuration
 
 `~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) is optional; a file
-that cannot be parsed stops `gm` rather than letting it clone somewhere
-unexpected.
+that cannot be parsed — or that holds a key `gm` does not know — stops `gm`
+rather than letting it clone somewhere unexpected or quietly ignore half the
+file.
 
 ```toml
 root         = "~/ghq"       # or ["~/ghq", "~/src"], searched in order
 theme        = "tokyonight"
-keybind      = "ctrl-g"      # the shell key that opens gm
+launch_key   = "ctrl-g"      # the shell key that opens gm
 worktree_key = "ctrl-w"      # the finder key that lists worktrees
 ```
 
@@ -123,13 +124,13 @@ An unknown name is an error listing the valid ones.
 
 ### Key bindings
 
-`keybind` is the chord `gm shell` binds, and `worktree_key` the one that opens
-the worktree list inside the finder. Both are written as `ctrl-g`, `ctrl+g`,
-`c-g` or `^g`; anything else is an error rather than a binding that quietly
-does nothing.
+`launch_key` is the chord `gm shell` binds, and `worktree_key` the one that
+opens the worktree list inside the finder. Both are written as `ctrl-g`,
+`ctrl+g`, `c-g` or `^g`; anything else is an error rather than a binding that
+quietly does nothing.
 
-After changing `keybind`, re-run `gm shell <shell>` (or restart the shell, if
-you source it from your rc file). Some chords are already taken: `ctrl-r` is
+After changing `launch_key`, re-run `gm shell <shell>` (or restart the shell,
+if you source it from your rc file). Some chords are already taken: `ctrl-r` is
 reverse history search, and `ctrl-c`, `ctrl-d` and `ctrl-z` are terminal
 signals.
 
