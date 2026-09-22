@@ -349,9 +349,18 @@ type hint struct{ key, what string }
 // helpLine draws the key hints, dropping the ones that do not fit rather than
 // wrapping onto a second line.
 func (m model) helpLine(width int) string {
-	hints := []hint{{"↑↓", "move"}, {"enter", "jump"}, {"ctrl-w", "worktrees"}, {"esc", "quit"}}
+	hints := []hint{
+		{"↑↓ ctrl-p/n", "move"},
+		{"enter", "jump"},
+		{"ctrl-w", "worktrees"},
+		{"esc", "quit"},
+	}
 	if m.mode == modeWorktrees {
-		hints = []hint{{"↑↓", "move"}, {"enter", "jump"}, {"ctrl-w", "repos"}, {"esc", "repos"}}
+		hints = []hint{
+			{"↑↓ ctrl-p/n", "move"},
+			{"enter", "jump"},
+			{"ctrl-w/g/esc", "repos"},
+		}
 	}
 
 	const sep = "  ·  "

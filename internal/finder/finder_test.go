@@ -460,7 +460,7 @@ func TestHelpLine(t *testing.T) {
 	lines := strings.Split(m.View().Content, "\n")
 	help := lines[len(lines)-1]
 	plain := stripANSI(help)
-	for _, want := range []string{"↑↓ move", "enter jump", "ctrl-w worktrees", "esc quit"} {
+	for _, want := range []string{"↑↓ ctrl-p/n move", "enter jump", "ctrl-w worktrees", "esc quit"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("the hint line is missing %q: %q", want, plain)
 		}
@@ -478,7 +478,7 @@ func TestHelpLine(t *testing.T) {
 	wm.w, wm.h = 90, 12
 	wl := strings.Split(wm.View().Content, "\n")
 	plain = stripANSI(wl[len(wl)-1])
-	if !strings.Contains(plain, "ctrl-w repos") || !strings.Contains(plain, "esc repos") {
+	if !strings.Contains(plain, "ctrl-w/g/esc repos") {
 		t.Errorf("the worktree hints are wrong: %q", plain)
 	}
 
@@ -490,7 +490,7 @@ func TestHelpLine(t *testing.T) {
 	if strings.Contains(narrow, "esc") {
 		t.Errorf("a hint that does not fit was drawn anyway: %q", narrow)
 	}
-	if !strings.Contains(narrow, "↑↓ move") {
+	if !strings.Contains(narrow, "↑↓ ctrl-p/n move") {
 		t.Errorf("the first hint was dropped: %q", narrow)
 	}
 }
