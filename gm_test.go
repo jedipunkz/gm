@@ -303,3 +303,29 @@ func TestConfigRoots(t *testing.T) {
 		})
 	}
 }
+
+func TestThemes(t *testing.T) {
+	defer applyTheme(defaultTheme)
+
+	for _, name := range themeNames() {
+		p := themes[name]
+		// A zero field renders as the terminal default, which reads as a hole
+		// in the palette.
+		for field, v := range map[string]string{
+			"bgHi": p.bgHi, "border": p.border, "comment": p.comment, "fg": p.fg,
+			"blue": p.blue, "cyan": p.cyan, "magenta": p.magenta,
+			"green": p.green, "yellow": p.yellow, "orange": p.orange, "red": p.red,
+		} {
+			if !strings.HasPrefix(v, "#") || len(v) != 7 {
+				t.Errorf("theme %s: %s = %q, want a #rrggbb color", name, field, v)
+			}
+		}
+		if err := applyTheme(name); err != nil {
+			t.Errorf("applyTheme(%q) = %v", name, err)
+		}
+	}
+
+	if err := applyTheme("nope"); err == nil {
+		t.Error("applyTheme(\"nope\") = nil, want an error")
+	}
+}

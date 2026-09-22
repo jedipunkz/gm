@@ -90,6 +90,19 @@ root = ["~/ghq", "~/src"]
 The file is optional, but one that cannot be parsed stops `gm` rather than
 letting it clone somewhere unexpected.
 
+### Theme
+
+`theme` picks the finder's colors (default `tokyonight`):
+
+```toml
+theme = "kanagawa-wave"
+```
+
+`tokyonight`, `solarized-dark`, `solarized-light`, `kanagawa-wave`,
+`catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato`,
+`catppuccin-mocha`, `rose-pine`, `dracula`. An unknown name is an error
+listing the valid ones.
+
 ### Root directory
 
 Resolved in this order, so an existing ghq tree works untouched:

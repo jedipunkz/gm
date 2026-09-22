@@ -16,45 +16,29 @@ import (
 // The best match sits at the BOTTOM of the list, next to the prompt and the
 // cursor's resting place, so the most likely repository needs zero keystrokes.
 
-// Tokyo Night (night variant).
-const (
-	cBgHi    = "#292e42"
-	cBorder  = "#3b4261"
-	cComment = "#565f89"
-	cFg      = "#c0caf5"
-	cBlue    = "#7aa2f7"
-	cCyan    = "#7dcfff"
-	cMagenta = "#bb9af7"
-	cGreen   = "#9ece6a"
-	cYellow  = "#e0af68"
-	cOrange  = "#ff9e64"
-	cRed     = "#f7768e"
-)
-
 func fg(hex string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(hex))
 }
 
+// Set by applyTheme; see theme.go.
 var (
-	styleRow     = fg(cComment)
-	styleRowSel  = fg(cFg).Background(lipgloss.Color(cBgHi)).Bold(true)
-	styleHit     = fg(cOrange).Bold(true)
-	styleHitSel  = fg(cOrange).Background(lipgloss.Color(cBgHi)).Bold(true)
-	styleMarker  = fg(cBlue).Background(lipgloss.Color(cBgHi)).Bold(true)
-	styleDivider = fg(cBorder)
-	styleLabel   = fg(cComment)
-	styleName    = fg(cBlue).Bold(true)
-	stylePath    = fg(cGreen)
-	styleRemote  = fg(cCyan)
-	styleBranch  = fg(cMagenta)
-	styleCommit  = fg(cYellow)
-	styleClean   = fg(cGreen)
-	styleDirty   = fg(cRed)
-	styleVisits  = fg(cOrange)
-	styleDim     = fg(cComment)
-	styleBox     = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(cBorder))
+	styleRow     lipgloss.Style
+	styleRowSel  lipgloss.Style
+	styleHit     lipgloss.Style
+	styleHitSel  lipgloss.Style
+	styleMarker  lipgloss.Style
+	styleDivider lipgloss.Style
+	styleLabel   lipgloss.Style
+	styleName    lipgloss.Style
+	stylePath    lipgloss.Style
+	styleRemote  lipgloss.Style
+	styleBranch  lipgloss.Style
+	styleCommit  lipgloss.Style
+	styleClean   lipgloss.Style
+	styleDirty   lipgloss.Style
+	styleVisits  lipgloss.Style
+	styleDim     lipgloss.Style
+	styleBox     lipgloss.Style
 )
 
 type item struct {
@@ -110,9 +94,12 @@ func newModel(repos []Repo) model {
 	in.SetVirtualCursor(true)
 	in.Focus()
 	st := textinput.DefaultDarkStyles()
-	st.Focused.Prompt = fg(cBlue)
-	st.Focused.Text = fg(cFg)
-	st.Focused.Placeholder = fg(cComment)
+	if theme.light {
+		st = textinput.DefaultLightStyles()
+	}
+	st.Focused.Prompt = fg(theme.blue)
+	st.Focused.Text = fg(theme.fg)
+	st.Focused.Placeholder = fg(theme.comment)
 	in.SetStyles(st)
 
 	m := model{all: items, input: in, info: map[string]repoInfo{}, w: 80, h: 24}

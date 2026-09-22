@@ -23,6 +23,7 @@ usage:
 <repo> is a URL, host/user/repo, user/repo, or just repo.
 The root is $GM_ROOT, ~/.config/gm/gm.toml, git config gm.root,
 $GHQ_ROOT, git config ghq.root, or ~/ghq.
+The finder's colors come from theme in ~/.config/gm/gm.toml.
 `
 
 func main() {
@@ -75,6 +76,14 @@ func runTUI() error {
 	if len(repos) == 0 {
 		root, _ := PrimaryRoot()
 		return fmt.Errorf("no repositories under %s; try `gm get <repo>`", root)
+	}
+
+	name, err := configTheme()
+	if err != nil {
+		return err
+	}
+	if err := applyTheme(name); err != nil {
+		return err
 	}
 
 	// Draw on the terminal itself, never on stdout: stdout carries the chosen

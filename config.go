@@ -28,29 +28,51 @@ func ConfigFile() (string, error) {
 //
 //	root = "~/ghq"
 //	root = ["~/ghq", "~/src"]
+//	theme = "tokyonight"
 type config struct {
-	Root any `toml:"root"`
+	Root  any    `toml:"root"`
+	Theme string `toml:"theme"`
 }
 
-// configRoots reads the roots out of gm.toml. A missing file returns nil, but
-// a file that cannot be parsed is an error: silently cloning into the wrong
-// tree is worse than refusing to run.
-func configRoots() ([]string, error) {
+// loadConfig reads gm.toml. A missing file returns the zero config, but a file
+// that cannot be parsed is an error: silently cloning into the wrong tree is
+// worse than refusing to run.
+func loadConfig() (config, string, error) {
 	path, err := ConfigFile()
 	if err != nil {
-		return nil, err
+		return config{}, "", err
 	}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return config{}, path, nil
 	}
 	if err != nil {
-		return nil, err
+		return config{}, path, err
 	}
-
 	var c config
 	if _, err := toml.Decode(string(b), &c); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return config{}, path, fmt.Errorf("%s: %w", path, err)
+	}
+	return c, path, nil
+}
+
+// configTheme reads the theme name out of gm.toml, defaulting to tokyonight.
+func configTheme() (string, error) {
+	c, _, err := loadConfig()
+	if err != nil {
+		return "", err
+	}
+	if c.Theme == "" {
+		return defaultTheme, nil
+	}
+	return c.Theme, nil
+}
+
+// configRoots reads the roots out of gm.toml.
+func configRoots() ([]string, error) {
+	c, path, err := loadConfig()
+	if err != nil {
+		return nil, err
 	}
 
 	var roots []string
