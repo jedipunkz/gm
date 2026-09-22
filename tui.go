@@ -366,16 +366,18 @@ func (m model) infoLines(w int) []string {
 		if v == "" {
 			v = "-"
 		}
-		out = append(out, styleLabel.Render(k), st.Render(trunc(v, w)), "")
+		out = append(out, styleLabel.Render(k))
+		out = append(out, wrap(v, w, st)...)
 	}
 
-	out = append(out, styleName.Render(trunc(it.repo.Rel, w)), "")
+	out = append(out, wrap(it.repo.Rel, w, styleName)...)
+	out = append(out, "")
 	field("path", tildify(it.repo.Path()), stylePath)
 
 	i, loaded := m.info[it.repo.Path()]
 	if !loaded {
 		field("git", "loading…", styleDim)
-		return out[:len(out)-1]
+		return out
 	}
 	field("remote", i.remote, styleRemote)
 	field("branch", i.branch, styleBranch)
@@ -390,7 +392,16 @@ func (m model) infoLines(w int) []string {
 	} else {
 		field("visits", "never", styleDim)
 	}
-	return out[:len(out)-1] // no trailing blank line
+	return out
+}
+
+// wrap renders v across as many lines of width w as it needs, so a long path
+// or remote URL is folded rather than cut.
+func wrap(v string, w int, st lipgloss.Style) []string {
+	if w < 1 {
+		return nil
+	}
+	return strings.Split(st.Width(w).Render(v), "\n")
 }
 
 func tildify(p string) string {
@@ -413,15 +424,4 @@ func ago(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
-}
-
-func trunc(s string, w int) string {
-	if w <= 1 {
-		return ""
-	}
-	r := []rune(s)
-	if len(r) <= w {
-		return s
-	}
-	return "…" + string(r[len(r)-w+1:])
 }
