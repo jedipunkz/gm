@@ -110,8 +110,8 @@ itself, and removing it is `/remove` in the repository list.
 Worktrees go where `gm` decides, so the branch name is the only thing to type:
 
 ```
-~/ghq/github.com/jedipunkz/gm/            the repository
-~/ghq/.worktrees/github.com/jedipunkz/gm/feat/login
+~/gm/github.com/jedipunkz/gm/            the repository
+~/gm/.worktrees/github.com/jedipunkz/gm/feat/login
 ```
 
 The leading dot is not decoration. A worktree has a `.git` file, so `gm` would
