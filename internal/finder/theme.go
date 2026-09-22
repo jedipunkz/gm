@@ -115,7 +115,7 @@ type Styles struct {
 	HitSel    lipgloss.Style // ...inside the selected row
 	Marker    lipgloss.Style // the ▸ cursor
 	Divider   lipgloss.Style
-	Label     lipgloss.Style
+	Label     lipgloss.Style // the field names in the details pane
 	Name      lipgloss.Style
 	Path      lipgloss.Style
 	Remote    lipgloss.Style
@@ -176,11 +176,15 @@ func (t Theme) Styles() Styles {
 		HitSel:  on(t.Orange),
 		Marker:  on(t.Blue),
 		Divider: fg(t.Border),
-		Label:   fg(t.Comment),
-		Name:    fg(t.Blue).Bold(true),
-		Path:    fg(t.Green),
-		Remote:  fg(t.Cyan),
-		Branch:  fg(t.Magenta),
+		// The field names carry the pane's structure, so they are the
+		// brightest thing in it: the theme's foreground, in bold. Not a
+		// literal white — in a light theme the foreground is the dark end of
+		// the palette, and white would vanish into the background.
+		Label:  fg(t.Fg).Bold(true),
+		Name:   fg(t.Blue).Bold(true),
+		Path:   fg(t.Green),
+		Remote: fg(t.Cyan),
+		Branch: fg(t.Magenta),
 		// The commit block stays inside one cool family — the theme's blue
 		// and cyan, lightened towards the foreground or darkened towards the
 		// comment colour. Brightness carries the distinction between the
