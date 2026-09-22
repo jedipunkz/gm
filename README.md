@@ -1,5 +1,7 @@
 # gm
 
+[![CI](https://github.com/jedipunkz/gm/actions/workflows/pr.yaml/badge.svg)](https://github.com/jedipunkz/gm/actions/workflows/pr.yaml)
+
 A [ghq](https://github.com/x-motemen/ghq)-style repository manager with a
 built-in fuzzy finder. Clones land in one predictable `host/user/repo` tree,
 and `Ctrl-G` jumps to any of them — or to any of their git worktrees.
