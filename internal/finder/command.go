@@ -2,6 +2,7 @@ package finder
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -38,7 +39,10 @@ var commands = []command{
 		m.over = overlayHelp
 		return m, nil
 	}},
-	{"/create", "<repo>", "create a repository with its origin set, after confirming", func(m model, arg string) (model, tea.Cmd) {
+	{"/create", "<repo>|<branch>", "create a repository, or a worktree", func(m model, arg string) (model, tea.Cmd) {
+		if m.mode == modeWorktrees {
+			return m.confirmWorktree(arg)
+		}
 		u, err := repo.NormalizeURL(arg, false)
 		if err != nil {
 			m.note = err.Error()
@@ -46,35 +50,49 @@ var commands = []command{
 		}
 		dst := m.tree.PathFor(repo.RelPathOf(u))
 		return m.confirm(pending{
-			action: ActionCreate,
+			kind:   changeCreate,
 			arg:    arg,
-			title:  "create",
+			title:  "create repository",
 			detail: []string{tildify(dst), "origin " + u.String()},
 		}), nil
 	}},
 	{"/get", "<repo>", "clone a repository, then go there", func(m model, arg string) (model, tea.Cmd) {
 		return m.leaveWith(ActionGet, arg)
 	}},
-	{"/remove", "", "remove the selected repository, after confirming", func(m model, _ string) (model, tea.Cmd) {
-		if m.mode != modeRepos {
-			m.note = "/remove applies to the repository list"
-			return m, nil
-		}
+	{"/remove", "", "remove the selected repository or worktree", func(m model, _ string) (model, tea.Cmd) {
 		it, ok := m.current()
 		if !ok {
 			m.note = "nothing is selected"
 			return m, nil
 		}
-		detail := []string{tildify(it.path)}
 		// The status of the selected row is already loaded, so the warning
 		// costs nothing and is the one thing worth knowing before saying yes.
-		if s, ok := m.status[it.path]; ok && s.Dirty > 0 {
-			detail = append(detail, fmt.Sprintf("%d uncommitted changes will be lost", s.Dirty))
+		dirty := 0
+		if s, ok := m.status[it.path]; ok {
+			dirty = s.Dirty
+		}
+		detail := []string{tildify(it.path)}
+		if dirty > 0 {
+			detail = append(detail, fmt.Sprintf("%d uncommitted changes will be lost", dirty))
+		}
+
+		if m.mode == modeWorktrees {
+			if it.path == m.repoAt {
+				m.note = "that is the repository itself, not a worktree of it"
+				return m, nil
+			}
+			return m.confirm(pending{
+				kind:   changeRemoveWorktree,
+				dir:    it.path,
+				title:  "remove worktree " + it.label,
+				detail: detail,
+				force:  dirty > 0,
+			}), nil
 		}
 		return m.confirm(pending{
-			action: ActionRemove,
+			kind:   changeRemove,
 			arg:    it.path,
-			title:  "remove",
+			title:  "remove repository",
 			detail: detail,
 		}), nil
 	}},
@@ -122,6 +140,33 @@ func commandNames() []string {
 // isCommand reports whether the input is being typed as a command rather than
 // as a filter.
 func isCommand(s string) bool { return strings.HasPrefix(s, commandPrefix) }
+
+// confirmWorktree asks about checking a branch out beside the repository.
+// The path is gm's to decide, so the branch name is all it needs.
+func (m model) confirmWorktree(branch string) (model, tea.Cmd) {
+	r, ok := m.tree.At(m.repoAt)
+	if !ok {
+		m.note = m.repoAt + " is not under any root"
+		return m, nil
+	}
+	dir := m.tree.WorktreeDir(r, branch)
+	if _, err := os.Stat(dir); err == nil {
+		m.note = tildify(dir) + " already exists"
+		return m, nil
+	}
+
+	start := "new branch"
+	if repo.BranchExists(m.repoAt, branch) {
+		start = "existing branch"
+	}
+	return m.confirm(pending{
+		kind:   changeAddWorktree,
+		arg:    branch,
+		dir:    dir,
+		title:  "create worktree",
+		detail: []string{branch + ", " + start, tildify(dir)},
+	}), nil
+}
 
 // confirm puts the question on screen. Nothing happens until it is answered.
 func (m model) confirm(p pending) model {

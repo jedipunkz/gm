@@ -128,13 +128,27 @@ const (
 	overlayConfirm
 )
 
+// change is what a confirmation will carry out. It is not an Action: none of
+// these leave the finder, they happen under it.
+type change int
+
+const (
+	changeNone change = iota
+	changeCreate
+	changeRemove
+	changeAddWorktree
+	changeRemoveWorktree
+)
+
 // pending is the change a confirmation is waiting on. Nothing has happened
 // yet when one is on screen.
 type pending struct {
-	action Action
-	arg    string   // the path to remove, or the reference to create
-	title  string   // "remove", "create"
+	kind   change
+	arg    string   // the path to remove, the reference to create, the branch to check out
+	dir    string   // where a worktree will go, or which one goes away
+	title  string   // "remove", "create worktree"
 	detail []string // what it will do, a line each
+	force  bool     // there is work in it and the user has been told
 }
 
 // mode says which list is on screen.
@@ -157,10 +171,10 @@ type stash struct {
 
 // doneMsg carries the outcome of a confirmed change back to the UI thread.
 type doneMsg struct {
-	action Action
-	rel    string
-	path   string
-	err    error
+	kind  change
+	label string // how the new row reads, if one was made
+	path  string
+	err   error
 }
 
 // dirtyMsg carries the result of a scan back to the UI thread.
@@ -185,6 +199,7 @@ type model struct {
 
 	mode   mode
 	origin string // in worktree mode, the repository the list belongs to
+	repoAt string // ...and where it is on disk
 	saved  *stash
 	keys   Keys
 	tree   *repo.Tree
@@ -432,12 +447,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.note = msg.err.Error()
 			return m, nil
 		}
-		switch msg.action {
-		case ActionRemove:
+		switch msg.kind {
+		case changeRemove, changeRemoveWorktree:
 			m.drop(msg.path)
 			m.note = "removed " + tildify(msg.path)
-		case ActionCreate:
-			m.add(msg.rel, msg.path)
+		case changeCreate, changeAddWorktree:
+			m.add(msg.label, msg.path)
 			m.note = "created " + tildify(msg.path)
 		}
 		return m, m.loadStatus()
@@ -626,25 +641,40 @@ func (m model) overlay(base, box string) string {
 
 // perform carries out a confirmed change, off the UI thread.
 func (m model) perform(a pending) tea.Cmd {
-	tree := m.tree
+	tree, repoAt := m.tree, m.repoAt
 	return func() tea.Msg {
-		switch a.action {
-		case ActionRemove:
+		done := func(path string, label string, err error) tea.Msg {
+			return doneMsg{kind: a.kind, path: path, label: label, err: err}
+		}
+		switch a.kind {
+		case changeRemove:
 			r, ok := tree.At(a.arg)
 			if !ok {
-				return doneMsg{action: a.action, err: fmt.Errorf("%s is not under any root", a.arg)}
+				return done("", "", fmt.Errorf("%s is not under any root", a.arg))
 			}
 			if err := repo.Delete(r); err != nil {
-				return doneMsg{action: a.action, err: err}
+				return done("", "", err)
 			}
-			return doneMsg{action: a.action, rel: r.Rel, path: r.Path()}
+			return done(r.Path(), r.Rel, nil)
 
-		case ActionCreate:
+		case changeCreate:
 			r, err := tree.Create(a.arg, false)
 			if err != nil {
-				return doneMsg{action: a.action, err: err}
+				return done("", "", err)
 			}
-			return doneMsg{action: a.action, rel: r.Rel, path: r.Path()}
+			return done(r.Path(), r.Rel, nil)
+
+		case changeAddWorktree:
+			if err := repo.AddWorktree(repoAt, a.dir, a.arg); err != nil {
+				return done("", "", err)
+			}
+			return done(a.dir, a.arg, nil)
+
+		case changeRemoveWorktree:
+			if err := repo.RemoveWorktree(repoAt, a.dir, a.force); err != nil {
+				return done("", "", err)
+			}
+			return done(a.dir, "", nil)
 		}
 		return nil
 	}
@@ -991,7 +1021,7 @@ func (m model) openWorktrees() (tea.Model, tea.Cmd) {
 	}
 
 	m.saved = &stash{all: m.all, view: m.view, matched: m.matched, cursor: m.cursor, query: m.input.Value()}
-	m.origin = it.label
+	m.origin, m.repoAt = it.label, it.path
 	m.mode = modeWorktrees
 
 	// Reversed, so git's first worktree — the main one — lands at the bottom
@@ -1015,7 +1045,7 @@ func (m *model) restore() {
 	}
 	m.all, m.view, m.matched, m.cursor = m.saved.all, m.saved.view, m.saved.matched, m.saved.cursor
 	m.input.SetValue(m.saved.query)
-	m.mode, m.origin, m.saved = modeRepos, "", nil
+	m.mode, m.origin, m.repoAt, m.saved = modeRepos, "", "", nil
 }
 
 // wrap renders v across as many lines of width w as it needs, so a long path

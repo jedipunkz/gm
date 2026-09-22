@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1143,11 +1144,12 @@ func TestActionsNeedTheirArgument(t *testing.T) {
 	}
 }
 
-// TestRemoveIsForRepositories keeps /remove away from the worktree list,
-// where the selected path is a checkout rather than a clone.
-func TestRemoveIsForRepositories(t *testing.T) {
+// TestRemoveRefusesTheMainWorktree: the top checkout is the repository
+// itself, and git will not remove it either.
+func TestRemoveRefusesTheMainWorktree(t *testing.T) {
 	root := t.TempDir()
-	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+	m := newTestModel(t, repos, "")
 	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
 		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
 	}
@@ -1156,9 +1158,9 @@ func TestRemoveIsForRepositories(t *testing.T) {
 
 	m, cmd := runSlash(t, m, "/remove")
 	if isQuit(cmd) || m.over != overlayNone {
-		t.Error("/remove acted from the worktree list")
+		t.Error("/remove asked about the repository itself")
 	}
-	if !strings.Contains(m.note, "repository list") {
+	if !strings.Contains(m.note, "repository itself") {
 		t.Errorf("the note does not explain why: %q", m.note)
 	}
 }
@@ -1304,7 +1306,7 @@ func TestConfirmCancel(t *testing.T) {
 		if cmd != nil {
 			t.Errorf("%v started the removal anyway", key)
 		}
-		if after.over != overlayNone || after.ask.action != ActionNone {
+		if after.over != overlayNone || after.ask.kind != changeNone {
 			t.Errorf("%v left the question up", key)
 		}
 		if !repoExists(repos[0].Path()) {
@@ -1357,4 +1359,117 @@ func TestConfirmCreate(t *testing.T) {
 func repoExists(path string) bool {
 	_, err := os.Stat(filepath.Join(path, ".git"))
 	return err == nil
+}
+
+// realRepo makes a repository with one commit, which is what git needs before
+// it will hand out a worktree.
+func realRepo(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"-c", "user.email=t@e.x", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+}
+
+// TestWorktreeCreateAndRemove drives the whole thing against real git: the
+// branch is checked out where gm says it belongs, the row appears, and
+// removing it takes both away.
+func TestWorktreeCreateAndRemove(t *testing.T) {
+	root := t.TempDir()
+	r := repo.Repo{Root: root, Rel: "github.com/acme/alpha"}
+	realRepo(t, r.Path())
+
+	m := newTestModel(t, []repo.Repo{r}, "")
+	m.w, m.h = 90, 18
+	next, _ := m.openWorktrees() // the real repo.Worktrees, not a stub
+	m = next.(model)
+	if m.mode != modeWorktrees || len(m.view) != 1 {
+		t.Fatalf("the worktree list has %d rows", len(m.view))
+	}
+
+	m, _ = runSlash(t, m, "/create feat/login")
+	if m.over != overlayConfirm {
+		t.Fatalf("/create did not ask: %q", m.note)
+	}
+	box := stripANSI(m.View().Content)
+	for _, want := range []string{"create worktree", "feat/login, new branch", ".worktrees"} {
+		if !strings.Contains(box, want) {
+			t.Errorf("the question does not mention %q:\n%s", want, box)
+		}
+	}
+
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	next, _ = next.(model).Update(cmd())
+	m = next.(model)
+
+	dir := filepath.Join(root, repo.WorktreeRoot, "github.com/acme/alpha/feat/login")
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		t.Fatalf("no worktree at %s: %v", dir, err)
+	}
+	if !repo.BranchExists(r.Path(), "feat/login") {
+		t.Error("the branch was not created")
+	}
+	if got := rows(m); len(got) != 2 {
+		t.Fatalf("the list has %v, want the new worktree in it", got)
+	}
+	if it, _ := m.current(); it.path != dir {
+		t.Errorf("the new worktree is not selected, %q is", it.label)
+	}
+	// A worktree must not show up as a repository: the dot in .worktrees is
+	// what keeps it out.
+	found, err := repo.FindRepos(root)
+	if err != nil || len(found) != 1 || found[0] != r.Path() {
+		t.Errorf("FindRepos() = %v, %v; want just the repository", found, err)
+	}
+
+	// Now take it away.
+	m, _ = runSlash(t, m, "/remove")
+	if m.over != overlayConfirm {
+		t.Fatalf("/remove did not ask: %q", m.note)
+	}
+	next, cmd = m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	next, _ = next.(model).Update(cmd())
+	m = next.(model)
+
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("the worktree is still on disk: %v", err)
+	}
+	if got := rows(m); len(got) != 1 {
+		t.Errorf("the removed worktree is still listed: %v", got)
+	}
+	if !strings.Contains(m.note, "removed") {
+		t.Errorf("the finder did not report it: %q", m.note)
+	}
+}
+
+// TestWorktreeCreateRefusesADuplicate says so instead of letting git fail.
+func TestWorktreeCreateRefusesADuplicate(t *testing.T) {
+	root := t.TempDir()
+	r := repo.Repo{Root: root, Rel: "github.com/acme/alpha"}
+	realRepo(t, r.Path())
+	dir := filepath.Join(root, repo.WorktreeRoot, "github.com/acme/alpha/feat/login")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newTestModel(t, []repo.Repo{r}, "")
+	next, _ := m.openWorktrees()
+	m = next.(model)
+
+	m, _ = runSlash(t, m, "/create feat/login")
+	if m.over != overlayNone {
+		t.Error("/create asked about a directory that already exists")
+	}
+	if !strings.Contains(m.note, "already exists") {
+		t.Errorf("the note does not explain why: %q", m.note)
+	}
 }
