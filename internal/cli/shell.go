@@ -22,6 +22,12 @@ func (a *app) shell(args []string) error {
 	if err != nil {
 		return err
 	}
+	// A shell binds a control character, and a terminal sends the same one
+	// for Ctrl-B and Ctrl-Shift-B. Printing a binding that cannot fire is
+	// worse than refusing.
+	if k.Shift {
+		return fmt.Errorf("launch_key cannot be %s: a shell cannot bind Ctrl-Shift", k.Display)
+	}
 	fmt.Print(strings.NewReplacer(
 		"{{key}}", string(k.Letter),
 		"{{name}}", k.Display,

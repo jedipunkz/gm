@@ -21,30 +21,61 @@ import (
 	"github.com/jedipunkz/gm/internal/repo"
 )
 
-// DefaultWorktreeKey opens the worktree list when gm.toml says nothing.
-const DefaultWorktreeKey = "ctrl-w"
+// DefaultWorktreeKey opens the worktree list, and DefaultRemoteKey the
+// selected repository's remote, when gm.toml says nothing.
+const (
+	DefaultWorktreeKey = "ctrl-w"
+	DefaultRemoteKey   = "ctrl-shift-b"
+)
 
-// reserved are the Ctrl chords the finder already answers to; binding the
-// worktree list to one of them would shadow quitting or moving.
+// reserved are the Ctrl chords the finder already answers to; binding an
+// action to one of them would shadow quitting or moving. Ctrl-Shift is not
+// affected: the finder's own keys are all plain Ctrl.
 var reserved = map[byte]string{
 	'c': "quit",
 	'n': "move down",
 	'p': "move up",
 }
 
+// Keys are the finder's configurable chords.
+type Keys struct {
+	Worktree config.Chord // open and close the worktree list
+	Remote   config.Chord // open the selected repository's remote
+}
+
+// check refuses a binding that would shadow one of the finder's fixed keys,
+// or that two actions would answer to at once.
+func (k Keys) check() error {
+	for _, c := range []struct {
+		name  string
+		chord config.Chord
+	}{{"worktree_key", k.Worktree}, {"remote_key", k.Remote}} {
+		if c.chord.Shift {
+			continue // Ctrl-Shift can never collide with the fixed keys
+		}
+		if what, taken := reserved[c.chord.Letter]; taken {
+			return fmt.Errorf("%s cannot be %s: the finder uses it to %s", c.name, c.chord.Display, what)
+		}
+	}
+	if k.Worktree.Key() == k.Remote.Key() {
+		return fmt.Errorf("worktree_key and remote_key are both %s", k.Worktree.Display)
+	}
+	return nil
+}
+
 // Run draws the finder and returns the path the user chose, or "" if they
 // quit. It draws on the terminal itself, never on stdout: stdout carries the
 // chosen path back to the shell binding.
-func Run(repos []repo.Repo, h *repo.History, theme Theme, worktreeKey config.Chord) (string, error) {
-	if what, taken := reserved[worktreeKey.Letter]; taken {
-		return "", fmt.Errorf("worktree_key cannot be %s: the finder uses it to %s", worktreeKey.Display, what)
+func Run(repos []repo.Repo, h *repo.History, theme Theme, keys Keys) (string, error) {
+	if err := keys.check(); err != nil {
+		return "", err
 	}
 	opts := []tea.ProgramOption{tea.WithOutput(os.Stderr)}
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
 		defer tty.Close()
 		opts = []tea.ProgramOption{tea.WithInput(tty), tea.WithOutput(tty)}
 	}
-	res, err := tea.NewProgram(newModel(repos, h, theme, worktreeKey), opts...).Run()
+	res, err := tea.NewProgram(newModel(repos, h, theme, keys), opts...).Run()
 	if err != nil {
 		return "", err
 	}
@@ -107,13 +138,13 @@ type model struct {
 	mode   mode
 	origin string // in worktree mode, the repository the list belongs to
 	saved  *stash
-	wtKey  config.Chord // the key that opens and closes the worktree list
+	keys   Keys
 	// worktreesOf is the seam the tests replace; it is repo.Worktrees in
 	// every real run.
 	worktreesOf func(dir string) ([]repo.Worktree, error)
 }
 
-func newModel(repos []repo.Repo, hist *repo.History, theme Theme, worktreeKey config.Chord) model {
+func newModel(repos []repo.Repo, hist *repo.History, theme Theme, keys Keys) model {
 	now := time.Now()
 	items := make([]item, 0, len(repos))
 	for _, r := range repos {
@@ -149,7 +180,7 @@ func newModel(repos []repo.Repo, hist *repo.History, theme Theme, worktreeKey co
 		st:          st,
 		w:           80,
 		h:           24,
-		wtKey:       worktreeKey,
+		keys:        keys,
 		worktreesOf: repo.Worktrees,
 	}
 	m.filter()
@@ -252,13 +283,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		// The worktree key is configurable, so it cannot be a switch case.
-		if msg.String() == m.wtKey.Key() {
+		// The configurable keys cannot be switch cases.
+		switch msg.String() {
+		case m.keys.Worktree.Key():
 			if m.mode == modeWorktrees {
 				m.restore()
 				return m, m.loadStatus()
 			}
 			return m.openWorktrees()
+		case m.keys.Remote.Key():
+			return m, m.openRemote()
 		}
 		switch msg.String() {
 		case "ctrl+c":
@@ -361,24 +395,54 @@ func (m model) View() tea.View {
 	return v
 }
 
+// openRemote hands the selected repository's remote to a browser. A
+// repository without one, or one whose remote is not a URL, does nothing
+// visible: the finder is showing a list, not reporting on git.
+func (m model) openRemote() tea.Cmd {
+	it, ok := m.current()
+	if !ok {
+		return nil
+	}
+	path := it.path
+	remote := m.status[path].Remote
+	return func() tea.Msg {
+		if remote == "" {
+			// Not fetched yet for this row; ask git now rather than making
+			// the key do nothing on the first press.
+			remote = repo.Describe(path).Remote
+		}
+		if remote == "" {
+			return nil
+		}
+		url, err := repo.BrowseURL(remote)
+		if err != nil {
+			return nil
+		}
+		_ = openURL(url)
+		return nil
+	}
+}
+
 // hint is one key and what it does, for the line under the prompt.
 type hint struct{ key, what string }
 
 // helpLine draws the key hints, dropping the ones that do not fit rather than
 // wrapping onto a second line.
 func (m model) helpLine(width int) string {
-	wt := m.wtKey.Short()
+	wt := m.keys.Worktree.Short()
 	hints := []hint{
 		{"↑↓ ctrl-p/n", "move"},
 		{"enter", "jump"},
 		{wt, "worktrees"},
 		{"esc", "quit"},
+		{m.keys.Remote.Short(), "remote"},
 	}
 	if m.mode == modeWorktrees {
 		hints = []hint{
 			{"↑↓ ctrl-p/n", "move"},
 			{"enter", "jump"},
 			{wt + "/g/esc", "repos"},
+			{m.keys.Remote.Short(), "remote"},
 		}
 	}
 

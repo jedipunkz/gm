@@ -32,11 +32,21 @@ func newTestModel(t *testing.T, repos []repo.Repo, bumped string) model {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return newModel(repos, hist, theme, testKeys(t))
+}
+
+// testKeys are the default chords, parsed the way a real run parses them.
+func testKeys(t *testing.T) Keys {
+	t.Helper()
 	wt, err := config.ParseChord("", DefaultWorktreeKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newModel(repos, hist, theme, wt)
+	rm, err := config.ParseChord("", DefaultRemoteKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Keys{Worktree: wt, Remote: rm}
 }
 
 // TestFinderPutsBestAtBottom pins the core TUI contract: the cursor rests on
@@ -514,8 +524,10 @@ func TestWorktreeKeyIsConfigurable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	keys := testKeys(t)
+	keys.Worktree = wt
 
-	m := newModel(repos, hist, theme, wt)
+	m := newModel(repos, hist, theme, keys)
 	m.w, m.h = 90, 12
 	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
 		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
@@ -551,13 +563,75 @@ func TestWorktreeKeyIsConfigurable(t *testing.T) {
 func TestRunRejectsReservedKeys(t *testing.T) {
 	theme, _ := LookupTheme("")
 	hist := repo.OpenHistory(filepath.Join(t.TempDir(), "frecency.json"))
+	keys := testKeys(t)
 	for _, name := range []string{"ctrl-c", "ctrl-n", "ctrl-p"} {
 		c, err := config.ParseChord(name, DefaultWorktreeKey)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Run(nil, hist, theme, c); err == nil {
+		k := keys
+		k.Worktree = c
+		if _, err := Run(nil, hist, theme, k); err == nil {
 			t.Errorf("Run() accepted %s, which the finder already uses", name)
 		}
+		k = keys
+		k.Remote = c
+		if _, err := Run(nil, hist, theme, k); err == nil {
+			t.Errorf("Run() accepted %s for remote_key, which the finder already uses", name)
+		}
+	}
+
+	// Two actions cannot answer to the same chord.
+	k := keys
+	k.Remote = k.Worktree
+	if _, err := Run(nil, hist, theme, k); err == nil {
+		t.Error("Run() accepted the same chord for both keys")
+	}
+}
+
+// TestOpenRemote pins the remote key: it hands the browser an https URL built
+// from the selected repository's origin, and does nothing at all when there
+// is no origin.
+func TestOpenRemote(t *testing.T) {
+	var opened []string
+	old := openURL
+	openURL = func(u string) error { opened = append(opened, u); return nil }
+	defer func() { openURL = old }()
+
+	root := t.TempDir()
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+	m := newTestModel(t, repos, "")
+	m.status[repos[0].Path()] = repo.Status{Remote: "git@github.com:acme/alpha.git"}
+
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl | tea.ModShift})
+	if cmd == nil {
+		t.Fatal("the remote key produced no command")
+	}
+	cmd()
+	if len(opened) != 1 || opened[0] != "https://github.com/acme/alpha" {
+		t.Errorf("opened %v, want the https URL", opened)
+	}
+	// The finder stays where it was: this is a side action, not navigation.
+	after := next.(model)
+	if after.mode != modeRepos || after.chosen != "" {
+		t.Errorf("the finder moved: mode=%v chosen=%q", after.mode, after.chosen)
+	}
+
+	// A repository whose remote git cannot supply opens nothing.
+	opened = nil
+	m.status[repos[0].Path()] = repo.Status{Remote: ""}
+	_, cmd = m.Update(tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl | tea.ModShift})
+	cmd()
+	if len(opened) != 0 {
+		t.Errorf("opened %v for a repository with no origin", opened)
+	}
+}
+
+// TestRemoteKeyInHints checks the hint line names the configured chord.
+func TestRemoteKeyInHints(t *testing.T) {
+	root := t.TempDir()
+	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
+	if got := stripANSI(m.helpLine(120)); !strings.Contains(got, "ctrl-shift-b remote") {
+		t.Errorf("the hint line does not name the remote key: %q", got)
 	}
 }

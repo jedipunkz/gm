@@ -233,3 +233,30 @@ detached
 		t.Errorf("a bare repository is labelled %q", w.Label())
 	}
 }
+
+func TestBrowseURL(t *testing.T) {
+	const want = "https://github.com/x-motemen/ghq"
+	for _, remote := range []string{
+		"https://github.com/x-motemen/ghq",
+		"https://github.com/x-motemen/ghq.git",
+		"ssh://git@github.com/x-motemen/ghq.git",
+		"git@github.com:x-motemen/ghq.git",
+	} {
+		got, err := BrowseURL(remote)
+		if err != nil {
+			t.Errorf("BrowseURL(%q) = %v", remote, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("BrowseURL(%q) = %q, want %q", remote, got, want)
+		}
+	}
+
+	// A git URL's port addresses the git service, not the web one.
+	if got, _ := BrowseURL("ssh://git@git.example.com:2222/g/p.git"); got != "https://git.example.com/g/p" {
+		t.Errorf("BrowseURL() kept the git port: %q", got)
+	}
+	if _, err := BrowseURL(""); err == nil {
+		t.Error("BrowseURL(\"\") should fail")
+	}
+}

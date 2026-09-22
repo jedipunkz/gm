@@ -91,3 +91,23 @@ func RelPathOf(u *url.URL) string {
 	p = strings.TrimSuffix(p, ".git")
 	return strings.Join(append([]string{u.Hostname()}, strings.Split(p, "/")...), "/")
 }
+
+// BrowseURL turns a git remote into the https URL a browser can open:
+//
+//	ssh://git@github.com/u/r.git  -> https://github.com/u/r
+//	git@github.com:u/r.git        -> https://github.com/u/r
+//	https://github.com/u/r.git    -> https://github.com/u/r
+//
+// The port a git URL may carry is dropped: it addresses the git service, not
+// the web one.
+func BrowseURL(remote string) (string, error) {
+	u, err := NormalizeURL(remote, false)
+	if err != nil {
+		return "", err
+	}
+	u.Scheme = "https"
+	u.User = nil
+	u.Host = u.Hostname()
+	u.Path = strings.TrimSuffix(u.Path, ".git")
+	return u.String(), nil
+}

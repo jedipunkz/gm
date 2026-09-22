@@ -140,3 +140,26 @@ func TestKeys(t *testing.T) {
 		t.Errorf("WorktreeKey = %q, want ctrl-t", c.WorktreeKey)
 	}
 }
+
+func TestParseChordWithShift(t *testing.T) {
+	for _, in := range []string{"ctrl-shift-b", "ctrl+shift+b", "Ctrl-Shift-B", "c-s-b"} {
+		c, err := ParseChord(in, "ctrl-w")
+		if err != nil {
+			t.Errorf("ParseChord(%q) = %v", in, err)
+			continue
+		}
+		if !c.Shift || c.Letter != 'b' {
+			t.Errorf("ParseChord(%q) = %+v, want shift and b", in, c)
+		}
+		if c.Key() != "ctrl+shift+b" || c.Display != "Ctrl-Shift-B" || c.Short() != "ctrl-shift-b" {
+			t.Errorf("ParseChord(%q) spells itself %q/%q/%q", in, c.Key(), c.Display, c.Short())
+		}
+	}
+
+	// Shift without Ctrl is not a chord gm binds.
+	for _, bad := range []string{"shift-b", "s-b", "ctrl-shift-", "ctrl-shift-bb"} {
+		if c, err := ParseChord(bad, "ctrl-w"); err == nil {
+			t.Errorf("ParseChord(%q) = %+v, want an error", bad, c)
+		}
+	}
+}
