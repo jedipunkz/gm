@@ -20,7 +20,7 @@ go install github.com/jedipunkz/gm@latest
 
 `gm` with no arguments opens the finder and prints the chosen path on stdout;
 the TUI draws on stderr, so it composes with `$(...)`. One binding per shell
-turns that into a `cd` on `Ctrl-G`.
+turns that into a `cd` on `Ctrl-G`, or on whatever `keybind` says.
 
 ### fish
 
@@ -69,8 +69,9 @@ that cannot be parsed stops `gm` rather than letting it clone somewhere
 unexpected.
 
 ```toml
-root  = "~/ghq"          # or ["~/ghq", "~/src"], searched in order
-theme = "tokyonight"
+root    = "~/ghq"          # or ["~/ghq", "~/src"], searched in order
+theme   = "tokyonight"
+keybind = "ctrl-g"
 ```
 
 The root is resolved in this order, so an existing ghq tree works untouched:
@@ -96,6 +97,16 @@ The root is resolved in this order, so an existing ghq tree works untouched:
 - `dracula`
 
 An unknown name is an error listing the valid ones.
+
+### Keybind
+
+`keybind` is the chord `gm shell` binds, written as `ctrl-g`, `ctrl+g`, `c-g`
+or `^g`. Only Ctrl chords are supported, and anything else is an error rather
+than a binding that quietly does nothing.
+
+Re-run `gm shell <shell>` (or restart the shell, if you source it from your rc
+file) after changing it. Some chords are already taken: `ctrl-r` is
+reverse history search, `ctrl-c`, `ctrl-d` and `ctrl-z` are terminal signals.
 
 ## Ranking
 

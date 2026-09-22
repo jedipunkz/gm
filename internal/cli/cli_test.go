@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"io"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/jedipunkz/gm/internal/config"
 )
 
 // TestUsageCoversEveryCommand guards the help text against drifting away from
@@ -31,4 +35,76 @@ func TestNamesAreUnique(t *testing.T) {
 			seen[n] = c.name
 		}
 	}
+}
+
+func TestParseKeybind(t *testing.T) {
+	for _, in := range []string{"ctrl-r", "ctrl+r", "Ctrl-R", "c-r", "^R", " ctrl-r "} {
+		k, err := parseKeybind(in)
+		if err != nil {
+			t.Errorf("parseKeybind(%q) = %v", in, err)
+			continue
+		}
+		if k.letter != 'r' || k.display != "Ctrl-R" {
+			t.Errorf("parseKeybind(%q) = %q/%q, want r/Ctrl-R", in, string(k.letter), k.display)
+		}
+	}
+	for _, bad := range []string{"", "r", "ctrl-", "ctrl-rr", "alt-r", "ctrl-1", "f5"} {
+		if k, err := parseKeybind(bad); err == nil {
+			t.Errorf("parseKeybind(%q) = %v, want an error", bad, k)
+		}
+	}
+}
+
+// TestShellSnippetsBindTheConfiguredKey checks the spelling each shell needs,
+// and that no template placeholder survives into the output.
+func TestShellSnippetsBindTheConfiguredKey(t *testing.T) {
+	cases := map[string]string{
+		"fish": `bind \cr __gm_jump`,
+		"zsh":  `bindkey '^r' __gm_jump`,
+		"bash": `bind -x '"\C-r": __gm_jump'`,
+	}
+	for sh, want := range cases {
+		out := captureStdout(t, func() {
+			a := &app{cfg: config.Config{Keybind: "ctrl-r"}}
+			if err := a.shell([]string{sh}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if !strings.Contains(out, want) {
+			t.Errorf("gm shell %s does not bind Ctrl-R (%q):\n%s", sh, want, out)
+		}
+		if !strings.Contains(out, "Ctrl-R jumps") {
+			t.Errorf("gm shell %s does not name the key in its comment:\n%s", sh, out)
+		}
+		if strings.Contains(out, "{{") {
+			t.Errorf("gm shell %s left a placeholder unreplaced:\n%s", sh, out)
+		}
+	}
+
+	// An unusable key must stop gm rather than print a binding that silently
+	// does nothing.
+	a := &app{cfg: config.Config{Keybind: "alt-r"}}
+	if err := a.shell([]string{"zsh"}); err == nil {
+		t.Error("an unsupported chord should be an error")
+	}
+}
+
+// captureStdout runs f with stdout redirected and returns what it wrote.
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+
+	f()
+	w.Close()
+	var b strings.Builder
+	if _, err := io.Copy(&b, r); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
 }
