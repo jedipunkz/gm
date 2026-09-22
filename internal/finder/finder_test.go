@@ -726,3 +726,36 @@ func TestCommitLineWraps(t *testing.T) {
 		t.Errorf("the first line lost the hash colour: %q", lines[0])
 	}
 }
+
+// TestPaneLabelsStandOut pins the field names as the brightest thing in the
+// details pane: the theme's foreground, in bold, not the comment colour the
+// dim text uses.
+func TestPaneLabelsStandOut(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+	m := newTestModel(t, repos, "")
+	m.status[repos[0].Path()] = repo.Status{Remote: "https://github.com/acme/alpha", Branch: "main"}
+
+	var label string
+	for _, l := range m.infoLines(40) {
+		if stripANSI(l) == "path" {
+			label = l
+			break
+		}
+	}
+	if label == "" {
+		t.Fatal("the pane has no path label")
+	}
+
+	th := themes[DefaultTheme]
+	if !strings.Contains(label, ansi("38", th.Fg)) {
+		t.Errorf("the label is not painted in the foreground colour: %q", label)
+	}
+	// lipgloss folds bold into the same escape as the colour, as "1;".
+	if !strings.Contains(label, "\x1b[1;") {
+		t.Errorf("the label is not bold: %q", label)
+	}
+	if strings.Contains(label, ansi("38", th.Comment)) {
+		t.Errorf("the label still carries the comment colour: %q", label)
+	}
+}
