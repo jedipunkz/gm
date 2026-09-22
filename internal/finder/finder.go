@@ -25,12 +25,12 @@ import (
 // selected repository's remote, when gm.toml says nothing.
 const (
 	DefaultWorktreeKey = "ctrl-w"
-	DefaultRemoteKey   = "ctrl-shift-b"
+	DefaultRemoteKey   = "ctrl-alt-b"
 )
 
 // reserved are the Ctrl chords the finder already answers to; binding an
-// action to one of them would shadow quitting or moving. Ctrl-Shift is not
-// affected: the finder's own keys are all plain Ctrl.
+// action to one of them would shadow quitting or moving. Only plain Ctrl
+// chords can collide: the finder's own keys carry no other modifier.
 var reserved = map[byte]string{
 	'c': "quit",
 	'n': "move down",
@@ -50,8 +50,8 @@ func (k Keys) check() error {
 		name  string
 		chord config.Chord
 	}{{"worktree_key", k.Worktree}, {"remote_key", k.Remote}} {
-		if c.chord.Shift {
-			continue // Ctrl-Shift can never collide with the fixed keys
+		if !c.chord.Plain() {
+			continue // Alt or Shift can never collide with the fixed keys
 		}
 		if what, taken := reserved[c.chord.Letter]; taken {
 			return fmt.Errorf("%s cannot be %s: the finder uses it to %s", c.name, c.chord.Display, what)

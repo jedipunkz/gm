@@ -56,7 +56,7 @@ work the same in both.
 | `↓` / `Ctrl-N` | Move down | Move down |
 | `Enter` | Print the repository path and exit | Print the worktree path and exit |
 | `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories |
-| `Ctrl-Shift-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser |
+| `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser |
 | `Ctrl-G` | — | Back to the repositories |
 | `Esc` | Quit without printing | Back to the repositories |
 | `Ctrl-C` | Quit without printing | Quit without printing |
@@ -97,7 +97,7 @@ root         = "~/ghq"       # or ["~/ghq", "~/src"], searched in order
 theme        = "tokyonight"
 launch_key   = "ctrl-g"        # the shell key that opens gm
 worktree_key = "ctrl-w"        # the finder key that lists worktrees
-remote_key   = "ctrl-shift-b"  # the finder key that opens the remote
+remote_key   = "ctrl-alt-b"    # the finder key that opens the remote
 ```
 
 The root is resolved in this order, so an existing ghq tree works untouched:
@@ -127,9 +127,10 @@ An unknown name is an error listing the valid ones.
 ### Key bindings
 
 `launch_key` is the chord `gm shell` binds; `worktree_key` and `remote_key`
-are the finder's own. All are written as `ctrl-g`, `ctrl+g`, `c-g` or `^g`,
-and the finder's two also take a shift (`ctrl-shift-b`, `c-s-b`). Anything
-else is an error rather than a binding that quietly does nothing.
+are the finder's own. Ctrl is written `ctrl-`, `ctrl+`, `c-` or `^`, and the
+finder's two also take `alt` and `shift` after it, in any order —
+`ctrl-alt-b`, `c-a-b`, `ctrl-shift-b`, `ctrl-alt-shift-b`. Anything else is an
+error rather than a binding that quietly does nothing.
 
 After changing `launch_key`, re-run `gm shell <shell>` (or restart the shell,
 if you source it from your rc file). Some chords are already taken: `ctrl-r` is
@@ -138,15 +139,17 @@ signals.
 
 `worktree_key` and `remote_key` cannot be `ctrl-c`, `ctrl-n` or `ctrl-p`,
 which the finder uses to quit and to move, and cannot both be the same chord.
-`launch_key` cannot take a shift: a shell binds a control character, and
-`Ctrl-B` and `Ctrl-Shift-B` are the same one. The hint line under the prompt
+`launch_key` must be a plain Ctrl chord: the shell snippets bind a control
+character, which is all a plain chord is. The hint line under the prompt
 always names the chords you configured.
 
-`remote_key` defaults to `ctrl-shift-b`, which only reaches `gm` on a terminal
-that implements the Kitty keyboard protocol — Ghostty, kitty, WezTerm, foot
-and recent Alacritty do; macOS Terminal.app, plain xterm and tmux without
-`extended-keys` do not, and send the same bytes for `Ctrl-B`. On those, set
-`remote_key = "ctrl-b"`.
+How far a chord travels depends on the terminal:
+
+| Chord | Reaches `gm` |
+|---|---|
+| `ctrl-<letter>` | Everywhere |
+| `ctrl-alt-<letter>` | Nearly everywhere: Alt is sent as an ESC prefix |
+| `ctrl-shift-<letter>` | Only with the Kitty keyboard protocol — Ghostty, kitty, WezTerm, foot, recent Alacritty. Elsewhere it arrives as plain `ctrl-<letter>` |
 
 ## Ranking
 

@@ -141,6 +141,46 @@ func TestKeys(t *testing.T) {
 	}
 }
 
+func TestParseChordWithAlt(t *testing.T) {
+	// The chord the remote key defaults to. Alt travels as an ESC prefix, so
+	// unlike Ctrl-Shift it reaches a program on an ordinary terminal.
+	for _, in := range []string{"ctrl-alt-b", "ctrl+alt+b", "Ctrl-Alt-B", "c-a-b", "ctrl-meta-b", "^alt-b"} {
+		c, err := ParseChord(in, "ctrl-w")
+		if err != nil {
+			t.Errorf("ParseChord(%q) = %v", in, err)
+			continue
+		}
+		if !c.Alt || c.Shift || c.Letter != 'b' || c.Plain() {
+			t.Errorf("ParseChord(%q) = %+v, want alt and b", in, c)
+		}
+		if c.Key() != "ctrl+alt+b" || c.Display != "Ctrl-Alt-B" || c.Short() != "ctrl-alt-b" {
+			t.Errorf("ParseChord(%q) spells itself %q/%q/%q", in, c.Key(), c.Display, c.Short())
+		}
+	}
+
+	// Both modifiers, in either order, are the same chord.
+	for _, in := range []string{"ctrl-alt-shift-b", "ctrl-shift-alt-b"} {
+		c, err := ParseChord(in, "ctrl-w")
+		if err != nil {
+			t.Fatalf("ParseChord(%q) = %v", in, err)
+		}
+		if !c.Alt || !c.Shift || c.Key() != "ctrl+alt+shift+b" {
+			t.Errorf("ParseChord(%q) = %+v, key %q", in, c, c.Key())
+		}
+	}
+
+	// Alt without Ctrl is not a chord gm binds.
+	for _, bad := range []string{"alt-b", "a-b", "ctrl-alt-", "ctrl-alt-bb"} {
+		if c, err := ParseChord(bad, "ctrl-w"); err == nil {
+			t.Errorf("ParseChord(%q) = %+v, want an error", bad, c)
+		}
+	}
+
+	if c, _ := ParseChord("ctrl-w", "ctrl-w"); !c.Plain() {
+		t.Error("a plain Ctrl chord should report itself as plain")
+	}
+}
+
 func TestParseChordWithShift(t *testing.T) {
 	for _, in := range []string{"ctrl-shift-b", "ctrl+shift+b", "Ctrl-Shift-B", "c-s-b"} {
 		c, err := ParseChord(in, "ctrl-w")

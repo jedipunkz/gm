@@ -19,7 +19,7 @@ import (
 //	theme        = "tokyonight"
 //	launch_key   = "ctrl-g"    # the shell key that opens gm
 //	worktree_key = "ctrl-w"    # the finder key that lists worktrees
-//	remote_key   = "ctrl-shift-b"  # the finder key that opens the remote
+//	remote_key   = "ctrl-alt-b"  # the finder key that opens the remote
 //
 // Root stays untyped because it takes either form; Roots resolves it.
 type Config struct {

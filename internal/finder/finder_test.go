@@ -603,7 +603,7 @@ func TestOpenRemote(t *testing.T) {
 	m := newTestModel(t, repos, "")
 	m.status[repos[0].Path()] = repo.Status{Remote: "git@github.com:acme/alpha.git"}
 
-	next, cmd := m.Update(tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl | tea.ModShift})
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl | tea.ModAlt})
 	if cmd == nil {
 		t.Fatal("the remote key produced no command")
 	}
@@ -620,7 +620,7 @@ func TestOpenRemote(t *testing.T) {
 	// A repository whose remote git cannot supply opens nothing.
 	opened = nil
 	m.status[repos[0].Path()] = repo.Status{Remote: ""}
-	_, cmd = m.Update(tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl | tea.ModShift})
+	_, cmd = m.Update(tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl | tea.ModAlt})
 	cmd()
 	if len(opened) != 0 {
 		t.Errorf("opened %v for a repository with no origin", opened)
@@ -631,7 +631,7 @@ func TestOpenRemote(t *testing.T) {
 func TestRemoteKeyInHints(t *testing.T) {
 	root := t.TempDir()
 	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
-	if got := stripANSI(m.helpLine(120)); !strings.Contains(got, "ctrl-shift-b remote") {
+	if got := stripANSI(m.helpLine(120)); !strings.Contains(got, "ctrl-alt-b remote") {
 		t.Errorf("the hint line does not name the remote key: %q", got)
 	}
 }
