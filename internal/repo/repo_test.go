@@ -260,3 +260,53 @@ func TestBrowseURL(t *testing.T) {
 		t.Error("BrowseURL(\"\") should fail")
 	}
 }
+
+// TestFindReposAndContains covers the walk gm migrate -r relies on: every
+// working copy is found once, nothing inside one is descended into, dotted
+// directories are left alone, and a missing directory is not an error.
+func TestFindReposAndContains(t *testing.T) {
+	dir := t.TempDir()
+	for _, rel := range []string{
+		"projects/alpha",
+		"projects/nested/bravo",
+		"projects/alpha/vendor/inner", // inside a repository: not reported
+		".cache/charlie",              // dotted: not descended into
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, rel, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	found, err := FindRepos(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		filepath.Join(dir, "projects/alpha"):        true,
+		filepath.Join(dir, "projects/nested/bravo"): true,
+	}
+	if len(found) != len(want) {
+		t.Fatalf("FindRepos() = %v, want %d entries", found, len(want))
+	}
+	for _, p := range found {
+		if !want[p] {
+			t.Errorf("FindRepos() returned %q", p)
+		}
+	}
+
+	if got, err := FindRepos(filepath.Join(dir, "nope")); err != nil || got != nil {
+		t.Errorf("FindRepos(missing) = %v, %v; want nil, nil", got, err)
+	}
+
+	tree := &Tree{Roots: []string{filepath.Join(dir, "projects")}}
+	for path, want := range map[string]bool{
+		filepath.Join(dir, "projects"):       true,
+		filepath.Join(dir, "projects/alpha"): true,
+		filepath.Join(dir, ".cache/charlie"): false,
+		filepath.Join(dir, "projects-other"): false, // a prefix, not a parent
+	} {
+		if got := tree.Contains(path); got != want {
+			t.Errorf("Contains(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
