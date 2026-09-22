@@ -43,15 +43,29 @@ eval "$(gm shell zsh)"
 eval "$(gm shell bash)"
 ```
 
-In the finder: type to filter, `↑`/`↓` (or `Ctrl-P`/`Ctrl-N`) to move, `Enter`
-to jump, `Esc` to cancel.
+## Keys
 
-`Ctrl-W` replaces the list with the git worktrees of the selected repository.
-Filter and `Enter` work the same way, and the main worktree is the one under
-the cursor. `Ctrl-W` again, `Ctrl-G` or `Esc` goes back to the repositories
-with your query intact; from the repository list `Esc` quits.
+`Ctrl-W` swaps the repository list for the git worktrees of the repository
+under the cursor, and swaps it back. Filtering, the details pane and `Enter`
+work the same in both.
 
-`Ctrl-W` no longer deletes the word before the cursor.
+| Key | Repository list | Worktree list |
+|---|---|---|
+| any character | Filter | Filter |
+| `↑` / `Ctrl-P` | Move up | Move up |
+| `↓` / `Ctrl-N` | Move down | Move down |
+| `Enter` | Print the repository path and exit | Print the worktree path and exit |
+| `Ctrl-W` | Show the worktrees of the selected repository | Back to the repositories |
+| `Ctrl-G` | — | Back to the repositories |
+| `Esc` | Quit without printing | Back to the repositories |
+| `Ctrl-C` | Quit without printing | Quit without printing |
+
+Going back keeps the query, the cursor and the highlights as they were. The
+best match is the row at the bottom, next to the prompt; in the worktree list
+that row is the main worktree.
+
+Everything else is ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U` and so
+on), except `Ctrl-W`, which no longer deletes the word before the cursor.
 
 ## Commands
 
