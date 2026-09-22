@@ -72,7 +72,7 @@ func Run(repos []repo.Repo, h *repo.History, theme Theme, keys Keys) (string, er
 	}
 	opts := []tea.ProgramOption{tea.WithOutput(os.Stderr)}
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-		defer tty.Close()
+		defer func() { _ = tty.Close() }()
 		opts = []tea.ProgramOption{tea.WithInput(tty), tea.WithOutput(tty)}
 	}
 	res, err := tea.NewProgram(newModel(repos, h, theme, keys), opts...).Run()

@@ -1,0 +1,55 @@
+# Gate on the three things that can break the build: the tests, the linters,
+# and the formatting. One job, because a small repository spends more time
+# setting a runner up than it does running these.
+name: CI
+
+on:
+  pull_request:
+    paths: &go
+      - "**.go"
+      - go.mod
+      - go.sum
+      - .golangci.yml
+      - .github/workflows/pr.yaml
+  push:
+    branches: [main]
+    paths: *go
+
+permissions:
+  contents: read
+
+# A new push makes the previous run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          # Caches the module downloads and the build cache, keyed on go.sum.
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2

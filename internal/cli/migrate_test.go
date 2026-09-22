@@ -116,7 +116,7 @@ func captureStderr(t *testing.T, f func() error) (string, error) {
 	ferr := f()
 
 	os.Stderr = old
-	w.Close()
+	_ = w.Close()
 	var b strings.Builder
 	if _, err := io.Copy(&b, r); err != nil {
 		t.Fatal(err)

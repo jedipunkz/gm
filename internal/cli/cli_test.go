@@ -85,7 +85,7 @@ func captureStdout(t *testing.T, f func()) string {
 	defer func() { os.Stdout = old }()
 
 	f()
-	w.Close()
+	_ = w.Close()
 	var b strings.Builder
 	if _, err := io.Copy(&b, r); err != nil {
 		t.Fatal(err)
