@@ -82,13 +82,6 @@ var themes = map[string]palette{
 
 const defaultTheme = "tokyonight"
 
-// calm pulls every accent toward its own grey. Each theme keeps its hue and
-// its brightness; only the saturation comes down, so the six fields of the
-// info pane read as one muted palette instead of a rainbow.
-//
-// ponytail: one global factor, split it per theme if one ends up washed out.
-const calm = 0.55
-
 // theme is the palette in force; the styles below are rebuilt from it.
 var theme = themes[defaultTheme]
 
@@ -100,14 +93,6 @@ func applyTheme(name string) error {
 	if !ok {
 		return fmt.Errorf("unknown theme %q (have %s)", name, strings.Join(themeNames(), ", "))
 	}
-	p.blue = mute(p.blue)
-	p.cyan = mute(p.cyan)
-	p.magenta = mute(p.magenta)
-	p.green = mute(p.green)
-	p.yellow = mute(p.yellow)
-	p.orange = mute(p.orange)
-	p.red = mute(p.red)
-
 	theme = p
 	styleRow = fg(p.comment)
 	styleRowSel = fg(p.fg).Background(lipgloss.Color(p.bgHi)).Bold(true)
@@ -129,21 +114,6 @@ func applyTheme(name string) error {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(p.border))
 	return nil
-}
-
-// mute desaturates a #rrggbb color toward its perceived brightness, leaving
-// the hue and the lightness — and so the contrast against the background —
-// where the theme put them.
-func mute(hex string) string {
-	var r, g, b int
-	if _, err := fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b); err != nil {
-		return hex
-	}
-	grey := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
-	toward := func(c int) int {
-		return int(grey + (float64(c)-grey)*calm + 0.5)
-	}
-	return fmt.Sprintf("#%02x%02x%02x", toward(r), toward(g), toward(b))
 }
 
 func themeNames() []string {

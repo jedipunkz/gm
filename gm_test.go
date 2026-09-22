@@ -159,8 +159,7 @@ func TestViewChrome(t *testing.T) {
 		{"info pane divider", "│ "},
 		{"tokyonight border grey", ansi("38", themes["tokyonight"].border)},
 		{"selected row background", ansi("48", themes["tokyonight"].bgHi)},
-		// Accents are muted at apply time, so ask for the color the UI uses.
-		{"matched characters", ansi("38", mute(themes["tokyonight"].orange))},
+		{"matched characters", ansi("38", themes["tokyonight"].orange)},
 	} {
 		if !strings.Contains(out, want.s) {
 			t.Errorf("view is missing the %s (%q)", want.what, want.s)
