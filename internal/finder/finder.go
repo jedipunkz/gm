@@ -375,11 +375,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc", "ctrl+g":
-			// These back out of the worktree list before they quit gm; from
-			// the repository list Ctrl-G does nothing, since it is the key
-			// that opened gm in the first place.
+			// These back out of whatever is narrowing the list before they
+			// quit gm: the worktree list first, then a filter. From the
+			// repository list with nothing to undo, Ctrl-G does nothing — it
+			// is the key that opened gm in the first place.
 			if m.mode == modeWorktrees {
 				m.restore()
+				return m, m.loadStatus()
+			}
+			if m.dirtyOnly {
+				m.dirtyOnly = false
+				m.filter()
+				m.cursor = len(m.view) - 1
 				return m, m.loadStatus()
 			}
 			if msg.String() == "esc" {
@@ -537,11 +544,16 @@ func (m model) helpLine(width int) string {
 
 func (m model) hints(width int) string {
 	wt := m.keys.Worktree.Short()
+	// Esc undoes the filter before it quits, so it has to say which.
+	out := "quit"
+	if m.dirtyOnly {
+		out = "show all"
+	}
 	hints := []hint{
 		{"↑↓ ctrl-p/n", "move"},
 		{"enter", "jump"},
 		{wt, "worktrees"},
-		{"esc", "quit"},
+		{"esc", out},
 		{m.keys.Remote.Short(), "remote"},
 	}
 	if m.mode == modeWorktrees {

@@ -1043,3 +1043,67 @@ func TestDirtyFilterIsForRepositories(t *testing.T) {
 		t.Errorf("the note does not explain why: %q", m.note)
 	}
 }
+
+// TestEscClearsTheFilter pins the way out of /dirty: one key, and only once
+// there is nothing left to undo does Esc quit.
+func TestEscClearsTheFilter(t *testing.T) {
+	m, repos := dirtyModel(t)
+
+	m, cmd := runSlash(t, m, "/dirty")
+	next, _ := m.Update(cmd())
+	m = next.(model)
+	if len(m.view) != 2 {
+		t.Fatalf("the filter is not on: %v", rows(m))
+	}
+	if hint := stripANSI(m.helpLine(90)); !strings.Contains(hint, "esc show all") {
+		t.Errorf("the hint line does not offer the way out: %q", hint)
+	}
+
+	next, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = next.(model)
+	if isQuit(cmd) {
+		t.Fatal("Esc quit instead of clearing the filter")
+	}
+	if len(m.view) != len(repos) || m.dirtyOnly {
+		t.Errorf("Esc left the filter on: %v", rows(m))
+	}
+	if m.cursor != len(m.view)-1 {
+		t.Errorf("cursor at %d, want the bottom row", m.cursor)
+	}
+	if hint := stripANSI(m.helpLine(90)); !strings.Contains(hint, "esc quit") {
+		t.Errorf("the hint line still offers to clear a filter: %q", hint)
+	}
+
+	// With nothing left to undo, Esc quits as it always did.
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape}); !isQuit(cmd) {
+		t.Error("Esc should quit once the filter is off")
+	}
+}
+
+// TestEscLeavesTheWorktreeListFirst keeps the order of the escalation: the
+// worktree list is backed out of before the filter is.
+func TestEscLeavesTheWorktreeListFirst(t *testing.T) {
+	m, _ := dirtyModel(t)
+	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
+	}
+
+	m, cmd := runSlash(t, m, "/dirty")
+	next, _ := m.Update(cmd())
+	m = next.(model)
+
+	opened, _ := m.openWorktrees()
+	m = opened.(model)
+	if m.mode != modeWorktrees {
+		t.Fatal("the worktree list did not open")
+	}
+
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = next.(model)
+	if m.mode != modeRepos {
+		t.Fatal("Esc did not leave the worktree list")
+	}
+	if !m.dirtyOnly {
+		t.Error("Esc cleared the filter on the way out of the worktree list")
+	}
+}
