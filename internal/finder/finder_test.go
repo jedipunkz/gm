@@ -1253,8 +1253,13 @@ func TestConfirmRemove(t *testing.T) {
 	if m.over != overlayConfirm {
 		t.Fatal("/remove did not ask")
 	}
+	if m.ask.arg != repos[1].Path() {
+		t.Errorf("the question is about %q, want the selected repository", m.ask.arg)
+	}
+	// Only fold-proof words are looked for on screen: where a long path
+	// breaks depends on the width of the temporary directory.
 	box := stripANSI(m.View().Content)
-	for _, want := range []string{"remove", "acme/bravo", "3 uncommitted changes", "y do it", "n cancel"} {
+	for _, want := range []string{"remove", "3 uncommitted changes", "y do it", "n cancel"} {
 		if !strings.Contains(box, want) {
 			t.Errorf("the question does not mention %q:\n%s", want, box)
 		}
@@ -1330,8 +1335,11 @@ func TestConfirmCreate(t *testing.T) {
 	if m.over != overlayConfirm {
 		t.Fatal("/create did not ask")
 	}
+	if m.ask.arg != "acme/bravo" {
+		t.Errorf("the question is about %q", m.ask.arg)
+	}
 	box := stripANSI(m.View().Content)
-	for _, want := range []string{"create", "github.com/acme/bravo", "origin https://github.com/acme/bravo"} {
+	for _, want := range []string{"create", "origin https://github.com/acme/bravo"} {
 		if !strings.Contains(box, want) {
 			t.Errorf("the question does not mention %q:\n%s", want, box)
 		}
@@ -1400,8 +1408,14 @@ func TestWorktreeCreateAndRemove(t *testing.T) {
 	if m.over != overlayConfirm {
 		t.Fatalf("/create did not ask: %q", m.note)
 	}
+	// The rendered panel folds long paths, and where it folds depends on the
+	// width of the temporary directory, so the destination is checked on the
+	// model and only the fixed words on the screen.
+	if !strings.Contains(m.ask.dir, repo.WorktreeRoot) {
+		t.Errorf("the worktree would go to %q, want it under %s", m.ask.dir, repo.WorktreeRoot)
+	}
 	box := stripANSI(m.View().Content)
-	for _, want := range []string{"create worktree", "feat/login, new branch", ".worktrees"} {
+	for _, want := range []string{"create worktree", "feat/login, new branch"} {
 		if !strings.Contains(box, want) {
 			t.Errorf("the question does not mention %q:\n%s", want, box)
 		}
