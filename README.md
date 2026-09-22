@@ -68,7 +68,7 @@ work the same in both.
 | `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories |
 | `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser |
 | `Ctrl-G` | — | Back to the repositories |
-| `Esc` | Quit without printing | Back to the repositories |
+| `Esc` | Clear the filter, else quit without printing | Back to the repositories |
 | `Ctrl-C` | Quit without printing | Quit without printing |
 
 The line under the prompt lists the keys for whichever list is up, naming the
@@ -87,8 +87,15 @@ completes it as you go, and `Tab` accepts what it offers.
 | Command | What it does |
 |---|---|
 | `/help` | Show the command list; `q` or `Esc` closes it |
+| `/dirty` | Show only repositories with uncommitted work; run it again to show all |
 | `/worktrees` | Same as `Ctrl-W` |
 | `/remote` | Same as `Ctrl-Alt-B` |
+
+`/dirty` asks git about every repository the first time it is used, in
+parallel and off the drawing thread — the list stays usable while the answer
+comes back, and the line under the prompt says `dirty only` while the filter
+is on. Typing a query narrows what the filter left. `Esc` clears the filter
+before it quits, the way it leaves the worktree list before it quits.
 
 Only a leading slash starts a command — repository paths are full of slashes,
 and `acme/alpha` keeps filtering the way it always did.

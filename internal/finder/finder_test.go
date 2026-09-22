@@ -929,3 +929,181 @@ func TestCursorSurvivesACommand(t *testing.T) {
 		t.Errorf("a query left the cursor at %d, want the bottom row %d", m.cursor, len(m.view)-1)
 	}
 }
+
+// dirtyModel is a finder over three repositories, two of which have
+// uncommitted work, with the scan stubbed so no git runs.
+func dirtyModel(t *testing.T) (model, []repo.Repo) {
+	t.Helper()
+	root := t.TempDir()
+	repos := []repo.Repo{
+		{Root: root, Rel: "github.com/acme/alpha"},
+		{Root: root, Rel: "github.com/acme/bravo"},
+		{Root: root, Rel: "github.com/acme/charlie"},
+	}
+	m := newTestModel(t, repos, "")
+	m.w, m.h = 90, 14
+	m.dirtyOf = func([]string) map[string]bool {
+		return map[string]bool{
+			repos[0].Path(): true,
+			repos[1].Path(): false,
+			repos[2].Path(): true,
+		}
+	}
+	return m, repos
+}
+
+// runSlash types a command and presses Enter, returning what the finder did.
+func runSlash(t *testing.T, m model, name string) (model, tea.Cmd) {
+	t.Helper()
+	m.input.SetValue(name)
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	return next.(model), cmd
+}
+
+func rows(m model) []string {
+	out := make([]string, 0, len(m.view))
+	for _, i := range m.view {
+		out = append(out, m.all[i].label)
+	}
+	return out
+}
+
+// TestDirtyFilter covers /dirty end to end: the scan runs off the UI thread,
+// the list keeps every row until the answer lands, and running it again shows
+// everything.
+func TestDirtyFilter(t *testing.T) {
+	m, repos := dirtyModel(t)
+
+	m, cmd := runSlash(t, m, "/dirty")
+	if cmd == nil {
+		t.Fatal("/dirty started no scan")
+	}
+	// Nothing is hidden while the answer is still coming.
+	if len(m.view) != len(repos) {
+		t.Errorf("the list shrank before the scan finished: %v", rows(m))
+	}
+	if !strings.Contains(stripANSI(m.helpLine(90)), "checking") {
+		t.Errorf("the scan is not announced: %q", stripANSI(m.helpLine(90)))
+	}
+
+	next, _ := m.Update(cmd())
+	m = next.(model)
+	if got := rows(m); len(got) != 2 || got[0] != "github.com/acme/alpha" || got[1] != "github.com/acme/charlie" {
+		t.Fatalf("after the scan the list is %v, want the two dirty ones", got)
+	}
+	if m.cursor != len(m.view)-1 {
+		t.Errorf("cursor at %d, want the bottom row", m.cursor)
+	}
+	if hint := stripANSI(m.helpLine(90)); !strings.Contains(hint, "dirty only") {
+		t.Errorf("the hint line does not say the filter is on: %q", hint)
+	}
+
+	// A query narrows what is left, rather than bringing the clean ones back.
+	m.input.SetValue("charlie")
+	m.filter()
+	if got := rows(m); len(got) != 1 || got[0] != "github.com/acme/charlie" {
+		t.Errorf("filtering inside /dirty gave %v", got)
+	}
+	m.input.SetValue("bravo")
+	m.filter()
+	if got := rows(m); len(got) != 0 {
+		t.Errorf("a clean repository came back through the query: %v", got)
+	}
+
+	// Running it again shows everything, and does not scan twice.
+	m.input.SetValue("")
+	m.filter()
+	m, cmd = runSlash(t, m, "/dirty")
+	if cmd != nil {
+		t.Error("/dirty scanned again instead of reusing the answer")
+	}
+	if len(m.view) != len(repos) {
+		t.Errorf("turning the filter off left %v", rows(m))
+	}
+	if strings.Contains(stripANSI(m.helpLine(90)), "dirty only") {
+		t.Error("the hint line still claims the filter is on")
+	}
+}
+
+// TestDirtyFilterIsForRepositories declines in the worktree list rather than
+// filtering something the answer does not describe.
+func TestDirtyFilterIsForRepositories(t *testing.T) {
+	m, _ := dirtyModel(t)
+	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
+	}
+	next, _ := m.openWorktrees()
+	m = next.(model)
+
+	m, cmd := runSlash(t, m, "/dirty")
+	if cmd != nil || m.dirtyOnly {
+		t.Error("/dirty applied itself to the worktree list")
+	}
+	if !strings.Contains(m.note, "repository list") {
+		t.Errorf("the note does not explain why: %q", m.note)
+	}
+}
+
+// TestEscClearsTheFilter pins the way out of /dirty: one key, and only once
+// there is nothing left to undo does Esc quit.
+func TestEscClearsTheFilter(t *testing.T) {
+	m, repos := dirtyModel(t)
+
+	m, cmd := runSlash(t, m, "/dirty")
+	next, _ := m.Update(cmd())
+	m = next.(model)
+	if len(m.view) != 2 {
+		t.Fatalf("the filter is not on: %v", rows(m))
+	}
+	if hint := stripANSI(m.helpLine(90)); !strings.Contains(hint, "esc show all") {
+		t.Errorf("the hint line does not offer the way out: %q", hint)
+	}
+
+	next, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = next.(model)
+	if isQuit(cmd) {
+		t.Fatal("Esc quit instead of clearing the filter")
+	}
+	if len(m.view) != len(repos) || m.dirtyOnly {
+		t.Errorf("Esc left the filter on: %v", rows(m))
+	}
+	if m.cursor != len(m.view)-1 {
+		t.Errorf("cursor at %d, want the bottom row", m.cursor)
+	}
+	if hint := stripANSI(m.helpLine(90)); !strings.Contains(hint, "esc quit") {
+		t.Errorf("the hint line still offers to clear a filter: %q", hint)
+	}
+
+	// With nothing left to undo, Esc quits as it always did.
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape}); !isQuit(cmd) {
+		t.Error("Esc should quit once the filter is off")
+	}
+}
+
+// TestEscLeavesTheWorktreeListFirst keeps the order of the escalation: the
+// worktree list is backed out of before the filter is.
+func TestEscLeavesTheWorktreeListFirst(t *testing.T) {
+	m, _ := dirtyModel(t)
+	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
+	}
+
+	m, cmd := runSlash(t, m, "/dirty")
+	next, _ := m.Update(cmd())
+	m = next.(model)
+
+	opened, _ := m.openWorktrees()
+	m = opened.(model)
+	if m.mode != modeWorktrees {
+		t.Fatal("the worktree list did not open")
+	}
+
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = next.(model)
+	if m.mode != modeRepos {
+		t.Fatal("Esc did not leave the worktree list")
+	}
+	if !m.dirtyOnly {
+		t.Error("Esc cleared the filter on the way out of the worktree list")
+	}
+}

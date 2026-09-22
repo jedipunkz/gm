@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Git runs git with its output on the terminal, for the commands whose
@@ -248,4 +249,38 @@ func parseWorktrees(out string) []Worktree {
 	}
 	flush()
 	return list
+}
+
+// dirtyWorkers bounds the git processes a scan runs at once. Each one is a
+// short-lived process doing a little disk work, so a handful keeps the disk
+// busy without forking hundreds of them on a large tree.
+//
+// ponytail: a fixed number, tune it if a big tree on a slow disk says so.
+const dirtyWorkers = 8
+
+// DirtyMap reports which of these working copies have uncommitted changes.
+// A repository git cannot answer for counts as clean: the point is to find
+// work in progress, not to report on git's health.
+func DirtyMap(paths []string) map[string]bool {
+	out := make(map[string]bool, len(paths))
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
+	sem := make(chan struct{}, dirtyWorkers)
+	for _, p := range paths {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			d, _ := IsDirty(p)
+			mu.Lock()
+			out[p] = d
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return out
 }

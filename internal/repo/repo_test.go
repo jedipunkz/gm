@@ -2,6 +2,7 @@ package repo
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -370,5 +371,51 @@ func TestParseCommits(t *testing.T) {
 	// A line git could not format is dropped, not turned into a bad row.
 	if got := parseCommits("no separators here", nil); len(got) != 0 {
 		t.Errorf("parseCommits(junk) = %v", got)
+	}
+}
+
+func TestDirtyMap(t *testing.T) {
+	dir := t.TempDir()
+	git := func(wd string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = wd
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	mk := func(name string) string {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		git(p, "init", "-q")
+		return p
+	}
+
+	clean := mk("clean")
+	dirty := mk("dirty")
+	if err := os.WriteFile(filepath.Join(dirty, "scratch.txt"), []byte("wip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Not a repository at all; git cannot answer, which counts as clean.
+	plain := filepath.Join(dir, "plain")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := DirtyMap([]string{clean, dirty, plain})
+	if len(got) != 3 {
+		t.Fatalf("DirtyMap() returned %d entries, want 3: %v", len(got), got)
+	}
+	if got[dirty] != true {
+		t.Errorf("a repository with an untracked file is not reported dirty")
+	}
+	if got[clean] != false || got[plain] != false {
+		t.Errorf("clean=%v plain=%v, want both false", got[clean], got[plain])
+	}
+
+	if got := DirtyMap(nil); len(got) != 0 {
+		t.Errorf("DirtyMap(nil) = %v", got)
 	}
 }

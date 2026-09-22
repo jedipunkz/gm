@@ -118,6 +118,9 @@ type stash struct {
 	query   string
 }
 
+// dirtyMsg carries the result of a scan back to the UI thread.
+type dirtyMsg map[string]bool
+
 // statusMsg carries one repository's git status back to the UI thread.
 type statusMsg struct {
 	path   string
@@ -141,10 +144,16 @@ type model struct {
 	keys   Keys
 	query  string // the query the view was built from; a command is not one
 	help   bool   // the command list is up
-	note   string // a one-line answer under the prompt, cleared on the next keystroke
-	// worktreesOf is the seam the tests replace; it is repo.Worktrees in
-	// every real run.
+	// dirty holds the answer for every repository once a scan has run; nil
+	// until one has. dirtyOnly is the filter itself.
+	dirty     map[string]bool
+	dirtyOnly bool
+	scanning  bool
+	note      string // a one-line answer under the prompt, cleared on the next keystroke
+	// worktreesOf and dirtyOf are the seams the tests replace; they are
+	// repo.Worktrees and repo.DirtyMap in every real run.
 	worktreesOf func(dir string) ([]repo.Worktree, error)
+	dirtyOf     func(paths []string) map[string]bool
 }
 
 func newModel(repos []repo.Repo, hist *repo.History, theme Theme, keys Keys) model {
@@ -189,6 +198,7 @@ func newModel(repos []repo.Repo, hist *repo.History, theme Theme, keys Keys) mod
 		h:           24,
 		keys:        keys,
 		worktreesOf: repo.Worktrees,
+		dirtyOf:     repo.DirtyMap,
 	}
 	m.filter()
 	return m
@@ -243,10 +253,41 @@ func (m *model) filter() {
 		})
 		m.view = idx
 	}
+	m.view = m.keepDirty(m.view)
 
+	// A filter can shrink the view under the cursor.
+	if m.cursor >= len(m.view) {
+		m.cursor = len(m.view) - 1
+	}
 	if ranked {
 		m.cursor = len(m.view) - 1
 	}
+}
+
+// keepDirty drops the rows that have no uncommitted work, when the filter is
+// on. It applies to repositories only: the worktree list is a different
+// question, and a scan that has not finished yet hides nothing.
+func (m model) keepDirty(view []int) []int {
+	if !m.dirtyOnly || m.mode != modeRepos || m.dirty == nil {
+		return view
+	}
+	kept := make([]int, 0, len(view))
+	for _, i := range view {
+		if m.dirty[m.all[i].path] {
+			kept = append(kept, i)
+		}
+	}
+	return kept
+}
+
+// scanDirty asks git about every repository at once, off the UI thread.
+func (m model) scanDirty() tea.Cmd {
+	paths := make([]string, 0, len(m.all))
+	for _, it := range m.all {
+		paths = append(paths, it.path)
+	}
+	scan := m.dirtyOf
+	return func() tea.Msg { return dirtyMsg(scan(paths)) }
 }
 
 // runeIndexes converts fuzzy's byte offsets into rune positions, which is what
@@ -302,6 +343,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status[msg.path] = msg.status
 		return m, nil
 
+	case dirtyMsg:
+		m.dirty, m.scanning, m.note = msg, false, ""
+		m.filter()
+		m.cursor = len(m.view) - 1
+		return m, m.loadStatus()
+
 	case tea.KeyPressMsg:
 		// The command list is modal: it answers to its own two keys and
 		// swallows everything else, so nothing moves behind it.
@@ -328,11 +375,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc", "ctrl+g":
-			// These back out of the worktree list before they quit gm; from
-			// the repository list Ctrl-G does nothing, since it is the key
-			// that opened gm in the first place.
+			// These back out of whatever is narrowing the list before they
+			// quit gm: the worktree list first, then a filter. From the
+			// repository list with nothing to undo, Ctrl-G does nothing — it
+			// is the key that opened gm in the first place.
 			if m.mode == modeWorktrees {
 				m.restore()
+				return m, m.loadStatus()
+			}
+			if m.dirtyOnly {
+				m.dirtyOnly = false
+				m.filter()
+				m.cursor = len(m.view) - 1
 				return m, m.loadStatus()
 			}
 			if msg.String() == "esc" {
@@ -478,12 +532,28 @@ func (m model) helpLine(width int) string {
 		return m.st.Help.Render("enter runs the command  ·  tab completes it  ·  ") +
 			m.st.HelpKey.Render("/help") + m.st.Help.Render(" lists them")
 	}
+	if m.dirtyOnly {
+		// The filter has to be visible, or an empty list reads as a bug.
+		const label = "dirty only"
+		const sep = "  ·  "
+		state := m.st.Dirty.Render(label) + m.st.Help.Render(sep)
+		return state + m.hints(width-len(label)-len(sep))
+	}
+	return m.hints(width)
+}
+
+func (m model) hints(width int) string {
 	wt := m.keys.Worktree.Short()
+	// Esc undoes the filter before it quits, so it has to say which.
+	out := "quit"
+	if m.dirtyOnly {
+		out = "show all"
+	}
 	hints := []hint{
 		{"↑↓ ctrl-p/n", "move"},
 		{"enter", "jump"},
 		{wt, "worktrees"},
-		{"esc", "quit"},
+		{"esc", out},
 		{m.keys.Remote.Short(), "remote"},
 	}
 	if m.mode == modeWorktrees {
