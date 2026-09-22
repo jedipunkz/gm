@@ -275,8 +275,11 @@ func (m model) View() tea.View {
 		info = m.infoLines(infoW)
 	}
 	// Bottom-align the info pane so it sits beside the selection, not adrift
-	// at the top of the screen.
-	if pad := len(lines) - len(info); pad > 0 {
+	// at the top of the screen. A pane taller than the window loses its tail
+	// rather than its name and path.
+	if len(info) > len(lines) {
+		info = info[:len(lines)]
+	} else if pad := len(lines) - len(info); pad > 0 {
 		info = append(make([]string, pad), info...)
 	}
 
@@ -350,41 +353,44 @@ func highlight(s string, hits []int, width int, base, hit lipgloss.Style) string
 	return b.String()
 }
 
+// infoLines stacks each field's label above its value, so a long path or
+// remote URL gets the pane's full width instead of what a label column leaves.
 func (m model) infoLines(w int) []string {
 	it, ok := m.current()
 	if !ok {
 		return []string{styleDim.Render("no match")}
 	}
-	field := func(k, v string, st lipgloss.Style) string {
+
+	var out []string
+	field := func(k, v string, st lipgloss.Style) {
 		if v == "" {
 			v = "-"
 		}
-		return styleLabel.Render(fmt.Sprintf("%-7s", k)) + st.Render(trunc(v, w-8))
+		out = append(out, styleLabel.Render(k), st.Render(trunc(v, w)), "")
 	}
 
-	out := []string{styleName.Render(trunc(it.repo.Rel, w)), ""}
-	out = append(out, field("path", tildify(it.repo.Path()), stylePath))
+	out = append(out, styleName.Render(trunc(it.repo.Rel, w)), "")
+	field("path", tildify(it.repo.Path()), stylePath)
 
 	i, loaded := m.info[it.repo.Path()]
 	if !loaded {
-		return append(out, field("git", "loading…", styleDim))
+		field("git", "loading…", styleDim)
+		return out[:len(out)-1]
 	}
-	out = append(out,
-		field("remote", i.remote, styleRemote),
-		field("branch", i.branch, styleBranch),
-		field("commit", i.commit, styleCommit),
-	)
+	field("remote", i.remote, styleRemote)
+	field("branch", i.branch, styleBranch)
+	field("commit", i.commit, styleCommit)
 	if i.dirty > 0 {
-		out = append(out, field("status", fmt.Sprintf("%d changed", i.dirty), styleDirty))
+		field("status", fmt.Sprintf("%d changed", i.dirty), styleDirty)
 	} else {
-		out = append(out, field("status", "clean", styleClean))
+		field("status", "clean", styleClean)
 	}
 	if it.seen.Count > 0 {
-		out = append(out, field("visits", fmt.Sprintf("%d, last %s", it.seen.Count, ago(time.Unix(it.seen.Last, 0))), styleVisits))
+		field("visits", fmt.Sprintf("%d, last %s", it.seen.Count, ago(time.Unix(it.seen.Last, 0))), styleVisits)
 	} else {
-		out = append(out, field("visits", "never", styleDim))
+		field("visits", "never", styleDim)
 	}
-	return out
+	return out[:len(out)-1] // no trailing blank line
 }
 
 func tildify(p string) string {
