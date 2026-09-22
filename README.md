@@ -9,22 +9,30 @@ a built-in fuzzy finder: the same `host/user/repo` layout, plus a
 repositories by how often and how recently you visit them.
 
 ```
-                                   │ zellij-org/zellij
-                                   │
-                                   │ path   ~/ghq/github.com/zellij-org/zellij
-                                   │ remote https://github.com/zellij-org/zellij
-  github.com/tmux/tmux             │ branch main
-  github.com/vadimdemedes/ink      │ commit 8f3a91c  2 days ago  fix: …
-▸ github.com/zellij-org/zellij     │ status clean
-                                   │ visits 34, last 2h ago
+                                    │ zellij-org/zellij
+                                    │
+                                    │ path
+                                    │ ~/ghq/github.com/zellij-org/zellij
+                                    │ remote
+                                    │ https://github.com/zellij-org/zellij
+                                    │ branch
+                                    │ main
+                                    │ commit
+  github.com/tmux/tmux              │ 8f3a91c  2 days ago  fix: resize
+  github.com/vadimdemedes/ink       │ status
+▸ github.com/zellij-org/zellij      │ clean
+                                    │ visits
+                                    │ 34, last 2h ago
 ╭─────────────────────────────────────────────────────────────────────────╮
 │ ❯ zellij                                                                │
 ╰─────────────────────────────────────────────────────────────────────────╯
 ```
 
-Coloured with [Tokyo Night](https://github.com/folke/tokyonight.nvim): the
-selected row is highlighted, the characters your query matched are picked out
-inside it, and each field on the right gets its own colour.
+The list takes the left 3/5 and hangs from the prompt; the details pane reads
+top-down, with every value on its own full-width line so long paths and remote
+URLs wrap instead of being cut. Colours come from the theme: ten are built in
+and [Tokyo Night](https://github.com/folke/tokyonight.nvim) is the default —
+see [Theme](#theme).
 
 The best match sits at the **bottom**, right above the prompt where the cursor
 already is, so the repository you most likely want costs zero keystrokes.
@@ -128,6 +136,24 @@ Visits are recorded in `$XDG_STATE_HOME/gm/frecency.json` (default
 `~/.local/state/gm/frecency.json`) and scored the way `z` and `zoxide` do —
 frequency weighted by recency, so two visits this hour outrank ten from last
 month. Entries for deleted repositories are pruned on write.
+
+## Layout
+
+```
+main.go              entry point: dispatch and exit status, nothing else
+internal/config/     gm.toml — the root setting and the theme name
+internal/repo/       Tree (the roots), Repo, the visit log, every git call
+internal/finder/     the interactive picker: model, ranking, themes
+internal/cli/        one table of subcommands, one file each
+```
+
+Dependencies run one way: `cli` and `finder` use `repo`, and `repo` uses
+`config`. The roots are resolved once per run and carried in a `repo.Tree`, so
+`gm.toml` is read a single time and every command sees the same answer.
+
+A new subcommand is one entry in `commands` (internal/cli/cli.go) plus its run
+function; the help text is generated from that table. A new theme is one entry
+in `themes` (internal/finder/theme.go).
 
 ## Differences from ghq
 
