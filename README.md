@@ -68,7 +68,7 @@ work the same in both.
 | `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories |
 | `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser |
 | `Ctrl-G` | — | Back to the repositories |
-| `Esc` | Clear the filter, else quit without printing | Back to the repositories |
+| `Esc` | Clear the query, then the filter, then quit | Back to the repositories |
 | `Ctrl-C` | Quit without printing | Quit without printing |
 
 The line under the prompt lists the keys for whichever list is up, naming the
@@ -103,11 +103,16 @@ straight there.
 `/dirty` asks git about every repository the first time it is used, in
 parallel and off the drawing thread — the list stays usable while the answer
 comes back, and the line under the prompt says `dirty only` while the filter
-is on. Typing a query narrows what the filter left. `Esc` clears the filter
-before it quits, the way it leaves the worktree list before it quits.
+is on. Typing a query narrows what the filter left.
+
+`Esc` undoes one layer of narrowing at a time — the worktree list, then the
+query, then the filter — and only quits once there is nothing left to undo.
+The hint line says which it will do next.
 
 Only a leading slash starts a command — repository paths are full of slashes,
-and `acme/alpha` keeps filtering the way it always did.
+and `acme/alpha` keeps filtering the way it always did. To act on a repository
+you just searched for, press `Esc` to empty the box and then type the command:
+clearing the query holds the selection where it is.
 
 ## 🧰 Commands
 

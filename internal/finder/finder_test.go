@@ -1188,3 +1188,55 @@ func TestHelpShowsArguments(t *testing.T) {
 		}
 	}
 }
+
+// TestFindThenActOnIt is the flow the slash commands exist for: filter down
+// to a repository, clear the box, and run a command on what is still
+// selected. Clearing must not throw the selection back to the best match.
+func TestFindThenActOnIt(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{
+		{Root: root, Rel: "github.com/jedipunkz/agx"},
+		{Root: root, Rel: "github.com/jedipunkz/gm"},
+		{Root: root, Rel: "github.com/jedipunkz/miniecs"},
+	}
+	var mm tea.Model = newTestModel(t, repos, "")
+
+	for _, r := range "agx" {
+		mm, _ = mm.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m := mm.(model)
+	if it, _ := m.current(); it.label != "github.com/jedipunkz/agx" {
+		t.Fatalf("the query selected %q", it.label)
+	}
+	if hint := stripANSI(m.helpLine(90)); !strings.Contains(hint, "esc clear") {
+		t.Errorf("the hint line does not offer to clear the query: %q", hint)
+	}
+
+	// Esc clears the query rather than quitting, and holds the selection.
+	mm, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = mm.(model)
+	if isQuit(cmd) {
+		t.Fatal("Esc quit instead of clearing the query")
+	}
+	if m.input.Value() != "" {
+		t.Errorf("the query survived: %q", m.input.Value())
+	}
+	if len(m.view) != len(repos) {
+		t.Errorf("clearing left %d rows", len(m.view))
+	}
+	if it, _ := m.current(); it.label != "github.com/jedipunkz/agx" {
+		t.Fatalf("clearing moved the selection to %q", it.label)
+	}
+
+	// And the command acts on it.
+	m, _ = runSlash(t, m, "/remove")
+	if m.result.Action != ActionRemove || m.result.Arg != repos[0].Path() {
+		t.Errorf("/remove produced %+v, want the selected repository", m.result)
+	}
+
+	// With the box empty, Esc quits as it always did.
+	empty := newTestModel(t, repos, "")
+	if _, cmd := empty.Update(tea.KeyPressMsg{Code: tea.KeyEscape}); !isQuit(cmd) {
+		t.Error("Esc should quit when there is nothing to clear")
+	}
+}

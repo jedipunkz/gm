@@ -235,10 +235,15 @@ func (m *model) filter() {
 	if isCommand(q) {
 		q = ""
 	}
-	// The cursor follows the ranking, and the ranking only moves when the
-	// query does. Typing a slash command changes the input without changing
-	// the query, and the selection has to stay where the user put it.
-	ranked := q != m.query || m.view == nil
+	// The selection follows the item, not the row number, whenever the query
+	// is not making a new ranking statement — a command being typed, or the
+	// query being cleared. Clearing it has to hold the selection still, or
+	// there is no way to find a repository and then act on it.
+	hold := m.view != nil && (q == m.query || q == "")
+	held := -1
+	if hold && m.cursor >= 0 && m.cursor < len(m.view) {
+		held = m.view[m.cursor]
+	}
 	m.query = q
 	if q == "" {
 		m.view = make([]int, len(m.all))
@@ -274,13 +279,15 @@ func (m *model) filter() {
 	}
 	m.view = m.keepDirty(m.view)
 
-	// A filter can shrink the view under the cursor.
-	if m.cursor >= len(m.view) {
-		m.cursor = len(m.view) - 1
+	if held >= 0 {
+		for i, idx := range m.view {
+			if idx == held {
+				m.cursor = i
+				return
+			}
+		}
 	}
-	if ranked {
-		m.cursor = len(m.view) - 1
-	}
+	m.cursor = len(m.view) - 1
 }
 
 // keepDirty drops the rows that have no uncommitted work, when the filter is
@@ -400,6 +407,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// is the key that opened gm in the first place.
 			if m.mode == modeWorktrees {
 				m.restore()
+				return m, m.loadStatus()
+			}
+			// Clearing the query holds the selection, so this is also how you
+			// get from a repository you found to a command that acts on it.
+			if m.input.Value() != "" {
+				m.input.SetValue("")
+				m.filter()
 				return m, m.loadStatus()
 			}
 			if m.dirtyOnly {
@@ -563,9 +577,12 @@ func (m model) helpLine(width int) string {
 
 func (m model) hints(width int) string {
 	wt := m.keys.Worktree.Short()
-	// Esc undoes the filter before it quits, so it has to say which.
+	// Esc undoes one layer of narrowing at a time, so it has to say which.
 	out := "quit"
-	if m.dirtyOnly {
+	switch {
+	case m.input.Value() != "":
+		out = "clear"
+	case m.dirtyOnly:
 		out = "show all"
 	}
 	hints := []hint{
@@ -857,6 +874,8 @@ func (m model) openWorktrees() (tea.Model, tea.Cmd) {
 	}
 	m.all = items
 	m.input.SetValue("")
+	// A different list entirely: the held selection means nothing in it.
+	m.view = nil
 	m.filter()
 	return m, m.loadStatus()
 }
