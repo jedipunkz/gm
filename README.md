@@ -119,7 +119,7 @@ and `acme/alpha` keeps filtering the way it always did. To act on a repository
 you just searched for, press `Esc` to empty the box and then type the command:
 clearing the query holds the selection where it is.
 
-## 🧰 Commands
+## 🧰 Sub Commands
 
 | Command | What it does |
 |---|---|
