@@ -245,10 +245,10 @@ func (m model) View() tea.View {
 	if rows < 3 {
 		rows = 3
 	}
-	// The info pane is the narrower half: the list is what gets scanned.
+	// The list gets the left 3/5: it is what gets scanned.
 	listW, infoW := m.w, 0
 	if m.w >= 66 {
-		infoW = min(max(m.w*30/100, 26), 40)
+		infoW = m.w * 2 / 5
 		listW = m.w - infoW - 3
 	}
 
