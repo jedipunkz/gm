@@ -114,7 +114,8 @@ func newModel(repos []repo.Repo, hist *repo.History, theme Theme) model {
 	st := theme.Styles()
 	in := textinput.New()
 	in.Prompt = "❯ "
-	in.Placeholder = "filter"
+	// No placeholder: an empty prompt says "type" clearly enough, and the
+	// virtual cursor sits on top of the first character of one anyway.
 	in.SetVirtualCursor(true)
 	in.Focus()
 	ts := textinput.DefaultDarkStyles()
@@ -123,7 +124,6 @@ func newModel(repos []repo.Repo, hist *repo.History, theme Theme) model {
 	}
 	ts.Focused.Prompt = fg(theme.Blue)
 	ts.Focused.Text = fg(theme.Fg)
-	ts.Focused.Placeholder = fg(theme.Comment)
 	in.SetStyles(ts)
 
 	m := model{

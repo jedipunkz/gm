@@ -359,3 +359,26 @@ func TestWorktreeModeLeavesTheListAloneOnError(t *testing.T) {
 		t.Errorf("a failed worktree listing changed the finder: mode=%v rows=%d", m.mode, len(m.view))
 	}
 }
+
+// TestPromptStartsEmpty guards the input box against a placeholder, which
+// reads as something the user already typed.
+func TestPromptStartsEmpty(t *testing.T) {
+	root := t.TempDir()
+	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
+	m.w, m.h = 80, 10
+
+	var prompt string
+	for _, line := range strings.Split(stripANSI(m.View().Content), "\n") {
+		if strings.Contains(line, "❯") {
+			prompt = line
+			break
+		}
+	}
+	if prompt == "" {
+		t.Fatal("the view has no prompt line")
+	}
+	_, rest, _ := strings.Cut(prompt, "❯")
+	if got := strings.TrimSpace(strings.Trim(rest, "│")); got != "" {
+		t.Errorf("the prompt starts with %q, want nothing", got)
+	}
+}
