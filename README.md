@@ -6,8 +6,10 @@ and `Ctrl-G` jumps to any of them, the most likely one already selected.
 
 ghq-style describes the tree layout only. The rest is what ghq leaves to you:
 
-- **The finder is built in**, and ranks by fuzzy match plus how often you
-  actually open a repository — no `ghq list | fzf | cd` pipeline to assemble.
+- **The finder is built in**, and it does the ranking itself: a fuzzy match
+  score first, then frecency — how recently and how often you opened a
+  repository — to break ties between equally good matches. No
+  `ghq list | fzf | cd` pipeline to assemble.
 - **The selected repository is described on screen** — path, remote, branch,
   last commit, working-tree status — before you jump to it.
 - **`Ctrl-W` lists the git worktrees** of the repository under the cursor, so a
