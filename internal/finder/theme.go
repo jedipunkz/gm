@@ -109,25 +109,31 @@ func ThemeNames() []string {
 // Styles is the theme turned into the lipgloss styles the view draws with.
 // The model owns one, so nothing about the palette is global state.
 type Styles struct {
-	Row     lipgloss.Style // an unselected row: the comment colour, lifted
-	RowSel  lipgloss.Style // the selected row
-	Hit     lipgloss.Style // matched characters
-	HitSel  lipgloss.Style // ...inside the selected row
-	Marker  lipgloss.Style // the ▸ cursor
-	Divider lipgloss.Style
-	Label   lipgloss.Style
-	Name    lipgloss.Style
-	Path    lipgloss.Style
-	Remote  lipgloss.Style
-	Branch  lipgloss.Style
-	Commit  lipgloss.Style
-	Clean   lipgloss.Style
-	Dirty   lipgloss.Style
-	Visits  lipgloss.Style
-	Dim     lipgloss.Style
-	Box     lipgloss.Style
-	Help    lipgloss.Style // the hint line's prose
-	HelpKey lipgloss.Style // the key names inside it
+	Row       lipgloss.Style // an unselected row: the comment colour, lifted
+	RowSel    lipgloss.Style // the selected row
+	Hit       lipgloss.Style // matched characters
+	HitSel    lipgloss.Style // ...inside the selected row
+	Marker    lipgloss.Style // the ▸ cursor
+	Divider   lipgloss.Style
+	Label     lipgloss.Style
+	Name      lipgloss.Style
+	Path      lipgloss.Style
+	Remote    lipgloss.Style
+	Branch    lipgloss.Style
+	Commit    lipgloss.Style // a commit hash
+	Subject   lipgloss.Style // a commit subject
+	RefHead   lipgloss.Style // HEAD in the decorations
+	RefLocal  lipgloss.Style // a local branch
+	RefRemote lipgloss.Style // a remote-tracking branch
+	RefTag    lipgloss.Style // a tag
+	Punct     lipgloss.Style // the parentheses and commas between them
+	Clean     lipgloss.Style
+	Dirty     lipgloss.Style
+	Visits    lipgloss.Style
+	Dim       lipgloss.Style
+	Box       lipgloss.Style
+	Help      lipgloss.Style // the hint line's prose
+	HelpKey   lipgloss.Style // the key names inside it
 }
 
 func fg(hex string) lipgloss.Style {
@@ -164,22 +170,28 @@ func (t Theme) Styles() Styles {
 		return fg(hex).Background(lipgloss.Color(t.BgHi)).Bold(true)
 	}
 	return Styles{
-		Row:     fg(blend(t.Comment, t.Fg, rowLift)),
-		RowSel:  on(t.Fg),
-		Hit:     fg(t.Orange).Bold(true),
-		HitSel:  on(t.Orange),
-		Marker:  on(t.Blue),
-		Divider: fg(t.Border),
-		Label:   fg(t.Comment),
-		Name:    fg(t.Blue).Bold(true),
-		Path:    fg(t.Green),
-		Remote:  fg(t.Cyan),
-		Branch:  fg(t.Magenta),
-		Commit:  fg(t.Yellow),
-		Clean:   fg(t.Green),
-		Dirty:   fg(t.Red),
-		Visits:  fg(t.Orange),
-		Dim:     fg(t.Comment),
+		Row:       fg(blend(t.Comment, t.Fg, rowLift)),
+		RowSel:    on(t.Fg),
+		Hit:       fg(t.Orange).Bold(true),
+		HitSel:    on(t.Orange),
+		Marker:    on(t.Blue),
+		Divider:   fg(t.Border),
+		Label:     fg(t.Comment),
+		Name:      fg(t.Blue).Bold(true),
+		Path:      fg(t.Green),
+		Remote:    fg(t.Cyan),
+		Branch:    fg(t.Magenta),
+		Commit:    fg(t.Yellow),
+		Subject:   fg(t.Fg),
+		RefHead:   fg(t.Cyan).Bold(true),
+		RefLocal:  fg(t.Green).Bold(true),
+		RefRemote: fg(t.Red),
+		RefTag:    fg(t.Yellow).Bold(true),
+		Punct:     fg(t.Comment),
+		Clean:     fg(t.Green),
+		Dirty:     fg(t.Red),
+		Visits:    fg(t.Orange),
+		Dim:       fg(t.Comment),
 		Box: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(t.Border)),

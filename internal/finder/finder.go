@@ -554,7 +554,6 @@ func (m model) infoLines(w int) []string {
 		field("remote", s.Remote, m.st.Remote)
 	}
 	field("branch", s.Branch, m.st.Branch)
-	field("last commit", s.Commit, m.st.Commit)
 	if s.Dirty > 0 {
 		field("status", fmt.Sprintf("%d changed", s.Dirty), m.st.Dirty)
 	} else {
@@ -567,8 +566,91 @@ func (m model) infoLines(w int) []string {
 			field("visits", "never", m.st.Dim)
 		}
 	}
+
+	// Last, because the pane is clipped from the bottom: on a short terminal
+	// the commits go before the name, the path or the status do.
+	if len(s.Commits) == 0 {
+		field("last commit", "", m.st.Commit)
+		return out
+	}
+	label := "last commits"
+	if len(s.Commits) == 1 {
+		label = "last commit"
+	}
+	out = append(out, m.st.Label.Render(label))
+	for _, c := range s.Commits {
+		out = append(out, m.commitLine(c, w))
+	}
 	return out
 }
+
+// commitLine draws one commit the way `git log --oneline --decorate` does:
+// the hash, then the refs pointing at it, then the subject. It is clipped
+// rather than wrapped, so five commits stay five lines however long one
+// subject is.
+func (m model) commitLine(c repo.Commit, w int) string {
+	segs := []seg{{c.Hash, m.st.Commit}}
+	if len(c.Refs) > 0 {
+		segs = append(segs, seg{" (", m.st.Punct})
+		for i, r := range c.Refs {
+			if i > 0 {
+				segs = append(segs, seg{", ", m.st.Punct})
+			}
+			segs = append(segs, seg{r.Name, m.refStyle(r.Kind)})
+		}
+		segs = append(segs, seg{")", m.st.Punct})
+	}
+	segs = append(segs, seg{" " + c.Subject, m.st.Subject})
+	return clip(segs, w)
+}
+
+func (m model) refStyle(k repo.RefKind) lipgloss.Style {
+	switch k {
+	case repo.RefHead:
+		return m.st.RefHead
+	case repo.RefRemote:
+		return m.st.RefRemote
+	case repo.RefTag:
+		return m.st.RefTag
+	default:
+		return m.st.RefLocal
+	}
+}
+
+// seg is a run of text with one style, the unit clip counts in.
+type seg struct {
+	text  string
+	style lipgloss.Style
+}
+
+// clip renders the segments up to w columns, marking a cut with an ellipsis.
+// The head is kept: a commit line starts with its hash and the beginning of
+// its subject, which is what identifies it.
+func clip(segs []seg, w int) string {
+	if w <= 1 {
+		return ""
+	}
+	var b strings.Builder
+	left := w
+	for _, s := range segs {
+		r := []rune(s.text)
+		if len(r) <= left {
+			b.WriteString(s.style.Render(s.text))
+			left -= len(r)
+			continue
+		}
+		if left > 1 {
+			b.WriteString(s.style.Render(string(r[:left-1])))
+		}
+		b.WriteString(m0.Render("…"))
+		return b.String()
+	}
+	return b.String()
+}
+
+// m0 renders the ellipsis clip leaves behind, in no particular colour: it
+// belongs to the pane, not to the text it cut.
+var m0 = lipgloss.NewStyle()
 
 // openWorktrees replaces the repository list with the checkouts of the
 // selected repository. A repository git cannot answer for is left alone: the
