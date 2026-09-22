@@ -13,13 +13,15 @@ import (
 
 // Config mirrors gm.toml.
 //
-//	root  = "~/ghq"          # or ["~/ghq", "~/src"], searched in order
-//	theme = "tokyonight"
+//	root    = "~/ghq"          # or ["~/ghq", "~/src"], searched in order
+//	theme   = "tokyonight"
+//	keybind = "ctrl-g"
 //
 // Root stays untyped because it takes either form; Roots resolves it.
 type Config struct {
-	Root  any    `toml:"root"`
-	Theme string `toml:"theme"`
+	Root    any    `toml:"root"`
+	Theme   string `toml:"theme"`
+	Keybind string `toml:"keybind"`
 }
 
 // Path is where gm looks for its settings:
