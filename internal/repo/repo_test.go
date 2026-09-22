@@ -3,6 +3,7 @@ package repo
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -308,5 +309,66 @@ func TestFindReposAndContains(t *testing.T) {
 		if got := tree.Contains(path); got != want {
 			t.Errorf("Contains(%q) = %v, want %v", path, got, want)
 		}
+	}
+}
+
+func TestParseCommits(t *testing.T) {
+	const nul = "\x00"
+	out := strings.Join([]string{
+		"b1b7b91" + nul + "HEAD -> feat/migrate-scan, origin/feat/migrate-scan" + nul + "refactor: name the flag -r",
+		"06f966e" + nul + "" + nul + "feat: add gm migrate -r",
+		"d7f3a4c" + nul + "tag: v1.2.0, origin/main, main, release/main" + nul + "Merge pull request #24",
+	}, "\n")
+
+	got := parseCommits(out, []string{"origin"})
+	if len(got) != 3 {
+		t.Fatalf("parseCommits() = %v, want 3 commits", got)
+	}
+
+	if got[0].Hash != "b1b7b91" || got[0].Subject != "refactor: name the flag -r" {
+		t.Errorf("first commit = %+v", got[0])
+	}
+	// "HEAD -> branch" is two decorations, coloured differently.
+	want := []Ref{
+		{Name: "HEAD", Kind: RefHead},
+		{Name: "feat/migrate-scan", Kind: RefLocal},
+		{Name: "origin/feat/migrate-scan", Kind: RefRemote},
+	}
+	if len(got[0].Refs) != len(want) {
+		t.Fatalf("first commit refs = %+v, want %+v", got[0].Refs, want)
+	}
+	for i, w := range want {
+		if got[0].Refs[i] != w {
+			t.Errorf("ref %d = %+v, want %+v", i, got[0].Refs[i], w)
+		}
+	}
+
+	if len(got[1].Refs) != 0 {
+		t.Errorf("an undecorated commit got refs: %+v", got[1].Refs)
+	}
+
+	// A local branch whose name starts with a slash-separated segment is not
+	// a remote one: only the configured remotes make it remote.
+	kinds := map[string]RefKind{}
+	for _, r := range got[2].Refs {
+		kinds[r.Name] = r.Kind
+	}
+	for name, want := range map[string]RefKind{
+		"tag: v1.2.0":  RefTag,
+		"origin/main":  RefRemote,
+		"main":         RefLocal,
+		"release/main": RefLocal,
+	} {
+		if kinds[name] != want {
+			t.Errorf("%q classified as %v, want %v", name, kinds[name], want)
+		}
+	}
+
+	if got := parseCommits("", nil); got != nil {
+		t.Errorf("parseCommits(\"\") = %v, want nil", got)
+	}
+	// A line git could not format is dropped, not turned into a bad row.
+	if got := parseCommits("no separators here", nil); len(got) != 0 {
+		t.Errorf("parseCommits(junk) = %v", got)
 	}
 }

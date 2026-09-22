@@ -3,6 +3,7 @@ package repo
 import (
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -40,11 +41,16 @@ func GitConfigAll(key string) []string {
 // Status is what git says about a working copy. Every field is best-effort:
 // a repository git cannot read still has to be listed and jumped to.
 type Status struct {
-	Remote string
-	Branch string
-	Commit string // "<hash>  <relative date>  <subject>"
-	Dirty  int    // changed files
+	Remote  string
+	Branch  string
+	Commits []Commit // newest first
+	Dirty   int      // changed files
 }
+
+// recentCommits is how many commits Describe collects. It is what fits beside
+// a repository list on an ordinary terminal; the pane draws fewer when it is
+// short of height.
+const recentCommits = 5
 
 // Describe collects the status of one working copy. It shells out four times,
 // so callers keep it off any hot path.
@@ -52,11 +58,125 @@ func Describe(dir string) Status {
 	var s Status
 	s.Branch, _ = GitIn(dir, "rev-parse", "--abbrev-ref", "HEAD")
 	s.Remote, _ = GitIn(dir, "remote", "get-url", "origin")
-	s.Commit, _ = GitIn(dir, "log", "-1", "--format=%h  %cr  %s")
+	s.Commits = commits(dir)
 	if out, err := GitIn(dir, "status", "--porcelain"); err == nil && out != "" {
 		s.Dirty = len(strings.Split(out, "\n"))
 	}
 	return s
+}
+
+// Commit is one line of the log, split so the details pane can colour its
+// parts the way `git log --oneline --decorate` does.
+type Commit struct {
+	Hash    string
+	Refs    []Ref // the decorations, in the order git printed them
+	Subject string
+}
+
+// RefKind says how a decoration reads. git gives each kind its own colour,
+// and so does the finder.
+type RefKind int
+
+const (
+	RefLocal  RefKind = iota // a branch in this repository
+	RefHead                  // HEAD itself
+	RefRemote                // a remote-tracking branch
+	RefTag                   // a tag
+)
+
+// Ref is one decoration, named as git prints it ("main", "origin/main",
+// "tag: v1.0").
+type Ref struct {
+	Name string
+	Kind RefKind
+}
+
+// commits reads the newest commits and their decorations.
+func commits(dir string) []Commit {
+	out, err := GitIn(dir, "log", "-n", strconv.Itoa(recentCommits),
+		"--format=%h"+commitFormatSep+"%D"+commitFormatSep+"%s")
+	if err != nil {
+		return nil
+	}
+	return parseCommits(out, remoteNames(dir))
+}
+
+// remoteNames lists the configured remotes. Without them "origin/main" and a
+// local branch called "release/main" look alike: both are a name with a
+// slash in it.
+func remoteNames(dir string) []string {
+	out, err := GitIn(dir, "remote")
+	if err != nil || out == "" {
+		return nil
+	}
+	return strings.Split(out, "\n")
+}
+
+// The fields of one log line are separated by a NUL, which cannot appear in a
+// hash, a ref name or a subject. commitFormatSep is git's own escape for it,
+// written in the --format argument; a real NUL there would truncate the
+// argument on the way to exec. commitSep is the byte git then emits.
+const (
+	commitFormatSep = "%x00"
+	commitSep       = "\x00"
+)
+
+// parseCommits reads the lines commits asked git for. A line git could not
+// format is dropped rather than shown half-parsed.
+func parseCommits(out string, remotes []string) []Commit {
+	if out == "" {
+		return nil
+	}
+	var list []Commit
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.SplitN(line, commitSep, 3)
+		if len(f) != 3 {
+			continue
+		}
+		list = append(list, Commit{
+			Hash:    f[0],
+			Refs:    parseRefs(f[1], remotes),
+			Subject: f[2],
+		})
+	}
+	return list
+}
+
+// parseRefs reads git's %D decoration list: comma-separated names, where the
+// checked-out branch appears as "HEAD -> name" and a tag as "tag: name".
+func parseRefs(d string, remotes []string) []Ref {
+	d = strings.TrimSpace(d)
+	if d == "" {
+		return nil
+	}
+	var refs []Ref
+	for _, part := range strings.Split(d, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if head, branch, found := strings.Cut(part, " -> "); found {
+			refs = append(refs, Ref{Name: strings.TrimSpace(head), Kind: RefHead})
+			part = strings.TrimSpace(branch)
+		}
+		refs = append(refs, Ref{Name: part, Kind: refKind(part, remotes)})
+	}
+	return refs
+}
+
+func refKind(name string, remotes []string) RefKind {
+	switch {
+	case name == "HEAD":
+		return RefHead
+	case strings.HasPrefix(name, "tag: "):
+		return RefTag
+	}
+	for _, r := range remotes {
+		if r != "" && strings.HasPrefix(name, r+"/") {
+			return RefRemote
+		}
+	}
+	return RefLocal
 }
 
 // IsDirty reports whether the working copy has uncommitted changes.
