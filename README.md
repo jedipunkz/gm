@@ -1,22 +1,30 @@
 # gm
 
-A [ghq](https://github.com/x-motemen/ghq)-style repository. `Ctrl-G` jumps to any of repositories, worktrees.
+A [ghq](https://github.com/x-motemen/ghq)-style repository manager with a
+built-in fuzzy finder. Clones land in one predictable `host/user/repo` tree,
+and `Ctrl-G` jumps to any of them — or to any of their git worktrees.
 
 ## ✨ Advantages over ghq
 
-- **The finder does the ranking itself** — a fuzzy match score first, then
-  frecency (how recently and how often you opened a repository) to break ties
-  between equally good matches.
-- **The finder is built in** — no `ghq list | fzf | cd` pipeline to assemble.
+- **The finder is built in** — no `ghq list | fzf | cd` pipeline to assemble,
+  and the best match is the row at the bottom, next to the prompt where the
+  cursor already rests, so the usual choice costs zero keystrokes.
+- **It ranks matches itself** — a fuzzy score first, then frecency (how
+  recently and how often you opened a repository) to break ties between equally
+  good matches. See [Ranking](#-ranking).
 - **The selected repository is described on screen** — path, remote, branch,
-  last commit, working-tree status — before you jump to it.
-- **`Ctrl-W` lists the git worktrees** of the repository under the cursor, so a
-  worktree is as reachable as a clone.
-- **Settings live in `gm.toml`** — roots, theme, key bindings — while
-  `$GHQ_ROOT` and `ghq.root` are still honored, so an existing ghq tree works
-  untouched.
+  last commit, working-tree status, visit count — so you can tell two similarly
+  named clones apart before jumping.
+- **Worktrees are first-class** — `Ctrl-W` swaps the list for the git worktrees
+  of the repository under the cursor; ghq only knows about clones.
+- **Settings live in `gm.toml`** — roots, theme, key bindings; ghq configures
+  itself only through `git config`. `$GHQ_ROOT` and `ghq.root` are still
+  honored, so an existing ghq tree needs no migration.
+- **`gm create` sets up `origin`**, which ghq leaves to you.
 
-[Differences from ghq](#-differences-from-ghq) has the full list.
+Not implemented, deliberately: Mercurial/Subversion/Darcs cloning (they are
+still *listed*), bare clones, partial clones, parallel import, `--vcs`, and
+`ghq.<url>.root` per-URL roots.
 
 ## 📋 Requirements
 
@@ -32,29 +40,14 @@ go install github.com/jedipunkz/gm@latest
 
 ## 🐚 Shell integration
 
-`gm` with no arguments opens the finder and prints the chosen path on stdout;
-the TUI draws on stderr, so it composes with `$(...)`. One binding per shell
-turns that into a `cd` on `Ctrl-G`, or on whatever `launch_key` says.
-
-### fish
-
-```fish
-# ~/.config/fish/config.fish
-gm shell fish | source
-```
-
-### zsh
+`gm` with no arguments opens the finder and prints the chosen path, so it
+composes with `$(...)`. One line in your rc file turns that into a `cd` on
+`Ctrl-G`, or on whatever `launch_key` says.
 
 ```sh
-# ~/.zshrc
-eval "$(gm shell zsh)"
-```
-
-### bash
-
-```sh
-# ~/.bashrc
-eval "$(gm shell bash)"
+gm shell fish | source    # ~/.config/fish/config.fish
+eval "$(gm shell zsh)"    # ~/.zshrc
+eval "$(gm shell bash)"   # ~/.bashrc
 ```
 
 ## ⌨️ Keys
@@ -75,10 +68,10 @@ work the same in both.
 | `Esc` | Quit without printing | Back to the repositories |
 | `Ctrl-C` | Quit without printing | Quit without printing |
 
-The line under the prompt lists the keys for whichever list is up. Going back
-keeps the query, the cursor and the highlights as they were. The
-best match is the row at the bottom, next to the prompt; in the worktree list
-that row is the main worktree.
+The line under the prompt lists the keys for whichever list is up, naming the
+chords you configured. Going back keeps the query, the cursor and the
+highlights as they were. The best match is the row at the bottom; in the
+worktree list that row is the main worktree.
 
 Everything else is ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U` and so
 on), except `Ctrl-W`, which no longer deletes the word before the cursor.
@@ -101,10 +94,9 @@ on), except `Ctrl-W`, which no longer deletes the word before the cursor.
 
 ## ⚙️ Configuration
 
-`~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) is optional; a file
-that cannot be parsed — or that holds a key `gm` does not know — stops `gm`
-rather than letting it clone somewhere unexpected or quietly ignore half the
-file.
+`~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) is optional. A file
+that cannot be parsed, or that holds a key `gm` does not know, is an error
+rather than a file half ignored.
 
 ```toml
 root         = "~/ghq"       # or ["~/ghq", "~/src"], searched in order
@@ -125,23 +117,15 @@ The root is resolved in this order, so an existing ghq tree works untouched:
 
 ### Themes
 
-- `tokyonight` (default)
-- `solarized-dark`
-- `solarized-light`
-- `kanagawa-wave`
-- `catppuccin-latte`
-- `catppuccin-frappe`
-- `catppuccin-macchiato`
-- `catppuccin-mocha`
-- `rose-pine`
-- `dracula`
-
-An unknown name is an error listing the valid ones.
+`tokyonight` (default), `solarized-dark`, `solarized-light`, `kanagawa-wave`,
+`catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato`,
+`catppuccin-mocha`, `rose-pine`, `dracula`. An unknown name is an error listing
+the valid ones.
 
 ### Key bindings
 
-`launch_key` is the chord `gm shell` binds; `worktree_key` and `remote_key`
-are the finder's own. Ctrl is written `ctrl-`, `ctrl+`, `c-` or `^`, and the
+`launch_key` is the chord `gm shell` binds; `worktree_key` and `remote_key` are
+the finder's own. Ctrl is written `ctrl-`, `ctrl+`, `c-` or `^`, and the
 finder's two also take `alt` and `shift` after it, in any order —
 `ctrl-alt-b`, `c-a-b`, `ctrl-shift-b`, `ctrl-alt-shift-b`. Anything else is an
 error rather than a binding that quietly does nothing.
@@ -149,13 +133,9 @@ error rather than a binding that quietly does nothing.
 After changing `launch_key`, re-run `gm shell <shell>` (or restart the shell,
 if you source it from your rc file). Some chords are already taken: `ctrl-r` is
 reverse history search, and `ctrl-c`, `ctrl-d` and `ctrl-z` are terminal
-signals.
-
-`worktree_key` and `remote_key` cannot be `ctrl-c`, `ctrl-n` or `ctrl-p`,
-which the finder uses to quit and to move, and cannot both be the same chord.
-`launch_key` must be a plain Ctrl chord: the shell snippets bind a control
-character, which is all a plain chord is. The hint line under the prompt
-always names the chords you configured.
+signals. `worktree_key` and `remote_key` cannot be `ctrl-c`, `ctrl-n` or
+`ctrl-p`, which the finder uses to quit and to move, and cannot both be the
+same chord, and `launch_key` must be a plain Ctrl chord.
 
 How far a chord travels depends on the terminal:
 
@@ -167,41 +147,13 @@ How far a chord travels depends on the terminal:
 
 ## 🎯 Ranking
 
-Typing filters by fuzzy match: word boundaries and consecutive characters earn
-points, gaps cost them, the repository name outweighs the user name, and the
-shared `host` segment counts against a match. A literal substring always beats
-a subsequence pieced together from elsewhere.
+Typing filters by fuzzy match, scored so that a literal substring beats a
+subsequence pieced together from elsewhere, and the repository name counts for
+more than the user name.
 
-Visits are recorded in `$XDG_STATE_HOME/gm/frecency.json` (default
-`~/.local/state/gm/frecency.json`) and weighted by recency the way `z` and
-`zoxide` do. Frecency only breaks ties between equally good matches. Entries
-for deleted repositories are pruned on write.
-
-ghq has nothing like this: `ghq list` prints the tree in directory order and
-leaves the choosing to whatever you pipe it into, so the repository you open
-every day is as far from the cursor as the one you cloned once and forgot.
-
-## 🆚 Differences from ghq
-
-- **A finder is built in.** No `ghq list | fzf | cd` pipeline to assemble, and
-  the ranking knows which repositories you actually use, not just which ones
-  match what you typed (see [Ranking](#-ranking)).
-- **The best match is at the bottom**, next to the prompt where the cursor
-  already rests, so the usual choice costs zero keystrokes.
-- **The details of the selected repository are on screen** — path, remote,
-  branch, last commit, working-tree status, visit count — so you can tell two
-  similarly named clones apart before jumping.
-- **Settings live in a file.** `gm.toml` holds the roots and the theme; ghq
-  configures itself only through `git config`.
-- **It reads ghq's own settings.** `$GHQ_ROOT` and `ghq.root` are honored, so
-  an existing tree needs no migration.
-- **Worktrees are first-class.** `Ctrl-W` swaps the list for the git worktrees
-  of the repository under the cursor; ghq only knows about clones.
-- **`gm create` sets up `origin`**, which ghq leaves to you.
-
-Not implemented, deliberately: Mercurial/Subversion/Darcs cloning (they are
-still *listed*), bare clones, partial clones, parallel import, `--vcs`, and
-`ghq.<url>.root` per-URL roots.
+Frecency only breaks ties between equally good matches. Visits are recorded in
+`$XDG_STATE_HOME/gm/frecency.json` (default
+`~/.local/state/gm/frecency.json`); delete it to start over.
 
 ## 📄 License
 
