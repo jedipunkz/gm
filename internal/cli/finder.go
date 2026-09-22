@@ -27,9 +27,14 @@ func (a *app) finder() error {
 	if err != nil {
 		return err
 	}
+	remoteKey, err := config.ParseChord(a.cfg.RemoteKey, finder.DefaultRemoteKey)
+	if err != nil {
+		return err
+	}
+	keys := finder.Keys{Worktree: worktreeKey, Remote: remoteKey}
 
 	hist := repo.LoadHistory()
-	chosen, err := finder.Run(repos, hist, theme, worktreeKey)
+	chosen, err := finder.Run(repos, hist, theme, keys)
 	if err != nil || chosen == "" {
 		return err
 	}

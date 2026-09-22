@@ -65,9 +65,11 @@ func TestShellSnippetsBindTheConfiguredKey(t *testing.T) {
 
 	// An unusable key must stop gm rather than print a binding that silently
 	// does nothing.
-	a := &app{cfg: config.Config{LaunchKey: "alt-r"}}
-	if err := a.shell([]string{"zsh"}); err == nil {
-		t.Error("an unsupported chord should be an error")
+	for _, bad := range []string{"alt-r", "ctrl-shift-b", "ctrl-alt-b"} {
+		a := &app{cfg: config.Config{LaunchKey: bad}}
+		if err := a.shell([]string{"zsh"}); err == nil {
+			t.Errorf("gm shell accepted %s", bad)
+		}
 	}
 }
 

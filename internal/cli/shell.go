@@ -22,6 +22,11 @@ func (a *app) shell(args []string) error {
 	if err != nil {
 		return err
 	}
+	// The snippets bind a control character, which is all a plain Ctrl chord
+	// is. Printing a binding that cannot fire is worse than refusing.
+	if !k.Plain() {
+		return fmt.Errorf("launch_key cannot be %s: use a plain Ctrl chord, such as ctrl-g", k.Display)
+	}
 	fmt.Print(strings.NewReplacer(
 		"{{key}}", string(k.Letter),
 		"{{name}}", k.Display,

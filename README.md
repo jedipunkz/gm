@@ -56,6 +56,7 @@ work the same in both.
 | `↓` / `Ctrl-N` | Move down | Move down |
 | `Enter` | Print the repository path and exit | Print the worktree path and exit |
 | `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories |
+| `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser |
 | `Ctrl-G` | — | Back to the repositories |
 | `Esc` | Quit without printing | Back to the repositories |
 | `Ctrl-C` | Quit without printing | Quit without printing |
@@ -94,8 +95,9 @@ file.
 ```toml
 root         = "~/ghq"       # or ["~/ghq", "~/src"], searched in order
 theme        = "tokyonight"
-launch_key   = "ctrl-g"      # the shell key that opens gm
-worktree_key = "ctrl-w"      # the finder key that lists worktrees
+launch_key   = "ctrl-g"        # the shell key that opens gm
+worktree_key = "ctrl-w"        # the finder key that lists worktrees
+remote_key   = "ctrl-alt-b"    # the finder key that opens the remote
 ```
 
 The root is resolved in this order, so an existing ghq tree works untouched:
@@ -124,19 +126,30 @@ An unknown name is an error listing the valid ones.
 
 ### Key bindings
 
-`launch_key` is the chord `gm shell` binds, and `worktree_key` the one that
-opens the worktree list inside the finder. Both are written as `ctrl-g`,
-`ctrl+g`, `c-g` or `^g`; anything else is an error rather than a binding that
-quietly does nothing.
+`launch_key` is the chord `gm shell` binds; `worktree_key` and `remote_key`
+are the finder's own. Ctrl is written `ctrl-`, `ctrl+`, `c-` or `^`, and the
+finder's two also take `alt` and `shift` after it, in any order —
+`ctrl-alt-b`, `c-a-b`, `ctrl-shift-b`, `ctrl-alt-shift-b`. Anything else is an
+error rather than a binding that quietly does nothing.
 
 After changing `launch_key`, re-run `gm shell <shell>` (or restart the shell,
 if you source it from your rc file). Some chords are already taken: `ctrl-r` is
 reverse history search, and `ctrl-c`, `ctrl-d` and `ctrl-z` are terminal
 signals.
 
-`worktree_key` cannot be `ctrl-c`, `ctrl-n` or `ctrl-p`, which the finder uses
-to quit and to move. The hint line under the prompt always names the chord you
-configured.
+`worktree_key` and `remote_key` cannot be `ctrl-c`, `ctrl-n` or `ctrl-p`,
+which the finder uses to quit and to move, and cannot both be the same chord.
+`launch_key` must be a plain Ctrl chord: the shell snippets bind a control
+character, which is all a plain chord is. The hint line under the prompt
+always names the chords you configured.
+
+How far a chord travels depends on the terminal:
+
+| Chord | Reaches `gm` |
+|---|---|
+| `ctrl-<letter>` | Everywhere |
+| `ctrl-alt-<letter>` | Nearly everywhere: Alt is sent as an ESC prefix |
+| `ctrl-shift-<letter>` | Only with the Kitty keyboard protocol — Ghostty, kitty, WezTerm, foot, recent Alacritty. Elsewhere it arrives as plain `ctrl-<letter>` |
 
 ## Ranking
 

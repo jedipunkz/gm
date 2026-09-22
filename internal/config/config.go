@@ -19,6 +19,7 @@ import (
 //	theme        = "tokyonight"
 //	launch_key   = "ctrl-g"    # the shell key that opens gm
 //	worktree_key = "ctrl-w"    # the finder key that lists worktrees
+//	remote_key   = "ctrl-alt-b"  # the finder key that opens the remote
 //
 // Root stays untyped because it takes either form; Roots resolves it.
 type Config struct {
@@ -26,6 +27,7 @@ type Config struct {
 	Theme       string `toml:"theme"`
 	LaunchKey   string `toml:"launch_key"`
 	WorktreeKey string `toml:"worktree_key"`
+	RemoteKey   string `toml:"remote_key"`
 }
 
 // Path is where gm looks for its settings:
