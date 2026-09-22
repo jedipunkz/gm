@@ -9,7 +9,11 @@ import (
 	"github.com/jedipunkz/gm/internal/cli"
 )
 
+// version is stamped in at release time with -ldflags -X main.version=...
+var version = "dev"
+
 func main() {
+	cli.Version = version
 	log.SetFlags(0)
 	log.SetPrefix("gm: ")
 

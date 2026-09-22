@@ -31,15 +31,26 @@ still *listed*), bare clones, partial clones, parallel import, `--vcs`, and
 
 ## 📋 Requirements
 
-- Go 1.25 or newer, to build or `go install`
 - `git` on `$PATH`
+- Go 1.25 or newer, only to build it yourself
 - A true-color terminal, for the finder's themes to look as intended
 
 ## 📦 Install
 
+Homebrew, on macOS or Linux. No Go needed: the formula downloads the binary
+for your platform.
+
+```sh
+brew install jedipunkz/gm/gm
+```
+
+Or from source, which does need Go:
+
 ```sh
 go install github.com/jedipunkz/gm@latest
 ```
+
+Either way, `gm version` says which one you have.
 
 ## 🐚 Shell integration
 

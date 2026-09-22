@@ -35,6 +35,7 @@ var commands = []command{
 	{name: "create", aliases: []string{"new"}, usage: "create [-p] <repo>", run: (*app).create},
 	{name: "migrate", usage: "migrate [--dry-run] [-y] [-r] <directory>...", run: (*app).migrate},
 	{name: "root", usage: "root [--all]", run: (*app).root},
+	{name: "version", usage: "version", run: (*app).version},
 	{name: "shell", usage: "shell <fish|zsh|bash>          print the Ctrl-G key binding", run: (*app).shell},
 }
 
@@ -58,6 +59,8 @@ func Run(args []string) error {
 	case "-h", "--help", "help":
 		fmt.Print(Usage())
 		return nil
+	case "-v", "--version":
+		return a.version(nil)
 	}
 	for _, c := range commands {
 		if args[0] == c.name || contains(c.aliases, args[0]) {
@@ -75,6 +78,14 @@ var errUnknownCommand = fmt.Errorf("unknown command")
 // IsUsageError reports whether an error means "the arguments were wrong",
 // which gm answers with exit status 2 rather than a message.
 func IsUsageError(err error) bool { return err == errUnknownCommand }
+
+// Version is what gm reports for itself, stamped in at release time.
+var Version = "dev"
+
+func (a *app) version(_ []string) error {
+	fmt.Println("gm " + Version)
+	return nil
+}
 
 // Usage is gm's help text, built from the command table so it cannot drift
 // away from what actually runs.
