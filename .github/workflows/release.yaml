@@ -1,10 +1,17 @@
-# Cuts a release from a tag: binaries for macOS and Linux, and the Homebrew
-# formula that points at them.
+# Cuts a release on demand: pick which part of the version to increment, and
+# this works out the tag, makes it, and builds from it. Nobody has to remember
+# what the last version was, or type it correctly.
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version to increment
+        type: choice
+        required: true
+        default: patch
+        options: [patch, minor, major]
 
 permissions:
   contents: write
@@ -13,10 +20,56 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Releases come from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "refusing to release from ${{ github.ref }}" >&2
+          exit 1
+
       - uses: actions/checkout@v7
         with:
-          # goreleaser builds the changelog from the history.
+          # The whole history and every tag: one to work the version out from,
+          # the rest for the changelog.
           fetch-depth: 0
+
+      - name: The tap token has to be set
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not set: the formula could not be written." >&2
+            echo "Add a fine-grained PAT with Contents: write on jedipunkz/homebrew-gm." >&2
+            exit 1
+          fi
+
+      - name: Work out the next version
+        id: version
+        run: |
+          set -euo pipefail
+          latest=$(git tag --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          : "${latest:=v0.0.0}"
+          IFS=. read -r major minor patch <<<"${latest#v}"
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          # No check that the tag is free: it is always above the highest
+          # one there is, and two runs at once collide on the push instead.
+          next="v$major.$minor.$patch"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          echo "$latest -> **$next**" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tag it
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
 
       - uses: actions/setup-go@v7
         with:
