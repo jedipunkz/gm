@@ -1,10 +1,8 @@
 # gm
 
-A [ghq](https://github.com/x-motemen/ghq)-style repository manager with a
-built-in fuzzy finder. Clones land in one predictable `host/user/repo` tree,
-and `Ctrl-G` jumps to any of them, the most likely one already selected.
+A [ghq](https://github.com/x-motemen/ghq)-style repository. `Ctrl-G` jumps to any of repositories, worktrees.
 
-ghq-style describes the tree layout only. The rest is what ghq leaves to you:
+## Advantages over ghq
 
 - **The finder is built in**, and ranks by fuzzy match plus how often you
   actually open a repository — no `ghq list | fzf | cd` pipeline to assemble.
