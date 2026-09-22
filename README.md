@@ -4,6 +4,20 @@ A [ghq](https://github.com/x-motemen/ghq)-style repository manager with a
 built-in fuzzy finder. Clones land in one predictable `host/user/repo` tree,
 and `Ctrl-G` jumps to any of them, the most likely one already selected.
 
+ghq-style describes the tree layout only. The rest is what ghq leaves to you:
+
+- **The finder is built in**, and ranks by fuzzy match plus how often you
+  actually open a repository — no `ghq list | fzf | cd` pipeline to assemble.
+- **The selected repository is described on screen** — path, remote, branch,
+  last commit, working-tree status — before you jump to it.
+- **`Ctrl-W` lists the git worktrees** of the repository under the cursor, so a
+  worktree is as reachable as a clone.
+- **Settings live in `gm.toml`** — roots, theme, key bindings — while
+  `$GHQ_ROOT` and `ghq.root` are still honored, so an existing ghq tree works
+  untouched.
+
+[Differences from ghq](#differences-from-ghq) has the full list.
+
 ## Requirements
 
 - Go 1.25 or newer, to build or `go install`
@@ -181,6 +195,8 @@ every day is as far from the cursor as the one you cloned once and forgot.
   configures itself only through `git config`.
 - **It reads ghq's own settings.** `$GHQ_ROOT` and `ghq.root` are honored, so
   an existing tree needs no migration.
+- **Worktrees are first-class.** `Ctrl-W` swaps the list for the git worktrees
+  of the repository under the cursor; ghq only knows about clones.
 - **`gm create` sets up `origin`**, which ghq leaves to you.
 
 Not implemented, deliberately: Mercurial/Subversion/Darcs cloning (they are
