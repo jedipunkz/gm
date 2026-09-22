@@ -3,7 +3,10 @@
 A [ghq](https://github.com/x-motemen/ghq)-style repository. `Ctrl-G` jumps to any of repositories, worktrees.
 
 ## Advantages over ghq
-- **The ranks** by fuzzy match plus how often you actually open a repository
+
+- **The finder does the ranking itself** — a fuzzy match score first, then
+  frecency (how recently and how often you opened a repository) to break ties
+  between equally good matches.
 - **The finder is built in** — no `ghq list | fzf | cd` pipeline to assemble.
 - **The selected repository is described on screen** — path, remote, branch,
   last commit, working-tree status — before you jump to it.
