@@ -285,7 +285,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
-	rows := m.h - 3 // the bordered input box
+	rows := m.h - 4 // the bordered input box, plus the hint line under it
 	if rows < 3 {
 		rows = 3
 	}
@@ -336,10 +336,42 @@ func (m model) View() tea.View {
 		b.WriteString(lines[i] + m.st.Divider.Render(" │ ") + info[i] + "\n")
 	}
 	b.WriteString(m.st.Box.Width(m.w - 2).Render(m.input.View()))
+	b.WriteString("\n " + m.helpLine(m.w-1))
 
 	v := tea.NewView(b.String())
 	v.AltScreen = true
 	return v
+}
+
+// hint is one key and what it does, for the line under the prompt.
+type hint struct{ key, what string }
+
+// helpLine draws the key hints, dropping the ones that do not fit rather than
+// wrapping onto a second line.
+func (m model) helpLine(width int) string {
+	hints := []hint{{"↑↓", "move"}, {"enter", "jump"}, {"ctrl-w", "worktrees"}, {"esc", "quit"}}
+	if m.mode == modeWorktrees {
+		hints = []hint{{"↑↓", "move"}, {"enter", "jump"}, {"ctrl-w", "repos"}, {"esc", "repos"}}
+	}
+
+	const sep = "  ·  "
+	var b strings.Builder
+	used := 0
+	for i, h := range hints {
+		lead := ""
+		if i > 0 {
+			lead = sep
+		}
+		w := lipgloss.Width(lead) + lipgloss.Width(h.key) + 1 + lipgloss.Width(h.what)
+		if used+w > width {
+			break
+		}
+		used += w
+		b.WriteString(m.st.Help.Render(lead))
+		b.WriteString(m.st.HelpKey.Render(h.key))
+		b.WriteString(m.st.Help.Render(" " + h.what))
+	}
+	return b.String()
 }
 
 // renderRow draws one repository, highlighting the characters the query
