@@ -88,8 +88,17 @@ completes it as you go, and `Tab` accepts what it offers.
 |---|---|
 | `/help` | Show the command list; `q` or `Esc` closes it |
 | `/dirty` | Show only repositories with uncommitted work; run it again to show all |
+| `/create <repo>` | Same as `gm create`, then go to the new repository |
+| `/get <repo>` | Same as `gm get`, then go to the clone |
+| `/rm` | Same as `gm rm` on the selected repository |
 | `/worktrees` | Same as `Ctrl-W` |
 | `/remote` | Same as `Ctrl-Alt-B` |
+
+`/create`, `/get` and `/rm` close the finder and run on the terminal you can
+see — a clone's progress, a password prompt and the removal's confirmation all
+belong there rather than inside an alternate screen. `/create` and `/get`
+print the new path when they are done, so the shell binding takes you
+straight there.
 
 `/dirty` asks git about every repository the first time it is used, in
 parallel and off the drawing thread — the list stays usable while the answer

@@ -617,8 +617,8 @@ func TestOpenRemote(t *testing.T) {
 	}
 	// The finder stays where it was: this is a side action, not navigation.
 	after := next.(model)
-	if after.mode != modeRepos || after.chosen != "" {
-		t.Errorf("the finder moved: mode=%v chosen=%q", after.mode, after.chosen)
+	if after.mode != modeRepos || after.result.Action != ActionNone {
+		t.Errorf("the finder moved: mode=%v action=%v", after.mode, after.result.Action)
 	}
 
 	// A repository whose remote git cannot supply opens nothing.
@@ -808,8 +808,8 @@ func TestHelpPopup(t *testing.T) {
 	if !open.help {
 		t.Fatal("/help did not open the command list")
 	}
-	if open.chosen != "" {
-		t.Error("/help chose a repository")
+	if open.result.Action != ActionNone {
+		t.Error("/help decided something")
 	}
 	if open.input.Value() != "" {
 		t.Errorf("the command was left in the box: %q", open.input.Value())
@@ -851,7 +851,7 @@ func TestUnknownCommand(t *testing.T) {
 
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	after := next.(model)
-	if isQuit(cmd) || after.chosen != "" {
+	if isQuit(cmd) || after.result.Action != ActionNone {
 		t.Error("an unknown command should not end the finder")
 	}
 	note := stripANSI(after.helpLine(90))
@@ -1105,5 +1105,86 @@ func TestEscLeavesTheWorktreeListFirst(t *testing.T) {
 	}
 	if !m.dirtyOnly {
 		t.Error("Esc cleared the filter on the way out of the worktree list")
+	}
+}
+
+// TestRepositoryActionsLeaveTheFinder pins the contract for the three
+// commands that change something: the finder closes and hands the work to gm,
+// which runs it on the terminal the user can see.
+func TestRepositoryActionsLeaveTheFinder(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{
+		{Root: root, Rel: "github.com/acme/alpha"},
+		{Root: root, Rel: "github.com/acme/bravo"},
+	}
+
+	for _, c := range []struct {
+		typed  string
+		action Action
+		arg    string
+	}{
+		{"/create jedipunkz/agx", ActionCreate, "jedipunkz/agx"},
+		{"/get github.com/acme/charlie", ActionGet, "github.com/acme/charlie"},
+		{"/rm", ActionRemove, repos[1].Path()}, // the selected row, the bottom one
+	} {
+		m := newTestModel(t, repos, "")
+		m, cmd := runSlash(t, m, c.typed)
+		if !isQuit(cmd) {
+			t.Errorf("%q did not close the finder", c.typed)
+		}
+		if m.result.Action != c.action || m.result.Arg != c.arg {
+			t.Errorf("%q produced %+v, want {%v %q}", c.typed, m.result, c.action, c.arg)
+		}
+	}
+}
+
+// TestActionsNeedTheirArgument refuses to guess what to create or clone.
+func TestActionsNeedTheirArgument(t *testing.T) {
+	root := t.TempDir()
+	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
+
+	for _, typed := range []string{"/create", "/get", "/create   "} {
+		next, cmd := runSlash(t, m, typed)
+		if isQuit(cmd) || next.result.Action != ActionNone {
+			t.Errorf("%q acted without an argument", typed)
+		}
+		if !strings.Contains(next.note, "<repo>") {
+			t.Errorf("%q does not say what it needs: %q", typed, next.note)
+		}
+	}
+}
+
+// TestRemoveIsForRepositories keeps /rm away from the worktree list, where
+// the selected path is a checkout rather than a clone.
+func TestRemoveIsForRepositories(t *testing.T) {
+	root := t.TempDir()
+	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
+	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
+	}
+	next, _ := m.openWorktrees()
+	m = next.(model)
+
+	m, cmd := runSlash(t, m, "/rm")
+	if isQuit(cmd) || m.result.Action != ActionNone {
+		t.Error("/rm acted from the worktree list")
+	}
+	if !strings.Contains(m.note, "repository list") {
+		t.Errorf("the note does not explain why: %q", m.note)
+	}
+}
+
+// TestHelpShowsArguments keeps the popup honest about what each command takes.
+func TestHelpShowsArguments(t *testing.T) {
+	root := t.TempDir()
+	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
+	m.w, m.h = 90, 24
+	m.help = true
+
+	view := stripANSI(m.View().Content)
+	for _, want := range []string{"/create <repo>", "/get <repo>", "/rm"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the popup does not show %q:\n%s", want, view)
+		}
 	}
 }

@@ -63,12 +63,31 @@ func (k Keys) check() error {
 	return nil
 }
 
-// Run draws the finder and returns the path the user chose, or "" if they
-// quit. It draws on the terminal itself, never on stdout: stdout carries the
-// chosen path back to the shell binding.
-func Run(repos []repo.Repo, h *repo.History, theme Theme, keys Keys) (string, error) {
+// Action is what the finder decided, beyond picking a path.
+type Action int
+
+const (
+	ActionNone   Action = iota // the user quit
+	ActionJump                 // go to Arg, a repository or worktree path
+	ActionCreate               // create Arg, a repository reference
+	ActionGet                  // clone Arg, a repository reference
+	ActionRemove               // remove Arg, a repository path
+)
+
+// Result is what the finder leaves behind. Everything that touches the
+// network, the disk or the user's confirmation happens after it has closed,
+// on the terminal the user can see.
+type Result struct {
+	Action Action
+	Arg    string
+}
+
+// Run draws the finder and returns what the user asked for. It draws on the
+// terminal itself, never on stdout: stdout carries the chosen path back to
+// the shell binding.
+func Run(repos []repo.Repo, h *repo.History, theme Theme, keys Keys) (Result, error) {
 	if err := keys.check(); err != nil {
-		return "", err
+		return Result{}, err
 	}
 	opts := []tea.ProgramOption{tea.WithOutput(os.Stderr)}
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
@@ -77,13 +96,13 @@ func Run(repos []repo.Repo, h *repo.History, theme Theme, keys Keys) (string, er
 	}
 	res, err := tea.NewProgram(newModel(repos, h, theme, keys), opts...).Run()
 	if err != nil {
-		return "", err
+		return Result{}, err
 	}
 	m, ok := res.(model)
 	if !ok {
-		return "", nil
+		return Result{}, nil
 	}
-	return m.chosen, nil
+	return m.result, nil
 }
 
 // item is one row: a repository in the main list, a worktree in the Ctrl-W
@@ -136,7 +155,7 @@ type model struct {
 	status  map[string]repo.Status
 	st      Styles
 	w, h    int
-	chosen  string
+	result  Result
 
 	mode   mode
 	origin string // in worktree mode, the repository the list belongs to
@@ -399,7 +418,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return next, cmd
 			}
 			if it, ok := m.current(); ok {
-				m.chosen = it.path
+				m.result = Result{Action: ActionJump, Arg: it.path}
 			}
 			return m, tea.Quit
 		case "down", "ctrl+n":

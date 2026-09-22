@@ -170,6 +170,19 @@ func (t *Tree) Contains(path string) bool {
 	return false
 }
 
+// At names the repository whose directory is exactly path, which is what the
+// finder hands back: it picked a row, so there is nothing to resolve.
+func (t *Tree) At(path string) (Repo, bool) {
+	for _, root := range t.Roots {
+		rel, err := filepath.Rel(root, path)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return Repo{Root: root, Rel: filepath.ToSlash(rel)}, true
+	}
+	return Repo{}, false
+}
+
 // Resolve finds the one repository a query names, erroring on ambiguity so a
 // wrong repository is never removed or moved.
 func (t *Tree) Resolve(query string) (Repo, error) {

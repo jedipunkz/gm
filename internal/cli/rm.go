@@ -25,22 +25,32 @@ func (a *app) remove(args []string) error {
 		if err != nil {
 			return err
 		}
-		if *dryRun {
-			fmt.Fprintf(os.Stderr, "would remove %s\n", r.Path())
-			continue
-		}
-		if dirty, _ := repo.IsDirty(r.Path()); dirty {
-			fmt.Fprintf(os.Stderr, "warning: %s has uncommitted changes\n", r.Rel)
-		}
-		if !*yes && !confirm("remove "+r.Path()+"?") {
-			fmt.Fprintln(os.Stderr, "skipped")
-			continue
-		}
-		if err := os.RemoveAll(r.Path()); err != nil {
+		if err := removeOne(r, *dryRun, *yes); err != nil {
 			return err
 		}
-		repo.PruneEmptyParents(r.Root, filepath.Dir(r.Path()))
-		fmt.Fprintf(os.Stderr, "removed  %s\n", r.Path())
 	}
+	return nil
+}
+
+// removeOne deletes one repository, warning first when there is work in it
+// and asking before anything is lost. The finder's /rm goes through here too,
+// so the two cannot drift apart.
+func removeOne(r repo.Repo, dryRun, yes bool) error {
+	if dryRun {
+		fmt.Fprintf(os.Stderr, "would remove %s\n", r.Path())
+		return nil
+	}
+	if dirty, _ := repo.IsDirty(r.Path()); dirty {
+		fmt.Fprintf(os.Stderr, "warning: %s has uncommitted changes\n", r.Rel)
+	}
+	if !yes && !confirm("remove "+r.Path()+"?") {
+		fmt.Fprintln(os.Stderr, "skipped")
+		return nil
+	}
+	if err := os.RemoveAll(r.Path()); err != nil {
+		return err
+	}
+	repo.PruneEmptyParents(r.Root, filepath.Dir(r.Path()))
+	fmt.Fprintf(os.Stderr, "removed  %s\n", r.Path())
 	return nil
 }

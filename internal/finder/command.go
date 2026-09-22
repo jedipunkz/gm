@@ -17,23 +17,50 @@ const commandPrefix = "/"
 // popup and the completion both read this table.
 type command struct {
 	name string
+	arg  string // what the argument is called in the help, empty when it takes none
 	what string
-	run  func(m model) (model, tea.Cmd)
+	run  func(m model, arg string) (model, tea.Cmd)
+}
+
+// label is how the command is written in the help popup.
+func (c command) label() string {
+	if c.arg == "" {
+		return c.name
+	}
+	return c.name + " " + c.arg
 }
 
 var commands = []command{
-	{"/help", "show this list", func(m model) (model, tea.Cmd) {
+	{"/help", "", "show this list", func(m model, _ string) (model, tea.Cmd) {
 		m.help = true
 		return m, nil
 	}},
-	{"/worktrees", "list the worktrees of the selected repository", func(m model) (model, tea.Cmd) {
+	{"/create", "<repo>", "create a repository with its origin set, then go there", func(m model, arg string) (model, tea.Cmd) {
+		return m.leaveWith(ActionCreate, arg)
+	}},
+	{"/get", "<repo>", "clone a repository, then go there", func(m model, arg string) (model, tea.Cmd) {
+		return m.leaveWith(ActionGet, arg)
+	}},
+	{"/rm", "", "remove the selected repository, after confirming", func(m model, _ string) (model, tea.Cmd) {
+		if m.mode != modeRepos {
+			m.note = "/rm applies to the repository list"
+			return m, nil
+		}
+		it, ok := m.current()
+		if !ok {
+			m.note = "nothing is selected"
+			return m, nil
+		}
+		return m.leaveWith(ActionRemove, it.path)
+	}},
+	{"/worktrees", "", "list the worktrees of the selected repository", func(m model, _ string) (model, tea.Cmd) {
 		next, cmd := m.openWorktrees()
 		return next.(model), cmd
 	}},
-	{"/remote", "open the selected repository's remote in a browser", func(m model) (model, tea.Cmd) {
+	{"/remote", "", "open the selected repository's remote in a browser", func(m model, _ string) (model, tea.Cmd) {
 		return m, m.openRemote()
 	}},
-	{"/dirty", "show only repositories with uncommitted work; again shows all", func(m model) (model, tea.Cmd) {
+	{"/dirty", "", "show only repositories with uncommitted work; again shows all", func(m model, _ string) (model, tea.Cmd) {
 		if m.mode != modeRepos {
 			m.note = "/dirty applies to the repository list"
 			return m, nil
@@ -71,17 +98,32 @@ func commandNames() []string {
 // as a filter.
 func isCommand(s string) bool { return strings.HasPrefix(s, commandPrefix) }
 
-// runCommand executes what the user typed. An unknown command leaves a note
-// under the prompt rather than doing something surprising.
+// leaveWith closes the finder and hands the work to gm, which runs it on the
+// terminal the user can see: a clone's progress, a password prompt and a
+// confirmation all belong there, not inside an alternate screen.
+func (m model) leaveWith(a Action, arg string) (model, tea.Cmd) {
+	m.result = Result{Action: a, Arg: arg}
+	return m, tea.Quit
+}
+
+// runCommand executes what the user typed. An unknown command, or one missing
+// its argument, leaves a note under the prompt rather than doing something
+// surprising.
 func (m model) runCommand(typed string) (model, tea.Cmd) {
-	name := strings.TrimSpace(typed)
+	name, arg, _ := strings.Cut(strings.TrimSpace(typed), " ")
+	arg = strings.TrimSpace(arg)
 	for _, c := range commands {
-		if c.name == name {
-			m.input.SetValue("")
-			m.note = ""
-			m.filter()
-			return c.run(m)
+		if c.name != name {
+			continue
 		}
+		if c.arg != "" && arg == "" {
+			m.note = name + " needs an argument: " + c.label()
+			return m, nil
+		}
+		m.input.SetValue("")
+		m.note = ""
+		m.filter()
+		return c.run(m, arg)
 	}
 	m.note = "unknown command " + name + " — /help lists them"
 	return m, nil
@@ -94,11 +136,11 @@ func (m model) helpView() string {
 
 	width := 0
 	for _, c := range commands {
-		width = max(width, lipgloss.Width(c.name))
+		width = max(width, lipgloss.Width(c.label()))
 	}
 	for _, c := range commands {
-		pad := strings.Repeat(" ", width-lipgloss.Width(c.name))
-		rows = append(rows, m.st.RefLocal.Render(c.name)+pad+"  "+m.st.Subject.Render(c.what))
+		pad := strings.Repeat(" ", width-lipgloss.Width(c.label()))
+		rows = append(rows, m.st.RefLocal.Render(c.label())+pad+"  "+m.st.Subject.Render(c.what))
 	}
 	rows = append(rows, "", m.st.Dim.Render("q or esc closes this"))
 
