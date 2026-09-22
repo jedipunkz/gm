@@ -170,6 +170,19 @@ func (t *Tree) Contains(path string) bool {
 	return false
 }
 
+// At names the repository whose directory is exactly path, which is what the
+// finder hands back: it picked a row, so there is nothing to resolve.
+func (t *Tree) At(path string) (Repo, bool) {
+	for _, root := range t.Roots {
+		rel, err := filepath.Rel(root, path)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return Repo{Root: root, Rel: filepath.ToSlash(rel)}, true
+	}
+	return Repo{}, false
+}
+
 // Resolve finds the one repository a query names, erroring on ambiguity so a
 // wrong repository is never removed or moved.
 func (t *Tree) Resolve(query string) (Repo, error) {
@@ -257,4 +270,39 @@ func PruneEmptyParents(root, dir string) {
 		}
 		dir = filepath.Dir(dir)
 	}
+}
+
+// Create makes an empty repository where ref says it belongs, with its origin
+// already set so the first push needs no arguments, and returns it.
+func (t *Tree) Create(ref string, ssh bool) (Repo, error) {
+	u, err := NormalizeURL(ref, ssh)
+	if err != nil {
+		return Repo{}, err
+	}
+	rel := RelPathOf(u)
+	dst := t.PathFor(rel)
+
+	if entries, err := os.ReadDir(dst); err == nil && len(entries) > 0 {
+		return Repo{}, fmt.Errorf("%s already exists and is not empty", dst)
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return Repo{}, err
+	}
+	if err := Git("-C", dst, "init", "--quiet"); err != nil {
+		return Repo{}, err
+	}
+	if err := Git("-C", dst, "remote", "add", "origin", u.String()); err != nil {
+		return Repo{}, err
+	}
+	return Repo{Root: t.Primary(), Rel: rel}, nil
+}
+
+// Delete removes a repository and the host/user directories it leaves empty
+// behind it. It asks nothing: the caller has already confirmed.
+func Delete(r Repo) error {
+	if err := os.RemoveAll(r.Path()); err != nil {
+		return err
+	}
+	PruneEmptyParents(r.Root, filepath.Dir(r.Path()))
+	return nil
 }

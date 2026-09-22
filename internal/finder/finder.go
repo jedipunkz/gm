@@ -63,27 +63,46 @@ func (k Keys) check() error {
 	return nil
 }
 
-// Run draws the finder and returns the path the user chose, or "" if they
-// quit. It draws on the terminal itself, never on stdout: stdout carries the
-// chosen path back to the shell binding.
-func Run(repos []repo.Repo, h *repo.History, theme Theme, keys Keys) (string, error) {
+// Action is what the finder decided, beyond picking a path.
+type Action int
+
+const (
+	ActionNone   Action = iota // the user quit
+	ActionJump                 // go to Arg, a repository or worktree path
+	ActionCreate               // create Arg, a repository reference
+	ActionGet                  // clone Arg, a repository reference
+	ActionRemove               // remove Arg, a repository path
+)
+
+// Result is what the finder leaves behind. Everything that touches the
+// network, the disk or the user's confirmation happens after it has closed,
+// on the terminal the user can see.
+type Result struct {
+	Action Action
+	Arg    string
+}
+
+// Run draws the finder and returns what the user asked for. It draws on the
+// terminal itself, never on stdout: stdout carries the chosen path back to
+// the shell binding.
+func Run(tree *repo.Tree, repos []repo.Repo, h *repo.History, theme Theme, keys Keys) (Result, error) {
 	if err := keys.check(); err != nil {
-		return "", err
+		return Result{}, err
 	}
 	opts := []tea.ProgramOption{tea.WithOutput(os.Stderr)}
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
 		defer func() { _ = tty.Close() }()
 		opts = []tea.ProgramOption{tea.WithInput(tty), tea.WithOutput(tty)}
 	}
-	res, err := tea.NewProgram(newModel(repos, h, theme, keys), opts...).Run()
+	res, err := tea.NewProgram(newModel(tree, repos, h, theme, keys), opts...).Run()
 	if err != nil {
-		return "", err
+		return Result{}, err
 	}
 	m, ok := res.(model)
 	if !ok {
-		return "", nil
+		return Result{}, nil
 	}
-	return m.chosen, nil
+	return m.result, nil
 }
 
 // item is one row: a repository in the main list, a worktree in the Ctrl-W
@@ -99,6 +118,24 @@ type source []item
 
 func (s source) String(i int) string { return s[i].label }
 func (s source) Len() int            { return len(s) }
+
+// overlay says which panel is drawn over the list.
+type overlay int
+
+const (
+	overlayNone overlay = iota
+	overlayHelp
+	overlayConfirm
+)
+
+// pending is the change a confirmation is waiting on. Nothing has happened
+// yet when one is on screen.
+type pending struct {
+	action Action
+	arg    string   // the path to remove, or the reference to create
+	title  string   // "remove", "create"
+	detail []string // what it will do, a line each
+}
 
 // mode says which list is on screen.
 type mode int
@@ -116,6 +153,14 @@ type stash struct {
 	matched map[int][]int
 	cursor  int
 	query   string
+}
+
+// doneMsg carries the outcome of a confirmed change back to the UI thread.
+type doneMsg struct {
+	action Action
+	rel    string
+	path   string
+	err    error
 }
 
 // dirtyMsg carries the result of a scan back to the UI thread.
@@ -136,14 +181,16 @@ type model struct {
 	status  map[string]repo.Status
 	st      Styles
 	w, h    int
-	chosen  string
+	result  Result
 
 	mode   mode
 	origin string // in worktree mode, the repository the list belongs to
 	saved  *stash
 	keys   Keys
-	query  string // the query the view was built from; a command is not one
-	help   bool   // the command list is up
+	tree   *repo.Tree
+	query  string  // the query the view was built from; a command is not one
+	over   overlay // the panel drawn over the list, if any
+	ask    pending // what a confirmation is waiting on
 	// dirty holds the answer for every repository once a scan has run; nil
 	// until one has. dirtyOnly is the filter itself.
 	dirty     map[string]bool
@@ -156,7 +203,7 @@ type model struct {
 	dirtyOf     func(paths []string) map[string]bool
 }
 
-func newModel(repos []repo.Repo, hist *repo.History, theme Theme, keys Keys) model {
+func newModel(tree *repo.Tree, repos []repo.Repo, hist *repo.History, theme Theme, keys Keys) model {
 	now := time.Now()
 	items := make([]item, 0, len(repos))
 	for _, r := range repos {
@@ -197,6 +244,7 @@ func newModel(repos []repo.Repo, hist *repo.History, theme Theme, keys Keys) mod
 		w:           80,
 		h:           24,
 		keys:        keys,
+		tree:        tree,
 		worktreesOf: repo.Worktrees,
 		dirtyOf:     repo.DirtyMap,
 	}
@@ -216,10 +264,15 @@ func (m *model) filter() {
 	if isCommand(q) {
 		q = ""
 	}
-	// The cursor follows the ranking, and the ranking only moves when the
-	// query does. Typing a slash command changes the input without changing
-	// the query, and the selection has to stay where the user put it.
-	ranked := q != m.query || m.view == nil
+	// The selection follows the item, not the row number, whenever the query
+	// is not making a new ranking statement — a command being typed, or the
+	// query being cleared. Clearing it has to hold the selection still, or
+	// there is no way to find a repository and then act on it.
+	hold := m.view != nil && (q == m.query || q == "")
+	held := -1
+	if hold && m.cursor >= 0 && m.cursor < len(m.view) {
+		held = m.view[m.cursor]
+	}
 	m.query = q
 	if q == "" {
 		m.view = make([]int, len(m.all))
@@ -255,12 +308,43 @@ func (m *model) filter() {
 	}
 	m.view = m.keepDirty(m.view)
 
-	// A filter can shrink the view under the cursor.
-	if m.cursor >= len(m.view) {
-		m.cursor = len(m.view) - 1
+	if held >= 0 {
+		for i, idx := range m.view {
+			if idx == held {
+				m.cursor = i
+				return
+			}
+		}
 	}
-	if ranked {
-		m.cursor = len(m.view) - 1
+	m.cursor = len(m.view) - 1
+}
+
+// drop takes a removed repository out of the list, so the screen matches the
+// disk without walking the tree again.
+func (m *model) drop(path string) {
+	kept := make([]item, 0, len(m.all))
+	for _, it := range m.all {
+		if it.path != path {
+			kept = append(kept, it)
+		}
+	}
+	m.all = kept
+	delete(m.status, path)
+	m.view = nil
+	m.filter()
+}
+
+// add puts a new repository at the bottom of the list and selects it: it is
+// the one thing the user is certain to want next.
+func (m *model) add(rel, path string) {
+	m.all = append(m.all, item{label: rel, path: path})
+	m.view = nil
+	m.input.SetValue("")
+	m.filter()
+	for i, idx := range m.view {
+		if m.all[idx].path == path {
+			m.cursor = i
+		}
 	}
 }
 
@@ -343,6 +427,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status[msg.path] = msg.status
 		return m, nil
 
+	case doneMsg:
+		if msg.err != nil {
+			m.note = msg.err.Error()
+			return m, nil
+		}
+		switch msg.action {
+		case ActionRemove:
+			m.drop(msg.path)
+			m.note = "removed " + tildify(msg.path)
+		case ActionCreate:
+			m.add(msg.rel, msg.path)
+			m.note = "created " + tildify(msg.path)
+		}
+		return m, m.loadStatus()
+
 	case dirtyMsg:
 		m.dirty, m.scanning, m.note = msg, false, ""
 		m.filter()
@@ -350,12 +449,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadStatus()
 
 	case tea.KeyPressMsg:
-		// The command list is modal: it answers to its own two keys and
-		// swallows everything else, so nothing moves behind it.
-		if m.help {
+		// A panel is modal: it answers to its own keys and swallows
+		// everything else, so nothing moves behind it.
+		switch m.over {
+		case overlayHelp:
 			switch msg.String() {
 			case "q", "esc", "ctrl+c", "enter":
-				m.help = false
+				m.over = overlayNone
+			}
+			return m, nil
+
+		case overlayConfirm:
+			switch msg.String() {
+			case "y", "Y":
+				a := m.ask
+				m.over, m.ask = overlayNone, pending{}
+				return m, m.perform(a)
+			case "n", "N", "q", "esc", "ctrl+c":
+				m.over, m.ask, m.note = overlayNone, pending{}, "cancelled"
 			}
 			return m, nil
 		}
@@ -383,6 +494,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.restore()
 				return m, m.loadStatus()
 			}
+			// Clearing the query holds the selection, so this is also how you
+			// get from a repository you found to a command that acts on it.
+			if m.input.Value() != "" {
+				m.input.SetValue("")
+				m.filter()
+				return m, m.loadStatus()
+			}
 			if m.dirtyOnly {
 				m.dirtyOnly = false
 				m.filter()
@@ -399,7 +517,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return next, cmd
 			}
 			if it, ok := m.current(); ok {
-				m.chosen = it.path
+				m.result = Result{Action: ActionJump, Arg: it.path}
 			}
 			return m, tea.Quit
 		case "down", "ctrl+n":
@@ -425,12 +543,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
-	if m.help {
-		v := tea.NewView(m.helpView())
-		v.AltScreen = true
-		return v
-	}
-
 	rows := m.h - 4 // the bordered input box, plus the hint line under it
 	if rows < 3 {
 		rows = 3
@@ -484,9 +596,58 @@ func (m model) View() tea.View {
 	b.WriteString(m.st.Box.Width(m.w - 2).Render(m.input.View()))
 	b.WriteString("\n " + m.helpLine(m.w-1))
 
-	v := tea.NewView(b.String())
+	out := b.String()
+	switch m.over {
+	case overlayHelp:
+		out = m.overlay(out, m.helpBox())
+	case overlayConfirm:
+		out = m.overlay(out, m.confirmBox())
+	}
+
+	v := tea.NewView(out)
 	v.AltScreen = true
 	return v
+}
+
+// overlay draws a panel over the list, centred, leaving what is behind it
+// visible around the edges.
+func (m model) overlay(base, box string) string {
+	x := max((m.w-lipgloss.Width(box))/2, 0)
+	y := max((m.h-lipgloss.Height(box))/2, 0)
+	// A Layer draws only its own content; the Compositor is what reads the
+	// positions and the z-order and puts one over the other.
+	return lipgloss.NewCanvas(m.w, m.h).
+		Compose(lipgloss.NewCompositor(
+			lipgloss.NewLayer(base),
+			lipgloss.NewLayer(box).X(x).Y(y).Z(1),
+		)).
+		Render()
+}
+
+// perform carries out a confirmed change, off the UI thread.
+func (m model) perform(a pending) tea.Cmd {
+	tree := m.tree
+	return func() tea.Msg {
+		switch a.action {
+		case ActionRemove:
+			r, ok := tree.At(a.arg)
+			if !ok {
+				return doneMsg{action: a.action, err: fmt.Errorf("%s is not under any root", a.arg)}
+			}
+			if err := repo.Delete(r); err != nil {
+				return doneMsg{action: a.action, err: err}
+			}
+			return doneMsg{action: a.action, rel: r.Rel, path: r.Path()}
+
+		case ActionCreate:
+			r, err := tree.Create(a.arg, false)
+			if err != nil {
+				return doneMsg{action: a.action, err: err}
+			}
+			return doneMsg{action: a.action, rel: r.Rel, path: r.Path()}
+		}
+		return nil
+	}
 }
 
 // openRemote hands the selected repository's remote to a browser. A
@@ -544,9 +705,12 @@ func (m model) helpLine(width int) string {
 
 func (m model) hints(width int) string {
 	wt := m.keys.Worktree.Short()
-	// Esc undoes the filter before it quits, so it has to say which.
+	// Esc undoes one layer of narrowing at a time, so it has to say which.
 	out := "quit"
-	if m.dirtyOnly {
+	switch {
+	case m.input.Value() != "":
+		out = "clear"
+	case m.dirtyOnly:
 		out = "show all"
 	}
 	hints := []hint{
@@ -838,6 +1002,8 @@ func (m model) openWorktrees() (tea.Model, tea.Cmd) {
 	}
 	m.all = items
 	m.input.SetValue("")
+	// A different list entirely: the held selection means nothing in it.
+	m.view = nil
 	m.filter()
 	return m, m.loadStatus()
 }

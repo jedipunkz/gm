@@ -31,7 +31,7 @@ type command struct {
 var commands = []command{
 	{name: "get", aliases: []string{"clone"}, usage: "get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...", run: (*app).get},
 	{name: "list", aliases: []string{"ls"}, usage: "list [-p] [-e] [--unique] [<query>]", run: (*app).list},
-	{name: "rm", aliases: []string{"remove"}, usage: "rm [--dry-run] [-y] <repo>...", run: (*app).remove},
+	{name: "remove", aliases: []string{"rm"}, usage: "remove [--dry-run] [-y] <repo>...", run: (*app).remove},
 	{name: "create", aliases: []string{"new"}, usage: "create [-p] <repo>", run: (*app).create},
 	{name: "migrate", usage: "migrate [--dry-run] [-y] [-r] <directory>...", run: (*app).migrate},
 	{name: "root", usage: "root [--all]", run: (*app).root},

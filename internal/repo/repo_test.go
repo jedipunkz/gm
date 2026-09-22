@@ -419,3 +419,21 @@ func TestDirtyMap(t *testing.T) {
 		t.Errorf("DirtyMap(nil) = %v", got)
 	}
 }
+
+func TestTreeAt(t *testing.T) {
+	root := t.TempDir()
+	tree := &Tree{Roots: []string{root}}
+
+	r, ok := tree.At(filepath.Join(root, "github.com/acme/alpha"))
+	if !ok || r.Rel != "github.com/acme/alpha" || r.Root != root {
+		t.Errorf("At() = %+v, %v", r, ok)
+	}
+	for _, outside := range []string{
+		filepath.Join(filepath.Dir(root), "elsewhere"),
+		root, // the root itself is not a repository in it
+	} {
+		if r, ok := tree.At(outside); ok {
+			t.Errorf("At(%q) = %+v, want no match", outside, r)
+		}
+	}
+}

@@ -68,7 +68,7 @@ work the same in both.
 | `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories |
 | `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser |
 | `Ctrl-G` | — | Back to the repositories |
-| `Esc` | Clear the filter, else quit without printing | Back to the repositories |
+| `Esc` | Clear the query, then the filter, then quit | Back to the repositories |
 | `Ctrl-C` | Quit without printing | Quit without printing |
 
 The line under the prompt lists the keys for whichever list is up, naming the
@@ -87,18 +87,37 @@ completes it as you go, and `Tab` accepts what it offers.
 | Command | What it does |
 |---|---|
 | `/help` | Show the command list; `q` or `Esc` closes it |
-| `/dirty` | Show only repositories with uncommitted work; run it again to show all |
+| `/dirty` | Show only repositories with uncommitted work; `Esc` shows all |
+| `/create <repo>` | Create a repository, after asking; adds it to the list |
+| `/get <repo>` | Same as `gm get`, then go to the clone |
+| `/remove` | Remove the selected repository, after asking |
 | `/worktrees` | Same as `Ctrl-W` |
 | `/remote` | Same as `Ctrl-Alt-B` |
+
+`/create` and `/remove` ask first, in a panel over the list, and answer `y` or
+`n`. They do the work without leaving the finder: the removed row disappears,
+the created one is added and selected, and the line under the prompt says what
+happened. A repository with uncommitted changes says so in the question before
+you agree to lose them.
+
+`/get` is the exception: cloning needs the network, a progress bar and
+sometimes a passphrase, so it closes the finder and runs on the terminal you
+can see, then prints the path of the clone for the shell binding to take you
+to.
 
 `/dirty` asks git about every repository the first time it is used, in
 parallel and off the drawing thread — the list stays usable while the answer
 comes back, and the line under the prompt says `dirty only` while the filter
-is on. Typing a query narrows what the filter left. `Esc` clears the filter
-before it quits, the way it leaves the worktree list before it quits.
+is on. Typing a query narrows what the filter left.
+
+`Esc` undoes one layer of narrowing at a time — the worktree list, then the
+query, then the filter — and only quits once there is nothing left to undo.
+The hint line says which it will do next.
 
 Only a leading slash starts a command — repository paths are full of slashes,
-and `acme/alpha` keeps filtering the way it always did.
+and `acme/alpha` keeps filtering the way it always did. To act on a repository
+you just searched for, press `Esc` to empty the box and then type the command:
+clearing the query holds the selection where it is.
 
 ## 🧰 Commands
 
@@ -107,7 +126,7 @@ and `acme/alpha` keeps filtering the way it always did.
 | `gm` | Open the fuzzy finder; print the selected path |
 | `gm get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...` | Clone into the tree; `-u` updates an existing clone |
 | `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
-| `gm rm [--dry-run] [-y] <repo>...` | Remove a repository after confirming, pruning empty parents |
+| `gm remove [--dry-run] [-y] <repo>...` | Remove a repository after confirming, pruning empty parents (`gm rm` also works) |
 | `gm create [-p] <repo>` | Create and `git init` a repository with `origin` already set |
 | `gm migrate [--dry-run] [-y] [-r] <dir>...` | Move an existing clone into the tree, using its `origin` remote; `-r` searches the directory for them |
 | `gm root [--all]` | Print the root directory |
