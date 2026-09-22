@@ -37,24 +37,6 @@ func TestNamesAreUnique(t *testing.T) {
 	}
 }
 
-func TestParseKeybind(t *testing.T) {
-	for _, in := range []string{"ctrl-r", "ctrl+r", "Ctrl-R", "c-r", "^R", " ctrl-r "} {
-		k, err := parseKeybind(in)
-		if err != nil {
-			t.Errorf("parseKeybind(%q) = %v", in, err)
-			continue
-		}
-		if k.letter != 'r' || k.display != "Ctrl-R" {
-			t.Errorf("parseKeybind(%q) = %q/%q, want r/Ctrl-R", in, string(k.letter), k.display)
-		}
-	}
-	for _, bad := range []string{"", "r", "ctrl-", "ctrl-rr", "alt-r", "ctrl-1", "f5"} {
-		if k, err := parseKeybind(bad); err == nil {
-			t.Errorf("parseKeybind(%q) = %v, want an error", bad, k)
-		}
-	}
-}
-
 // TestShellSnippetsBindTheConfiguredKey checks the spelling each shell needs,
 // and that no template placeholder survives into the output.
 func TestShellSnippetsBindTheConfiguredKey(t *testing.T) {

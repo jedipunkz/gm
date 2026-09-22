@@ -98,3 +98,38 @@ func TestTheme(t *testing.T) {
 		t.Errorf("Theme = %q, want the empty default", c.Theme)
 	}
 }
+
+func TestParseChord(t *testing.T) {
+	for _, in := range []string{"ctrl-r", "ctrl+r", "Ctrl-R", "c-r", "^R", " ctrl-r "} {
+		c, err := ParseChord(in, "ctrl-g")
+		if err != nil {
+			t.Errorf("ParseChord(%q) = %v", in, err)
+			continue
+		}
+		if c.Letter != 'r' || c.Display != "Ctrl-R" || c.Key() != "ctrl+r" || c.Short() != "ctrl-r" {
+			t.Errorf("ParseChord(%q) = %+v", in, c)
+		}
+	}
+
+	// The empty string means "unset" and takes the fallback.
+	if c, err := ParseChord("", "ctrl-g"); err != nil || c.Letter != 'g' {
+		t.Errorf("ParseChord(\"\") = %+v, %v; want the fallback", c, err)
+	}
+
+	for _, bad := range []string{"r", "ctrl-", "ctrl-rr", "alt-r", "ctrl-1", "f5"} {
+		if c, err := ParseChord(bad, "ctrl-g"); err == nil {
+			t.Errorf("ParseChord(%q) = %+v, want an error", bad, c)
+		}
+	}
+}
+
+func TestWorktreeKey(t *testing.T) {
+	write(t, "root = \"/a\"\nworktree_key = \"ctrl-t\"\n")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.WorktreeKey != "ctrl-t" {
+		t.Errorf("WorktreeKey = %q, want ctrl-t", c.WorktreeKey)
+	}
+}

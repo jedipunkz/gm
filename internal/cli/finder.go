@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jedipunkz/gm/internal/config"
 	"github.com/jedipunkz/gm/internal/finder"
 	"github.com/jedipunkz/gm/internal/repo"
 )
@@ -22,9 +23,13 @@ func (a *app) finder() error {
 	if err != nil {
 		return err
 	}
+	worktreeKey, err := config.ParseChord(a.cfg.WorktreeKey, finder.DefaultWorktreeKey)
+	if err != nil {
+		return err
+	}
 
 	hist := repo.LoadHistory()
-	chosen, err := finder.Run(repos, hist, theme)
+	chosen, err := finder.Run(repos, hist, theme, worktreeKey)
 	if err != nil || chosen == "" {
 		return err
 	}

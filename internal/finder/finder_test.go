@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/jedipunkz/gm/internal/config"
 	"github.com/jedipunkz/gm/internal/repo"
 )
 
@@ -31,7 +32,11 @@ func newTestModel(t *testing.T, repos []repo.Repo, bumped string) model {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newModel(repos, hist, theme)
+	wt, err := config.ParseChord("", DefaultWorktreeKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newModel(repos, hist, theme, wt)
 }
 
 // TestFinderPutsBestAtBottom pins the core TUI contract: the cursor rests on
@@ -492,5 +497,67 @@ func TestHelpLine(t *testing.T) {
 	}
 	if !strings.Contains(narrow, "↑↓ ctrl-p/n move") {
 		t.Errorf("the first hint was dropped: %q", narrow)
+	}
+}
+
+// TestWorktreeKeyIsConfigurable pins the two places the configured chord has
+// to reach: the key that opens the list, and the hint line that names it.
+func TestWorktreeKeyIsConfigurable(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+	hist := repo.OpenHistory(filepath.Join(t.TempDir(), "frecency.json"))
+	theme, err := LookupTheme("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := config.ParseChord("ctrl-t", DefaultWorktreeKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := newModel(repos, hist, theme, wt)
+	m.w, m.h = 90, 12
+	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
+	}
+
+	if got := stripANSI(m.helpLine(90)); !strings.Contains(got, "ctrl-t worktrees") {
+		t.Errorf("the hint line does not name the configured key: %q", got)
+	}
+
+	// The old default must no longer do anything.
+	next, _ := m.Update(tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl})
+	if next.(model).mode != modeRepos {
+		t.Error("ctrl-w still opened the worktree list")
+	}
+
+	next, _ = m.Update(tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
+	opened := next.(model)
+	if opened.mode != modeWorktrees {
+		t.Fatal("the configured key did not open the worktree list")
+	}
+	if got := stripANSI(opened.helpLine(90)); !strings.Contains(got, "ctrl-t/g/esc repos") {
+		t.Errorf("the worktree hints do not name the configured key: %q", got)
+	}
+	// And it toggles back off.
+	back, _ := opened.Update(tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
+	if back.(model).mode != modeRepos {
+		t.Error("the configured key did not close the worktree list")
+	}
+}
+
+// TestRunRejectsReservedKeys guards the chords that would leave the finder
+// impossible to quit or move around in.
+func TestRunRejectsReservedKeys(t *testing.T) {
+	theme, _ := LookupTheme("")
+	hist := repo.OpenHistory(filepath.Join(t.TempDir(), "frecency.json"))
+	for _, name := range []string{"ctrl-c", "ctrl-n", "ctrl-p"} {
+		c, err := config.ParseChord(name, DefaultWorktreeKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Run(nil, hist, theme, c); err == nil {
+			t.Errorf("Run() accepted %s, which the finder already uses", name)
+		}
 	}
 }

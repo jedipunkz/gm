@@ -13,15 +13,17 @@ import (
 
 // Config mirrors gm.toml.
 //
-//	root    = "~/ghq"          # or ["~/ghq", "~/src"], searched in order
-//	theme   = "tokyonight"
-//	keybind = "ctrl-g"
+//	root         = "~/ghq"     # or ["~/ghq", "~/src"], searched in order
+//	theme        = "tokyonight"
+//	keybind      = "ctrl-g"    # the shell key that opens gm
+//	worktree_key = "ctrl-w"    # the finder key that lists worktrees
 //
 // Root stays untyped because it takes either form; Roots resolves it.
 type Config struct {
-	Root    any    `toml:"root"`
-	Theme   string `toml:"theme"`
-	Keybind string `toml:"keybind"`
+	Root        any    `toml:"root"`
+	Theme       string `toml:"theme"`
+	Keybind     string `toml:"keybind"`
+	WorktreeKey string `toml:"worktree_key"`
 }
 
 // Path is where gm looks for its settings:
