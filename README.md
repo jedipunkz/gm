@@ -9,17 +9,22 @@ a built-in fuzzy finder: the same `host/user/repo` layout, plus a
 repositories by how often and how recently you visit them.
 
 ```
-gm  62/62
-  github.com/tmux/tmux              │ zellij-org/zellij
-  github.com/vadimdemedes/ink       │
-▸ github.com/zellij-org/zellij      │ path   ~/ghq/github.com/zellij-org/zellij
-                                    │ remote https://github.com/zellij-org/zellij
-                                    │ branch main
-                                    │ commit 8f3a91c  2 days ago  fix: …
-                                    │ status clean
-                                    │ visits 34, last 2h ago
-❯ zellij
+                                   │ zellij-org/zellij
+                                   │
+                                   │ path   ~/ghq/github.com/zellij-org/zellij
+                                   │ remote https://github.com/zellij-org/zellij
+  github.com/tmux/tmux             │ branch main
+  github.com/vadimdemedes/ink      │ commit 8f3a91c  2 days ago  fix: …
+▸ github.com/zellij-org/zellij     │ status clean
+                                   │ visits 34, last 2h ago
+╭─────────────────────────────────────────────────────────────────────────╮
+│ ❯ zellij                                                                │
+╰─────────────────────────────────────────────────────────────────────────╯
 ```
+
+Coloured with [Tokyo Night](https://github.com/folke/tokyonight.nvim): the
+selected row is highlighted, the characters your query matched are picked out
+inside it, and each field on the right gets its own colour.
 
 The best match sits at the **bottom**, right above the prompt where the cursor
 already is, so the repository you most likely want costs zero keystrokes.

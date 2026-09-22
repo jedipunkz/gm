@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -131,5 +132,38 @@ func TestFinderPutsBestAtBottom(t *testing.T) {
 	}
 	if it, _ := m.current(); it.repo.Rel != "github.com/other/charlie" {
 		t.Errorf("filtered selection is %q, want github.com/other/charlie", it.repo.Rel)
+	}
+}
+
+// TestViewChrome pins the finder's layout: no header, a bordered prompt, a
+// highlighted selection, and the query's characters picked out inside it.
+func TestViewChrome(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	repos := []Repo{
+		{Root: root, Rel: "github.com/acme/alpha"},
+		{Root: root, Rel: "github.com/acme/bravo"},
+	}
+	m := newModel(repos)
+	m.w, m.h = 100, 10
+	m.input.SetValue("brav")
+	m.filter()
+	out := m.View().Content
+
+	for _, want := range []struct{ what, s string }{
+		{"rounded input box", "╭"},
+		{"input box bottom", "╰"},
+		{"selection marker", "▸"},
+		{"info pane divider", "│ "},
+		{"tokyonight border grey", "38;2;59;66;97"},  // #3b4261
+		{"selected row background", "48;2;41;46;66"}, // #292e42
+		{"matched characters", "38;2;255;158;100"},   // #ff9e64
+	} {
+		if !strings.Contains(out, want.s) {
+			t.Errorf("view is missing the %s (%q)", want.what, want.s)
+		}
+	}
+	if first, _, _ := strings.Cut(out, "\n"); strings.Contains(first, "1/2") {
+		t.Errorf("the count header should be gone, got %q", first)
 	}
 }

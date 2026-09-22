@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 const usage = `gm — keep every repository in one predictable tree.
@@ -76,12 +76,14 @@ func runTUI() error {
 		return fmt.Errorf("no repositories under %s; try `gm get <repo>`", root)
 	}
 
-	p := tea.NewProgram(
-		newModel(repos),
-		tea.WithOutput(os.Stderr),
-		tea.WithInputTTY(),
-		tea.WithAltScreen(),
-	)
+	// Draw on the terminal itself, never on stdout: stdout carries the chosen
+	// path back to the shell binding.
+	opts := []tea.ProgramOption{tea.WithOutput(os.Stderr)}
+	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+		defer tty.Close()
+		opts = []tea.ProgramOption{tea.WithInput(tty), tea.WithOutput(tty)}
+	}
+	p := tea.NewProgram(newModel(repos), opts...)
 	res, err := p.Run()
 	if err != nil {
 		return err
