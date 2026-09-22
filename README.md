@@ -40,9 +40,9 @@ go install github.com/jedipunkz/gm@latest
 
 ## 🐚 Shell integration
 
-`gm` with no arguments opens the finder and prints the chosen path on stdout;
-the TUI draws on stderr, so it composes with `$(...)`. One line in your rc file
-turns that into a `cd` on `Ctrl-G`, or on whatever `launch_key` says.
+`gm` with no arguments opens the finder and prints the chosen path, so it
+composes with `$(...)`. One line in your rc file turns that into a `cd` on
+`Ctrl-G`, or on whatever `launch_key` says.
 
 ```sh
 gm shell fish | source    # ~/.config/fish/config.fish
@@ -94,10 +94,9 @@ on), except `Ctrl-W`, which no longer deletes the word before the cursor.
 
 ## ⚙️ Configuration
 
-`~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) is optional; a file
-that cannot be parsed — or that holds a key `gm` does not know — stops `gm`
-rather than letting it clone somewhere unexpected or quietly ignore half the
-file.
+`~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) is optional. A file
+that cannot be parsed, or that holds a key `gm` does not know, is an error
+rather than a file half ignored.
 
 ```toml
 root         = "~/ghq"       # or ["~/ghq", "~/src"], searched in order
@@ -136,8 +135,7 @@ if you source it from your rc file). Some chords are already taken: `ctrl-r` is
 reverse history search, and `ctrl-c`, `ctrl-d` and `ctrl-z` are terminal
 signals. `worktree_key` and `remote_key` cannot be `ctrl-c`, `ctrl-n` or
 `ctrl-p`, which the finder uses to quit and to move, and cannot both be the
-same chord. `launch_key` must be a plain Ctrl chord: the shell snippets bind a
-control character, which is all a plain chord is.
+same chord, and `launch_key` must be a plain Ctrl chord.
 
 How far a chord travels depends on the terminal:
 
@@ -149,15 +147,13 @@ How far a chord travels depends on the terminal:
 
 ## 🎯 Ranking
 
-Typing filters by fuzzy match: word boundaries and consecutive characters earn
-points, gaps cost them, the repository name outweighs the user name, and the
-shared `host` segment counts against a match. A literal substring always beats
-a subsequence pieced together from elsewhere.
+Typing filters by fuzzy match, scored so that a literal substring beats a
+subsequence pieced together from elsewhere, and the repository name counts for
+more than the user name.
 
-Visits are recorded in `$XDG_STATE_HOME/gm/frecency.json` (default
-`~/.local/state/gm/frecency.json`) and weighted by recency the way `z` and
-`zoxide` do. Frecency only breaks ties between equally good matches. Entries
-for deleted repositories are pruned on write.
+Frecency only breaks ties between equally good matches. Visits are recorded in
+`$XDG_STATE_HOME/gm/frecency.json` (default
+`~/.local/state/gm/frecency.json`); delete it to start over.
 
 ## 📄 License
 
