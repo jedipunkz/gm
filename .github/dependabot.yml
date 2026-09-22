@@ -1,0 +1,30 @@
+# Keep the module and the workflow actions current without turning the
+# repository into a stream of one-line pull requests: everything that is not a
+# major version arrives grouped, once a week.
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      go-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    # The actions used by every workflow under .github/workflows.
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
