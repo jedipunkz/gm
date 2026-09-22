@@ -38,7 +38,8 @@ still *listed*), bare clones, partial clones, parallel import, `--vcs`, and
 ## 📦 Install
 
 Homebrew, on macOS or Linux. No Go needed: the formula downloads the binary
-for your platform.
+for your platform, from the
+[tap](https://github.com/jedipunkz/homebrew-gm).
 
 ```sh
 brew install jedipunkz/gm/gm
