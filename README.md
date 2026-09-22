@@ -79,6 +79,20 @@ worktree list that row is the main worktree.
 Everything else is ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U` and so
 on), except `Ctrl-W`, which no longer deletes the word before the cursor.
 
+### Slash commands
+
+A `/` at the start of the input types a command instead of a filter. The box
+completes it as you go, and `Tab` accepts what it offers.
+
+| Command | What it does |
+|---|---|
+| `/help` | Show the command list; `q` or `Esc` closes it |
+| `/worktrees` | Same as `Ctrl-W` |
+| `/remote` | Same as `Ctrl-Alt-B` |
+
+Only a leading slash starts a command — repository paths are full of slashes,
+and `acme/alpha` keeps filtering the way it always did.
+
 ## 🧰 Commands
 
 | Command | What it does |

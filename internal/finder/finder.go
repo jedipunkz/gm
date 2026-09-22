@@ -139,6 +139,9 @@ type model struct {
 	origin string // in worktree mode, the repository the list belongs to
 	saved  *stash
 	keys   Keys
+	query  string // the query the view was built from; a command is not one
+	help   bool   // the command list is up
+	note   string // a one-line answer under the prompt, cleared on the next keystroke
 	// worktreesOf is the seam the tests replace; it is repo.Worktrees in
 	// every real run.
 	worktreesOf func(dir string) ([]repo.Worktree, error)
@@ -165,6 +168,10 @@ func newModel(repos []repo.Repo, hist *repo.History, theme Theme, keys Keys) mod
 	// virtual cursor sits on top of the first character of one anyway.
 	in.SetVirtualCursor(true)
 	in.Focus()
+	// Completing the slash commands as they are typed: the box fills in the
+	// rest of the name, and Tab accepts it.
+	in.ShowSuggestions = true
+	in.SetSuggestions(commandNames())
 	ts := textinput.DefaultDarkStyles()
 	if theme.Light {
 		ts = textinput.DefaultLightStyles()
@@ -193,7 +200,17 @@ func (m model) Init() tea.Cmd {
 
 func (m *model) filter() {
 	m.matched = map[int][]int{}
+	m.note = ""
 	q := strings.TrimSpace(m.input.Value())
+	// A command is not a query: the list stays as it was while one is typed.
+	if isCommand(q) {
+		q = ""
+	}
+	// The cursor follows the ranking, and the ranking only moves when the
+	// query does. Typing a slash command changes the input without changing
+	// the query, and the selection has to stay where the user put it.
+	ranked := q != m.query || m.view == nil
+	m.query = q
 	if q == "" {
 		m.view = make([]int, len(m.all))
 		for i := range m.all {
@@ -226,7 +243,10 @@ func (m *model) filter() {
 		})
 		m.view = idx
 	}
-	m.cursor = len(m.view) - 1
+
+	if ranked {
+		m.cursor = len(m.view) - 1
+	}
 }
 
 // runeIndexes converts fuzzy's byte offsets into rune positions, which is what
@@ -283,6 +303,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		// The command list is modal: it answers to its own two keys and
+		// swallows everything else, so nothing moves behind it.
+		if m.help {
+			switch msg.String() {
+			case "q", "esc", "ctrl+c", "enter":
+				m.help = false
+			}
+			return m, nil
+		}
+
 		// The configurable keys cannot be switch cases.
 		switch msg.String() {
 		case m.keys.Worktree.Key():
@@ -310,6 +340,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter":
+			if typed := m.input.Value(); isCommand(typed) {
+				next, cmd := m.runCommand(typed)
+				return next, cmd
+			}
 			if it, ok := m.current(); ok {
 				m.chosen = it.path
 			}
@@ -337,6 +371,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
+	if m.help {
+		v := tea.NewView(m.helpView())
+		v.AltScreen = true
+		return v
+	}
+
 	rows := m.h - 4 // the bordered input box, plus the hint line under it
 	if rows < 3 {
 		rows = 3
@@ -429,6 +469,15 @@ type hint struct{ key, what string }
 // helpLine draws the key hints, dropping the ones that do not fit rather than
 // wrapping onto a second line.
 func (m model) helpLine(width int) string {
+	// An answer to something the user just typed displaces the hints: it is
+	// about to be cleared by their next keystroke anyway.
+	if m.note != "" {
+		return strings.Join(wrapSegs([]seg{{m.note, m.st.Dirty}}, width, "")[:1], "")
+	}
+	if isCommand(m.input.Value()) {
+		return m.st.Help.Render("enter runs the command  ·  tab completes it  ·  ") +
+			m.st.HelpKey.Render("/help") + m.st.Help.Render(" lists them")
+	}
 	wt := m.keys.Worktree.Short()
 	hints := []hint{
 		{"↑↓ ctrl-p/n", "move"},
