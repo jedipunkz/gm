@@ -33,7 +33,7 @@ var commands = []command{
 	{name: "list", aliases: []string{"ls"}, usage: "list [-p] [-e] [--unique] [<query>]", run: (*app).list},
 	{name: "rm", aliases: []string{"remove"}, usage: "rm [--dry-run] [-y] <repo>...", run: (*app).remove},
 	{name: "create", aliases: []string{"new"}, usage: "create [-p] <repo>", run: (*app).create},
-	{name: "migrate", usage: "migrate [--dry-run] [-y] [--scan] <directory>...", run: (*app).migrate},
+	{name: "migrate", usage: "migrate [--dry-run] [-y] [-r] <directory>...", run: (*app).migrate},
 	{name: "root", usage: "root [--all]", run: (*app).root},
 	{name: "shell", usage: "shell <fish|zsh|bash>          print the Ctrl-G key binding", run: (*app).shell},
 }

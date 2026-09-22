@@ -11,8 +11,8 @@ import (
 	"github.com/jedipunkz/gm/internal/repo"
 )
 
-// initRepo makes a real working copy: the scan's decisions come from git, so
-// a fake directory would not exercise them.
+// initRepo makes a real working copy: the decisions come from git, so a fake
+// directory would not exercise them.
 func initRepo(t *testing.T, dir, origin string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -33,10 +33,10 @@ func initRepo(t *testing.T, dir, origin string) string {
 	return dir
 }
 
-// TestMigrateScan covers what --scan is for: find the working copies under a
+// TestMigrateRecursive covers what -r is for: find the working copies under a
 // directory, leave the ones already in the tree alone, and report the ones
 // that cannot move instead of abandoning the run.
-func TestMigrateScan(t *testing.T) {
+func TestMigrateRecursive(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "tree")
 	if err := os.MkdirAll(root, 0o755); err != nil {
@@ -58,9 +58,9 @@ func TestMigrateScan(t *testing.T) {
 	}
 
 	a := &app{tree: &repo.Tree{Roots: []string{root}}}
-	out, err := captureStderr(t, func() error { return a.migrate([]string{"--scan", "--dry-run", base}) })
+	out, err := captureStderr(t, func() error { return a.migrate([]string{"-r", "--dry-run", base}) })
 	if err != nil {
-		t.Fatalf("migrate --scan: %v\n%s", err, out)
+		t.Fatalf("migrate -r: %v\n%s", err, out)
 	}
 
 	for _, want := range []string{
@@ -70,12 +70,12 @@ func TestMigrateScan(t *testing.T) {
 		linked + ": is a worktree or submodule",
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("scan output is missing %q:\n%s", want, out)
+			t.Errorf("the output is missing %q:\n%s", want, out)
 		}
 	}
 	// A repository already under the root is not a candidate at all.
 	if strings.Contains(out, "already") {
-		t.Errorf("the scan reported a repository already in the tree:\n%s", out)
+		t.Errorf("the search reported a repository already in the tree:\n%s", out)
 	}
 	// --dry-run moves nothing.
 	if _, err := os.Stat(good); err != nil {

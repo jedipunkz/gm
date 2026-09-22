@@ -14,15 +14,17 @@ func (a *app) migrate(args []string) error {
 	fs := flag.NewFlagSet("gm migrate", flag.ExitOnError)
 	dryRun := fs.Bool("dry-run", false, "show what would move")
 	yes := fs.Bool("y", false, "skip the confirmation prompt")
-	scan := fs.Bool("scan", false, "treat the arguments as directories to search for repositories")
+	var recursive bool
+	fs.BoolVar(&recursive, "r", false, "search the arguments for repositories instead of moving them")
+	fs.BoolVar(&recursive, "recursive", false, "search the arguments for repositories instead of moving them")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() == 0 {
-		return fmt.Errorf("usage: gm migrate [--dry-run] [-y] [--scan] <directory>...")
+		return fmt.Errorf("usage: gm migrate [--dry-run] [-y] [-r] <directory>...")
 	}
 
-	srcs, err := a.migrateSources(fs.Args(), *scan)
+	srcs, err := a.migrateSources(fs.Args(), recursive)
 	if err != nil {
 		return err
 	}
@@ -37,9 +39,9 @@ func (a *app) migrate(args []string) error {
 			continue
 		case p.problem != "":
 			// A directory named on the command line is the user's claim that
-			// it should move; a directory the scan turned up is only a
+			// it should move; a directory the search turned up is only a
 			// candidate, so it is skipped rather than fatal.
-			if !*scan {
+			if !recursive {
 				return fmt.Errorf("%s %s", src, p.problem)
 			}
 			fmt.Fprintf(os.Stderr, "skip     %s: %s\n", src, p.problem)
@@ -65,17 +67,17 @@ func (a *app) migrate(args []string) error {
 }
 
 // migrateSources turns the arguments into the directories to consider. Each
-// one is a repository, or with --scan a directory to search; repositories
-// already under a root are dropped, since the whole point is to move the ones
-// that are not.
-func (a *app) migrateSources(args []string, scan bool) ([]string, error) {
+// one is a repository, or with -r a directory to search; repositories already
+// under a root are dropped, since the whole point is to move the ones that
+// are not.
+func (a *app) migrateSources(args []string, recursive bool) ([]string, error) {
 	var srcs []string
 	for _, arg := range args {
 		dir, err := filepath.Abs(arg)
 		if err != nil {
 			return nil, err
 		}
-		if !scan {
+		if !recursive {
 			srcs = append(srcs, dir)
 			continue
 		}

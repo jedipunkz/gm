@@ -261,7 +261,7 @@ func TestBrowseURL(t *testing.T) {
 	}
 }
 
-// TestFindReposAndContains covers the walk gm migrate --scan relies on: every
+// TestFindReposAndContains covers the walk gm migrate -r relies on: every
 // working copy is found once, nothing inside one is descended into, dotted
 // directories are left alone, and a missing directory is not an error.
 func TestFindReposAndContains(t *testing.T) {
