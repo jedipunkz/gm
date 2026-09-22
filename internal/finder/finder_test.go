@@ -382,3 +382,69 @@ func TestPromptStartsEmpty(t *testing.T) {
 		t.Errorf("the prompt starts with %q, want nothing", got)
 	}
 }
+
+// TestUnselectedRowsAreLifted pins the contrast ladder in the list: an
+// unselected row sits between the comment colour and the foreground, so it
+// reads without competing with the selected row.
+func TestUnselectedRowsAreLifted(t *testing.T) {
+	dist := func(a, b string) int {
+		var ar, ag, ab, br, bg, bb int
+		fmt.Sscanf(a, "#%02x%02x%02x", &ar, &ag, &ab)
+		fmt.Sscanf(b, "#%02x%02x%02x", &br, &bg, &bb)
+		abs := func(n int) int {
+			if n < 0 {
+				return -n
+			}
+			return n
+		}
+		return abs(ar-br) + abs(ag-bg) + abs(ab-bb)
+	}
+
+	for _, name := range ThemeNames() {
+		th, err := LookupTheme(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		row := blend(th.Comment, th.Fg, rowLift)
+		if row == th.Comment {
+			t.Errorf("theme %s: the row colour is still the comment colour", name)
+		}
+		// Closer to the comment colour than to the foreground: the selected
+		// row has to stay the brightest thing in the list.
+		if dist(row, th.Comment) >= dist(row, th.Fg) {
+			t.Errorf("theme %s: row %s drifted past halfway to the foreground %s", name, row, th.Fg)
+		}
+	}
+
+	// The unselected row on screen must carry the lifted colour, not the
+	// comment colour the labels still use.
+	root := t.TempDir()
+	m := newTestModel(t, []repo.Repo{
+		{Root: root, Rel: "github.com/acme/alpha"},
+		{Root: root, Rel: "github.com/acme/bravo"},
+	}, "")
+	m.w, m.h = 80, 10
+	th := themes[DefaultTheme]
+	var row string
+	for _, line := range strings.Split(m.View().Content, "\n") {
+		if strings.Contains(stripANSI(line), "acme/alpha") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("the unselected repository is not on screen")
+	}
+	if !strings.Contains(row, ansi("38", blend(th.Comment, th.Fg, rowLift))) {
+		t.Errorf("the unselected row is not painted in the lifted colour:\n%q", row)
+	}
+}
+
+func TestBlendRejectsJunk(t *testing.T) {
+	if got := blend("not a colour", "#ffffff", 0.5); got != "not a colour" {
+		t.Errorf("blend() = %q, want the input back untouched", got)
+	}
+	if got := blend("#000000", "#ffffff", 1); got != "#ffffff" {
+		t.Errorf("blend(black, white, 1) = %q, want #ffffff", got)
+	}
+}
