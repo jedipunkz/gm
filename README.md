@@ -46,6 +46,11 @@ eval "$(gm shell bash)"
 In the finder: type to filter, `↑`/`↓` (or `Ctrl-P`/`Ctrl-N`) to move, `Enter`
 to jump, `Esc` to cancel.
 
+`Ctrl-W` replaces the list with the git worktrees of the selected repository.
+Filter and `Enter` work the same way; `Esc` goes back to the repositories with
+your query intact. In that list the main worktree is the one under the cursor.
+`Ctrl-W` no longer deletes the word before the cursor.
+
 ## Commands
 
 | Command | What it does |

@@ -40,16 +40,37 @@ func Run(repos []repo.Repo, h *repo.History, theme Theme) (string, error) {
 	return m.chosen, nil
 }
 
+// item is one row: a repository in the main list, a worktree in the Ctrl-W
+// list. label is what is drawn and matched, path is what Enter yields.
 type item struct {
-	repo  repo.Repo
-	score float64
-	seen  repo.Visit
+	label string
+	path  string
+	score float64    // frecency; zero for worktrees
+	seen  repo.Visit // the visit log; empty for worktrees
 }
 
 type source []item
 
-func (s source) String(i int) string { return s[i].repo.Rel }
+func (s source) String(i int) string { return s[i].label }
 func (s source) Len() int            { return len(s) }
+
+// mode says which list is on screen.
+type mode int
+
+const (
+	modeRepos mode = iota
+	modeWorktrees
+)
+
+// stash is the repository list put aside while the worktree list is up, so
+// Esc can put it back exactly as it was.
+type stash struct {
+	all     []item
+	view    []int
+	matched map[int][]int
+	cursor  int
+	query   string
+}
 
 // statusMsg carries one repository's git status back to the UI thread.
 type statusMsg struct {
@@ -67,6 +88,13 @@ type model struct {
 	st      Styles
 	w, h    int
 	chosen  string
+
+	mode   mode
+	origin string // in worktree mode, the repository the list belongs to
+	saved  *stash
+	// worktreesOf is the seam the tests replace; it is repo.Worktrees in
+	// every real run.
+	worktreesOf func(dir string) ([]repo.Worktree, error)
 }
 
 func newModel(repos []repo.Repo, hist *repo.History, theme Theme) model {
@@ -74,13 +102,13 @@ func newModel(repos []repo.Repo, hist *repo.History, theme Theme) model {
 	items := make([]item, 0, len(repos))
 	for _, r := range repos {
 		v := hist.Visit(r.Path())
-		items = append(items, item{repo: r, score: v.Score(now), seen: v})
+		items = append(items, item{label: r.Rel, path: r.Path(), score: v.Score(now), seen: v})
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].score != items[j].score {
 			return items[i].score < items[j].score
 		}
-		return items[i].repo.Rel < items[j].repo.Rel
+		return items[i].label < items[j].label
 	})
 
 	st := theme.Styles()
@@ -99,12 +127,13 @@ func newModel(repos []repo.Repo, hist *repo.History, theme Theme) model {
 	in.SetStyles(ts)
 
 	m := model{
-		all:    items,
-		input:  in,
-		status: map[string]repo.Status{},
-		st:     st,
-		w:      80,
-		h:      24,
+		all:         items,
+		input:       in,
+		status:      map[string]repo.Status{},
+		st:          st,
+		w:           80,
+		h:           24,
+		worktreesOf: repo.Worktrees,
 	}
 	m.filter()
 	return m
@@ -128,7 +157,7 @@ func (m *model) filter() {
 		score := make(map[int]float64, len(matches))
 		idx := make([]int, 0, len(matches))
 		for _, mt := range matches {
-			rel := m.all[mt.Index].repo.Rel
+			rel := m.all[mt.Index].label
 			// fuzzy finds candidates; where it landed the characters is its
 			// own guess, and a literal hit beats that guess every time.
 			pos := substringMatch(rel, lower)
@@ -186,7 +215,7 @@ func (m model) loadStatus() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	p := it.repo.Path()
+	p := it.path
 	if _, done := m.status[p]; done {
 		return nil
 	}
@@ -207,11 +236,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "ctrl+c", "esc":
+		case "ctrl+c":
 			return m, tea.Quit
+		case "esc":
+			// Esc backs out of the worktree list before it quits gm.
+			if m.mode == modeWorktrees {
+				m.restore()
+				return m, m.loadStatus()
+			}
+			return m, tea.Quit
+		case "ctrl+w":
+			return m.openWorktrees()
 		case "enter":
 			if it, ok := m.current(); ok {
-				m.chosen = it.repo.Path()
+				m.chosen = it.path
 			}
 			return m, tea.Quit
 		case "down", "ctrl+n":
@@ -303,7 +341,7 @@ func (m model) renderRow(i int, selected bool, width int) string {
 		base, hit, marker = m.st.RowSel, m.st.HitSel, m.st.Marker.Render("▸ ")
 	}
 
-	label := highlight(it.repo.Rel, m.matched[m.view[i]], width-2, base, hit)
+	label := highlight(it.label, m.matched[m.view[i]], width-2, base, hit)
 	gap := width - 2 - lipgloss.Width(label)
 	if gap > 0 {
 		label += base.Render(strings.Repeat(" ", gap))
@@ -366,16 +404,21 @@ func (m model) infoLines(w int) []string {
 		out = append(out, wrap(v, w, style)...)
 	}
 
-	out = append(out, wrap(it.repo.Rel, w, m.st.Name)...)
+	out = append(out, wrap(it.label, w, m.st.Name)...)
+	if m.mode == modeWorktrees {
+		out = append(out, wrap(m.origin, w, m.st.Dim)...)
+	}
 	out = append(out, "")
-	field("path", tildify(it.repo.Path()), m.st.Path)
+	field("path", tildify(it.path), m.st.Path)
 
-	s, loaded := m.status[it.repo.Path()]
+	s, loaded := m.status[it.path]
 	if !loaded {
 		field("git", "loading…", m.st.Dim)
 		return out
 	}
-	field("remote", s.Remote, m.st.Remote)
+	if m.mode == modeRepos {
+		field("remote", s.Remote, m.st.Remote)
+	}
 	field("branch", s.Branch, m.st.Branch)
 	field("commit", s.Commit, m.st.Commit)
 	if s.Dirty > 0 {
@@ -383,12 +426,53 @@ func (m model) infoLines(w int) []string {
 	} else {
 		field("status", "clean", m.st.Clean)
 	}
-	if it.seen.Count > 0 {
-		field("visits", fmt.Sprintf("%d, last %s", it.seen.Count, ago(time.Unix(it.seen.Last, 0))), m.st.Visits)
-	} else {
-		field("visits", "never", m.st.Dim)
+	if m.mode == modeRepos {
+		if it.seen.Count > 0 {
+			field("visits", fmt.Sprintf("%d, last %s", it.seen.Count, ago(time.Unix(it.seen.Last, 0))), m.st.Visits)
+		} else {
+			field("visits", "never", m.st.Dim)
+		}
 	}
 	return out
+}
+
+// openWorktrees replaces the repository list with the checkouts of the
+// selected repository. A repository git cannot answer for is left alone: the
+// list simply does not change.
+func (m model) openWorktrees() (tea.Model, tea.Cmd) {
+	it, ok := m.current()
+	if !ok || m.mode != modeRepos {
+		return m, nil
+	}
+	wts, err := m.worktreesOf(it.path)
+	if err != nil || len(wts) == 0 {
+		return m, nil
+	}
+
+	m.saved = &stash{all: m.all, view: m.view, matched: m.matched, cursor: m.cursor, query: m.input.Value()}
+	m.origin = it.label
+	m.mode = modeWorktrees
+
+	// Reversed, so git's first worktree — the main one — lands at the bottom
+	// next to the cursor, the way the best match does in the main list.
+	items := make([]item, 0, len(wts))
+	for i := len(wts) - 1; i >= 0; i-- {
+		items = append(items, item{label: wts[i].Label(), path: wts[i].Path})
+	}
+	m.all = items
+	m.input.SetValue("")
+	m.filter()
+	return m, m.loadStatus()
+}
+
+// restore puts the repository list back, query and cursor included.
+func (m *model) restore() {
+	if m.saved == nil {
+		return
+	}
+	m.all, m.view, m.matched, m.cursor = m.saved.all, m.saved.view, m.saved.matched, m.saved.cursor
+	m.input.SetValue(m.saved.query)
+	m.mode, m.origin, m.saved = modeRepos, "", nil
 }
 
 // wrap renders v across as many lines of width w as it needs, so a long path

@@ -198,3 +198,38 @@ func TestHistoryRoundTrip(t *testing.T) {
 		t.Errorf("a removed repository is still logged (count %d)", got)
 	}
 }
+
+func TestParseWorktrees(t *testing.T) {
+	const out = `worktree /home/u/ghq/github.com/u/agx
+HEAD 0123456789abcdef0123456789abcdef01234567
+branch refs/heads/main
+
+worktree /home/u/.worktrees/agx-login
+HEAD 89abcdef0123456789abcdef0123456789abcdef
+branch refs/heads/feat/login
+
+worktree /home/u/.worktrees/agx-detached
+HEAD fedcba9876543210fedcba9876543210fedcba98
+detached
+`
+	got := parseWorktrees(out)
+	if len(got) != 3 {
+		t.Fatalf("parsed %d worktrees, want 3: %v", len(got), got)
+	}
+	// The main worktree comes first, the way git reports it.
+	if got[0].Path != "/home/u/ghq/github.com/u/agx" || got[0].Branch != "main" {
+		t.Errorf("first worktree = %+v", got[0])
+	}
+	if got[1].Branch != "feat/login" || got[1].Label() != "feat/login" {
+		t.Errorf("second worktree = %+v", got[1])
+	}
+	if got[2].Branch != "" || got[2].Label() != "fedcba9" {
+		t.Errorf("a detached HEAD should be labelled by its hash, got %q", got[2].Label())
+	}
+	if len(parseWorktrees("")) != 0 {
+		t.Error("empty output must parse to no worktrees")
+	}
+	if w := (Worktree{Path: "/x", Bare: true}); w.Label() != "(bare)" {
+		t.Errorf("a bare repository is labelled %q", w.Label())
+	}
+}
