@@ -103,6 +103,11 @@ theme = "kanagawa-wave"
 `catppuccin-mocha`, `rose-pine`, `dracula`. An unknown name is an error
 listing the valid ones.
 
+Every accent is desaturated toward its own brightness before it is drawn, so
+the six fields of the info pane read as one muted palette rather than a
+rainbow. The hue and the contrast against the background stay where the theme
+put them; `calm` in `theme.go` is the single knob.
+
 ### Root directory
 
 Resolved in this order, so an existing ghq tree works untouched:

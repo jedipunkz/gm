@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,9 +157,10 @@ func TestViewChrome(t *testing.T) {
 		{"input box bottom", "╰"},
 		{"selection marker", "▸"},
 		{"info pane divider", "│ "},
-		{"tokyonight border grey", "38;2;59;66;97"},  // #3b4261
-		{"selected row background", "48;2;41;46;66"}, // #292e42
-		{"matched characters", "38;2;255;158;100"},   // #ff9e64
+		{"tokyonight border grey", ansi("38", themes["tokyonight"].border)},
+		{"selected row background", ansi("48", themes["tokyonight"].bgHi)},
+		// Accents are muted at apply time, so ask for the color the UI uses.
+		{"matched characters", ansi("38", mute(themes["tokyonight"].orange))},
 	} {
 		if !strings.Contains(out, want.s) {
 			t.Errorf("view is missing the %s (%q)", want.what, want.s)
@@ -167,6 +169,15 @@ func TestViewChrome(t *testing.T) {
 	if first, _, _ := strings.Cut(out, "\n"); strings.Contains(first, "1/2") {
 		t.Errorf("the count header should be gone, got %q", first)
 	}
+}
+
+// ansi renders a #rrggbb color the way lipgloss writes it into the output.
+func ansi(layer, hex string) string {
+	var r, g, b int
+	if _, err := fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b); err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%s;2;%d;%d;%d", layer, r, g, b)
 }
 
 // TestRankingPrefersTheRepositoryName guards the case that made scattered
