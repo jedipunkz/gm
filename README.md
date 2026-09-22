@@ -2,7 +2,7 @@
 
 A [ghq](https://github.com/x-motemen/ghq)-style repository. `Ctrl-G` jumps to any of repositories, worktrees.
 
-## Advantages over ghq
+## ✨ Advantages over ghq
 
 - **The finder does the ranking itself** — a fuzzy match score first, then
   frecency (how recently and how often you opened a repository) to break ties
@@ -16,21 +16,21 @@ A [ghq](https://github.com/x-motemen/ghq)-style repository. `Ctrl-G` jumps to an
   `$GHQ_ROOT` and `ghq.root` are still honored, so an existing ghq tree works
   untouched.
 
-[Differences from ghq](#differences-from-ghq) has the full list.
+[Differences from ghq](#-differences-from-ghq) has the full list.
 
-## Requirements
+## 📋 Requirements
 
 - Go 1.25 or newer, to build or `go install`
 - `git` on `$PATH`
 - A true-color terminal, for the finder's themes to look as intended
 
-## Install
+## 📦 Install
 
 ```sh
 go install github.com/jedipunkz/gm@latest
 ```
 
-## Shell integration
+## 🐚 Shell integration
 
 `gm` with no arguments opens the finder and prints the chosen path on stdout;
 the TUI draws on stderr, so it composes with `$(...)`. One binding per shell
@@ -57,7 +57,7 @@ eval "$(gm shell zsh)"
 eval "$(gm shell bash)"
 ```
 
-## Keys
+## ⌨️ Keys
 
 `Ctrl-W` swaps the repository list for the git worktrees of the repository
 under the cursor, and swaps it back. Filtering, the details pane and `Enter`
@@ -83,7 +83,7 @@ that row is the main worktree.
 Everything else is ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U` and so
 on), except `Ctrl-W`, which no longer deletes the word before the cursor.
 
-## Commands
+## 🧰 Commands
 
 | Command | What it does |
 |---|---|
@@ -99,7 +99,7 @@ on), except `Ctrl-W`, which no longer deletes the word before the cursor.
 `<repo>` accepts a full URL, `git@host:user/repo.git`, `host/user/repo`,
 `user/repo`, or a bare `repo` (resolved against `git config github.user`).
 
-## Configuration
+## ⚙️ Configuration
 
 `~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) is optional; a file
 that cannot be parsed — or that holds a key `gm` does not know — stops `gm`
@@ -165,7 +165,7 @@ How far a chord travels depends on the terminal:
 | `ctrl-alt-<letter>` | Nearly everywhere: Alt is sent as an ESC prefix |
 | `ctrl-shift-<letter>` | Only with the Kitty keyboard protocol — Ghostty, kitty, WezTerm, foot, recent Alacritty. Elsewhere it arrives as plain `ctrl-<letter>` |
 
-## Ranking
+## 🎯 Ranking
 
 Typing filters by fuzzy match: word boundaries and consecutive characters earn
 points, gaps cost them, the repository name outweighs the user name, and the
@@ -181,11 +181,11 @@ ghq has nothing like this: `ghq list` prints the tree in directory order and
 leaves the choosing to whatever you pipe it into, so the repository you open
 every day is as far from the cursor as the one you cloned once and forgot.
 
-## Differences from ghq
+## 🆚 Differences from ghq
 
 - **A finder is built in.** No `ghq list | fzf | cd` pipeline to assemble, and
   the ranking knows which repositories you actually use, not just which ones
-  match what you typed (see [Ranking](#ranking)).
+  match what you typed (see [Ranking](#-ranking)).
 - **The best match is at the bottom**, next to the prompt where the cursor
   already rests, so the usual choice costs zero keystrokes.
 - **The details of the selected repository are on screen** — path, remote,
@@ -203,6 +203,6 @@ Not implemented, deliberately: Mercurial/Subversion/Darcs cloning (they are
 still *listed*), bare clones, partial clones, parallel import, `--vcs`, and
 `ghq.<url>.root` per-URL roots.
 
-## License
+## 📄 License
 
 MIT
