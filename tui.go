@@ -274,13 +274,13 @@ func (m model) View() tea.View {
 	if infoW > 0 {
 		info = m.infoLines(infoW)
 	}
-	// Bottom-align the info pane so it sits beside the selection, not adrift
-	// at the top of the screen. A pane taller than the window loses its tail
-	// rather than its name and path.
+	// Top-align the info pane: it reads top-down, unlike the list, which hangs
+	// from the prompt. A pane taller than the window loses its tail rather
+	// than its name and path.
 	if len(info) > len(lines) {
 		info = info[:len(lines)]
 	} else if pad := len(lines) - len(info); pad > 0 {
-		info = append(make([]string, pad), info...)
+		info = append(info, make([]string, pad)...)
 	}
 
 	var b strings.Builder
