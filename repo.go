@@ -22,20 +22,29 @@ func (r Repo) Path() string { return filepath.Join(r.Root, filepath.FromSlash(r.
 
 // Roots returns the directories gm keeps repositories in, most preferred first.
 //
-//	$GM_ROOT > git config --get-all gm.root > $GHQ_ROOT > ghq.root > ~/ghq
+//	$GM_ROOT > gm.toml root > git config gm.root >
+//	$GHQ_ROOT > git config ghq.root > ~/ghq
 //
 // The ghq fallbacks make gm a drop-in replacement for an existing ghq tree.
 func Roots() ([]string, error) {
-	for _, src := range []struct {
-		env string
-		key string
-	}{{"GM_ROOT", "gm.root"}, {"GHQ_ROOT", "ghq.root"}} {
-		if v := os.Getenv(src.env); v != "" {
-			return expandAll(filepath.SplitList(v))
-		}
-		if vs := gitConfigAll(src.key); len(vs) > 0 {
-			return expandAll(vs)
-		}
+	if v := os.Getenv("GM_ROOT"); v != "" {
+		return expandAll(filepath.SplitList(v))
+	}
+	cfg, err := configRoots()
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg) > 0 {
+		return expandAll(cfg)
+	}
+	if vs := gitConfigAll("gm.root"); len(vs) > 0 {
+		return expandAll(vs)
+	}
+	if v := os.Getenv("GHQ_ROOT"); v != "" {
+		return expandAll(filepath.SplitList(v))
+	}
+	if vs := gitConfigAll("ghq.root"); len(vs) > 0 {
+		return expandAll(vs)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {

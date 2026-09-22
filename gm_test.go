@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -213,5 +214,92 @@ func TestMatchScoreBeatsScatteredMatches(t *testing.T) {
 	scatteredScore := matchScore(scattered, []int{9, 14, 17, 29, 35, 36})
 	if runScore <= scatteredScore {
 		t.Errorf("contiguous match scored %v, scattered scored %v", runScore, scatteredScore)
+	}
+}
+
+func TestConfigRoots(t *testing.T) {
+	write := func(t *testing.T, body string) string {
+		t.Helper()
+		dir := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", dir)
+		if body != "" {
+			if err := os.MkdirAll(filepath.Join(dir, "gm"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "gm", "gm.toml"), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+
+	t.Run("missing file is not an error", func(t *testing.T) {
+		write(t, "")
+		got, err := configRoots()
+		if err != nil || got != nil {
+			t.Errorf("configRoots() = %v, %v; want nil, nil", got, err)
+		}
+	})
+
+	t.Run("a single root", func(t *testing.T) {
+		write(t, "root = \"~/code\"\n")
+		got, err := configRoots()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[0] != "~/code" {
+			t.Errorf("configRoots() = %v, want [~/code]", got)
+		}
+	})
+
+	t.Run("several roots", func(t *testing.T) {
+		write(t, "root = [\"/a\", \"/b\"]\n")
+		got, err := configRoots()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 2 || got[0] != "/a" || got[1] != "/b" {
+			t.Errorf("configRoots() = %v, want [/a /b]", got)
+		}
+	})
+
+	t.Run("Roots honours the file and expands ~", func(t *testing.T) {
+		write(t, "root = \"~/code\"\n")
+		t.Setenv("GM_ROOT", "")
+		got, err := Roots()
+		if err != nil {
+			t.Fatal(err)
+		}
+		home, _ := os.UserHomeDir()
+		if len(got) != 1 || got[0] != filepath.Join(home, "code") {
+			t.Errorf("Roots() = %v, want [%s]", got, filepath.Join(home, "code"))
+		}
+	})
+
+	t.Run("GM_ROOT still wins", func(t *testing.T) {
+		write(t, "root = \"/from-file\"\n")
+		t.Setenv("GM_ROOT", "/from-env")
+		got, err := Roots()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[0] != "/from-env" {
+			t.Errorf("Roots() = %v, want [/from-env]", got)
+		}
+	})
+
+	// A broken config must stop gm rather than silently send clones elsewhere.
+	for name, body := range map[string]string{
+		"malformed":  "root = \n",
+		"wrong type": "root = 42\n",
+		"mixed list": "root = [\"/a\", 7]\n",
+		"empty list": "root = []\n",
+	} {
+		t.Run(name+" is an error", func(t *testing.T) {
+			write(t, body)
+			if got, err := configRoots(); err == nil {
+				t.Errorf("configRoots() = %v, nil; want an error", got)
+			}
+		})
 	}
 }

@@ -73,15 +73,33 @@ Keys: type to filter, `↑`/`↓` (or `Ctrl-P`/`Ctrl-N`) to move, `Enter` to jum
 `<repo>` accepts a full URL, `git@host:user/repo.git`, `host/user/repo`,
 `user/repo`, or a bare `repo` (resolved against `git config github.user`).
 
-## Root directory
+## Configuration
+
+`~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) says where your
+repositories live:
+
+```toml
+root = "~/ghq"
+```
+
+```toml
+# or several, searched in order
+root = ["~/ghq", "~/src"]
+```
+
+The file is optional, but one that cannot be parsed stops `gm` rather than
+letting it clone somewhere unexpected.
+
+### Root directory
 
 Resolved in this order, so an existing ghq tree works untouched:
 
 1. `$GM_ROOT`
-2. `git config --get-all gm.root`
-3. `$GHQ_ROOT`
-4. `git config --get-all ghq.root`
-5. `~/ghq`
+2. `root` in `~/.config/gm/gm.toml`
+3. `git config --get-all gm.root`
+4. `$GHQ_ROOT`
+5. `git config --get-all ghq.root`
+6. `~/ghq`
 
 ## Ranking
 

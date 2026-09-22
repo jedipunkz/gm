@@ -21,7 +21,8 @@ usage:
   gm shell <fish|zsh|bash>          print the Ctrl-G key binding
 
 <repo> is a URL, host/user/repo, user/repo, or just repo.
-The root is $GM_ROOT, git config gm.root, $GHQ_ROOT, ghq.root, or ~/ghq.
+The root is $GM_ROOT, ~/.config/gm/gm.toml, git config gm.root,
+$GHQ_ROOT, git config ghq.root, or ~/ghq.
 `
 
 func main() {
