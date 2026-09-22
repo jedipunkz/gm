@@ -47,8 +47,10 @@ In the finder: type to filter, `↑`/`↓` (or `Ctrl-P`/`Ctrl-N`) to move, `Ente
 to jump, `Esc` to cancel.
 
 `Ctrl-W` replaces the list with the git worktrees of the selected repository.
-Filter and `Enter` work the same way; `Esc` goes back to the repositories with
-your query intact. In that list the main worktree is the one under the cursor.
+Filter and `Enter` work the same way, and the main worktree is the one under
+the cursor. `Ctrl-W` again, `Ctrl-G` or `Esc` goes back to the repositories
+with your query intact; from the repository list `Esc` quits.
+
 `Ctrl-W` no longer deletes the word before the cursor.
 
 ## Commands
