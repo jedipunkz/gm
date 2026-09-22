@@ -167,3 +167,51 @@ func TestViewChrome(t *testing.T) {
 		t.Errorf("the count header should be gone, got %q", first)
 	}
 }
+
+// TestRankingPrefersTheRepositoryName guards the case that made scattered
+// matches across the shared "github.com/user/" prefix outrank a literal hit in
+// the repository name.
+func TestRankingPrefersTheRepositoryName(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	repos := []Repo{
+		{Root: root, Rel: "github.com/jedipunkz/detect-minecraft-versions"},
+		{Root: root, Rel: "github.com/jedipunkz/miniecs"},
+		{Root: root, Rel: "github.com/jedipunkz/spacex-ipo-checker"},
+	}
+	m := newModel(repos)
+	m.input.SetValue("miniec")
+	m.filter()
+
+	it, ok := m.current()
+	if !ok {
+		t.Fatal("nothing selected")
+	}
+	if it.repo.Rel != "github.com/jedipunkz/miniecs" {
+		t.Errorf("selected %q, want github.com/jedipunkz/miniecs", it.repo.Rel)
+	}
+
+	// The highlight must sit on the literal "miniec", not be scattered across
+	// the host and user segments.
+	hits := m.matched[m.view[m.cursor]]
+	want := strings.Index(it.repo.Rel, "miniec")
+	for n, got := range hits {
+		if got != want+n {
+			t.Fatalf("highlight at %v, want the run starting at %d", hits, want)
+		}
+	}
+	if len(hits) != len("miniec") {
+		t.Errorf("highlighted %d characters, want %d", len(hits), len("miniec"))
+	}
+}
+
+func TestMatchScoreBeatsScatteredMatches(t *testing.T) {
+	const run = "github.com/jedipunkz/miniecs"
+	const scattered = "github.com/jedipunkz/spacex-ipo-checker"
+	runScore := matchScore(run, substringMatch(run, "miniec"))
+	// m-i-n from the host and user, then i, e, c spread through the name.
+	scatteredScore := matchScore(scattered, []int{9, 14, 17, 29, 35, 36})
+	if runScore <= scatteredScore {
+		t.Errorf("contiguous match scored %v, scattered scored %v", runScore, scatteredScore)
+	}
+}

@@ -85,6 +85,14 @@ Resolved in this order, so an existing ghq tree works untouched:
 
 ## Ranking
 
+Typing filters by fuzzy match, scored fzy-style: characters that land on a word
+boundary or continue the previous match earn points, gaps cost them, matches
+inside the repository name count for more than the user name, and the `host`
+segment — identical across nearly every repository — counts against a match. A
+literal substring always beats a subsequence pieced together from elsewhere, so
+`miniec` finds `jedipunkz/miniecs` rather than spelling itself out of
+`github.com/jedipunkz/spacex-ipo-checker`. Frecency only breaks ties.
+
 Visits are recorded in `$XDG_STATE_HOME/gm/frecency.json` (default
 `~/.local/state/gm/frecency.json`) and scored the way `z` and `zoxide` do —
 frequency weighted by recency, so two visits this hour outrank ten from last

@@ -133,12 +133,20 @@ func (m *model) filter() {
 			m.view[i] = i
 		}
 	} else {
+		lower := strings.ToLower(q)
 		matches := fuzzy.FindFrom(q, source(m.all))
-		score := make(map[int]int, len(matches))
+		score := make(map[int]float64, len(matches))
 		idx := make([]int, 0, len(matches))
 		for _, mt := range matches {
-			score[mt.Index] = mt.Score
-			m.matched[mt.Index] = runeIndexes(m.all[mt.Index].repo.Rel, mt.MatchedIndexes)
+			rel := m.all[mt.Index].repo.Rel
+			// fuzzy finds candidates; where it landed the characters is its
+			// own guess, and a literal hit beats that guess every time.
+			pos := substringMatch(rel, lower)
+			if pos == nil {
+				pos = mt.MatchedIndexes
+			}
+			score[mt.Index] = matchScore(rel, pos)
+			m.matched[mt.Index] = runeIndexes(rel, pos)
 			idx = append(idx, mt.Index)
 		}
 		// Ascending, so the strongest match lands at the bottom; frecency
