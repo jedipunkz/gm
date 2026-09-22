@@ -1,6 +1,7 @@
 package finder
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,8 +49,8 @@ func TestFinderPutsBestAtBottom(t *testing.T) {
 	if m.cursor != len(m.view)-1 {
 		t.Errorf("cursor at %d, want the bottom row %d", m.cursor, len(m.view)-1)
 	}
-	if it, _ := m.current(); it.repo.Rel != "github.com/acme/bravo" {
-		t.Errorf("selected %q, want the most-visited github.com/acme/bravo", it.repo.Rel)
+	if it, _ := m.current(); it.label != "github.com/acme/bravo" {
+		t.Errorf("selected %q, want the most-visited github.com/acme/bravo", it.label)
 	}
 
 	m.input.SetValue("charlie")
@@ -57,8 +58,8 @@ func TestFinderPutsBestAtBottom(t *testing.T) {
 	if len(m.view) != 1 {
 		t.Fatalf("filter kept %d rows, want 1", len(m.view))
 	}
-	if it, _ := m.current(); it.repo.Rel != "github.com/other/charlie" {
-		t.Errorf("filtered selection is %q, want github.com/other/charlie", it.repo.Rel)
+	if it, _ := m.current(); it.label != "github.com/other/charlie" {
+		t.Errorf("filtered selection is %q, want github.com/other/charlie", it.label)
 	}
 }
 
@@ -149,14 +150,14 @@ func TestRankingPrefersTheRepositoryName(t *testing.T) {
 	if !ok {
 		t.Fatal("nothing selected")
 	}
-	if it.repo.Rel != "github.com/jedipunkz/miniecs" {
-		t.Errorf("selected %q, want github.com/jedipunkz/miniecs", it.repo.Rel)
+	if it.label != "github.com/jedipunkz/miniecs" {
+		t.Errorf("selected %q, want github.com/jedipunkz/miniecs", it.label)
 	}
 
 	// The highlight must sit on the literal "miniec", not be scattered across
 	// the host and user segments.
 	hits := m.matched[m.view[m.cursor]]
-	want := strings.Index(it.repo.Rel, "miniec")
+	want := strings.Index(it.label, "miniec")
 	for n, got := range hits {
 		if got != want+n {
 			t.Fatalf("highlight at %v, want the run starting at %d", hits, want)
@@ -229,4 +230,78 @@ func stripANSI(s string) string {
 		i++
 	}
 	return b.String()
+}
+
+// TestWorktreeMode pins the Ctrl-W list: it replaces the repositories, the
+// main worktree rests under the cursor, typing filters it, Enter yields that
+// worktree's path, and Esc puts the repository list back untouched.
+func TestWorktreeMode(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{
+		{Root: root, Rel: "github.com/acme/alpha"},
+		{Root: root, Rel: "github.com/acme/bravo"},
+	}
+	m := newTestModel(t, repos, "")
+	m.input.SetValue("bravo")
+	m.filter()
+	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+		if dir != repos[1].Path() {
+			t.Errorf("asked for the worktrees of %q, want %q", dir, repos[1].Path())
+		}
+		return []repo.Worktree{
+			{Path: dir, Branch: "main"},
+			{Path: "/tmp/wt/bravo-login", Branch: "feat/login"},
+			{Path: "/tmp/wt/bravo-fix", Branch: "fix/timeout"},
+		}, nil
+	}
+
+	next, _ := m.openWorktrees()
+	m = next.(model)
+	if m.mode != modeWorktrees {
+		t.Fatal("Ctrl-W did not open the worktree list")
+	}
+	if len(m.view) != 3 {
+		t.Fatalf("worktree list has %d rows, want 3", len(m.view))
+	}
+	if it, _ := m.current(); it.label != "main" {
+		t.Errorf("cursor rests on %q, want the main worktree", it.label)
+	}
+	if m.input.Value() != "" {
+		t.Errorf("the repository query %q leaked into the worktree list", m.input.Value())
+	}
+
+	m.input.SetValue("login")
+	m.filter()
+	it, ok := m.current()
+	if !ok || it.label != "feat/login" {
+		t.Fatalf("filtering for \"login\" selected %q", it.label)
+	}
+	if it.path != "/tmp/wt/bravo-login" {
+		t.Errorf("Enter would jump to %q, want the worktree path", it.path)
+	}
+
+	m.restore()
+	if m.mode != modeRepos {
+		t.Fatal("Esc did not return to the repository list")
+	}
+	if m.input.Value() != "bravo" {
+		t.Errorf("the repository query came back as %q, want bravo", m.input.Value())
+	}
+	if it, _ := m.current(); it.label != "github.com/acme/bravo" {
+		t.Errorf("the repository selection came back as %q", it.label)
+	}
+}
+
+// TestWorktreeModeLeavesTheListAloneOnError guards the case where git cannot
+// answer: the finder must stay usable rather than empty itself.
+func TestWorktreeModeLeavesTheListAloneOnError(t *testing.T) {
+	root := t.TempDir()
+	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
+	m.worktreesOf = func(string) ([]repo.Worktree, error) { return nil, errors.New("not a git repository") }
+
+	next, _ := m.openWorktrees()
+	m = next.(model)
+	if m.mode != modeRepos || len(m.view) != 1 {
+		t.Errorf("a failed worktree listing changed the finder: mode=%v rows=%d", m.mode, len(m.view))
+	}
 }
