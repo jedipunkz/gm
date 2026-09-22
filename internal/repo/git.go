@@ -47,10 +47,10 @@ type Status struct {
 	Dirty   int      // changed files
 }
 
-// recentCommits is how many commits Describe collects. It is what fits beside
-// a repository list on an ordinary terminal; the pane draws fewer when it is
-// short of height.
-const recentCommits = 5
+// recentCommits is how many commits Describe collects. Three answers "is this
+// the repository I mean?" without turning the details pane into a log; the
+// pane draws fewer when it is short of height.
+const recentCommits = 3
 
 // Describe collects the status of one working copy. It shells out four times,
 // so callers keep it off any hot path.

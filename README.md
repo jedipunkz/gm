@@ -13,7 +13,7 @@ and `Ctrl-G` jumps to any of them — or to any of their git worktrees.
   recently and how often you opened a repository) to break ties between equally
   good matches. See [Ranking](#-ranking).
 - **The selected repository is described on screen** — path, remote, branch,
-  working-tree status, visit count, and the last five commits with their
+  working-tree status, visit count, and the last three commits with their
   branch and tag decorations — so you can tell two similarly named clones
   apart before jumping.
 - **Worktrees are first-class** — `Ctrl-W` swaps the list for the git worktrees

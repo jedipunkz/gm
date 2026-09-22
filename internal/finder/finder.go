@@ -573,7 +573,9 @@ func (m model) infoLines(w int) []string {
 		field("last commit", "", m.st.Commit)
 		return out
 	}
-	label := "last commits"
+	// The count is in the label: the lines fold, so "how many commits am I
+	// looking at" is not answerable by counting rows.
+	label := fmt.Sprintf("last %d commits", len(s.Commits))
 	if len(s.Commits) == 1 {
 		label = "last commit"
 	}

@@ -664,11 +664,11 @@ func TestCommitLineColours(t *testing.T) {
 	line := lines[0]
 
 	for _, want := range []struct{ what, hex string }{
-		{"hash", th.Yellow},
+		{"hash", blend(th.Blue, th.Comment, 0.35)},
 		{"HEAD", th.Cyan},
-		{"local branch", th.Green},
-		{"remote branch", th.Red},
-		{"subject", th.Fg},
+		{"local branch", th.Blue},
+		{"remote branch", blend(th.Blue, th.Comment, 0.5)},
+		{"subject", blend(th.Comment, th.Fg, rowLift)},
 	} {
 		if !strings.Contains(line, ansi("38", want.hex)) {
 			t.Errorf("the %s is not painted %s:\n%q", want.what, want.hex, line)
@@ -721,7 +721,8 @@ func TestCommitLineWraps(t *testing.T) {
 	if len(lines) < 2 {
 		t.Fatalf("width 24 should fold: %q", lines)
 	}
-	if !strings.Contains(lines[0], ansi("38", themes[DefaultTheme].Yellow)) {
+	th := themes[DefaultTheme]
+	if !strings.Contains(lines[0], ansi("38", blend(th.Blue, th.Comment, 0.35))) {
 		t.Errorf("the first line lost the hash colour: %q", lines[0])
 	}
 }

@@ -170,23 +170,27 @@ func (t Theme) Styles() Styles {
 		return fg(hex).Background(lipgloss.Color(t.BgHi)).Bold(true)
 	}
 	return Styles{
-		Row:       fg(blend(t.Comment, t.Fg, rowLift)),
-		RowSel:    on(t.Fg),
-		Hit:       fg(t.Orange).Bold(true),
-		HitSel:    on(t.Orange),
-		Marker:    on(t.Blue),
-		Divider:   fg(t.Border),
-		Label:     fg(t.Comment),
-		Name:      fg(t.Blue).Bold(true),
-		Path:      fg(t.Green),
-		Remote:    fg(t.Cyan),
-		Branch:    fg(t.Magenta),
-		Commit:    fg(t.Yellow),
-		Subject:   fg(t.Fg),
+		Row:     fg(blend(t.Comment, t.Fg, rowLift)),
+		RowSel:  on(t.Fg),
+		Hit:     fg(t.Orange).Bold(true),
+		HitSel:  on(t.Orange),
+		Marker:  on(t.Blue),
+		Divider: fg(t.Border),
+		Label:   fg(t.Comment),
+		Name:    fg(t.Blue).Bold(true),
+		Path:    fg(t.Green),
+		Remote:  fg(t.Cyan),
+		Branch:  fg(t.Magenta),
+		// The commit block stays inside one cool family — the theme's blue
+		// and cyan, lightened towards the foreground or darkened towards the
+		// comment colour. Brightness carries the distinction between the
+		// parts, so five different hues do not compete down the pane.
+		Commit:    fg(blend(t.Blue, t.Comment, 0.35)),
+		Subject:   fg(blend(t.Comment, t.Fg, rowLift)),
 		RefHead:   fg(t.Cyan).Bold(true),
-		RefLocal:  fg(t.Green).Bold(true),
-		RefRemote: fg(t.Red),
-		RefTag:    fg(t.Yellow).Bold(true),
+		RefLocal:  fg(t.Blue).Bold(true),
+		RefRemote: fg(blend(t.Blue, t.Comment, 0.5)),
+		RefTag:    fg(blend(t.Cyan, t.Comment, 0.35)),
 		Punct:     fg(t.Comment),
 		Clean:     fg(t.Green),
 		Dirty:     fg(t.Red),
