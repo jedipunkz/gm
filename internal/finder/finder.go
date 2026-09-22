@@ -238,14 +238,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
-		case "esc":
-			// Esc backs out of the worktree list before it quits gm.
+		case "esc", "ctrl+g":
+			// These back out of the worktree list before they quit gm; from
+			// the repository list Ctrl-G does nothing, since it is the key
+			// that opened gm in the first place.
 			if m.mode == modeWorktrees {
 				m.restore()
 				return m, m.loadStatus()
 			}
-			return m, tea.Quit
+			if msg.String() == "esc" {
+				return m, tea.Quit
+			}
+			return m, nil
 		case "ctrl+w":
+			// The same key toggles the worktree list back off.
+			if m.mode == modeWorktrees {
+				m.restore()
+				return m, m.loadStatus()
+			}
 			return m.openWorktrees()
 		case "enter":
 			if it, ok := m.current(); ok {

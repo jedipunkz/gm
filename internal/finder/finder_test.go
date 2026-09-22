@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/jedipunkz/gm/internal/repo"
 )
 
@@ -290,6 +292,58 @@ func TestWorktreeMode(t *testing.T) {
 	if it, _ := m.current(); it.label != "github.com/acme/bravo" {
 		t.Errorf("the repository selection came back as %q", it.label)
 	}
+}
+
+// TestWorktreeModeKeysGoBack pins the three ways out of the worktree list:
+// Ctrl-W toggles it off, Ctrl-G closes it, and Esc does too. Only Esc quits
+// gm, and only from the repository list.
+func TestWorktreeModeKeysGoBack(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+
+	keys := map[string]tea.KeyPressMsg{
+		"ctrl+w": {Code: 'w', Mod: tea.ModCtrl},
+		"ctrl+g": {Code: 'g', Mod: tea.ModCtrl},
+		"esc":    {Code: tea.KeyEscape},
+	}
+	for key, press := range keys {
+		m := newTestModel(t, repos, "")
+		m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+			return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
+		}
+		next, _ := m.openWorktrees()
+		m = next.(model)
+		if m.mode != modeWorktrees {
+			t.Fatal("the worktree list did not open")
+		}
+
+		next, cmd := m.Update(press)
+		m = next.(model)
+		if m.mode != modeRepos {
+			t.Errorf("%s did not return to the repository list", key)
+		}
+		if isQuit(cmd) {
+			t.Errorf("%s quit gm instead of closing the worktree list", key)
+		}
+	}
+
+	// From the repository list, Esc still quits and Ctrl-G does nothing.
+	m := newTestModel(t, repos, "")
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape}); !isQuit(cmd) {
+		t.Error("Esc should quit from the repository list")
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl}); isQuit(cmd) {
+		t.Error("Ctrl-G should not quit from the repository list")
+	}
+}
+
+// isQuit reports whether a command is tea.Quit, which is what ends the finder.
+func isQuit(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
 }
 
 // TestWorktreeModeLeavesTheListAloneOnError guards the case where git cannot
