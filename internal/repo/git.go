@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,48 @@ func Git(args ...string) error {
 	cmd := exec.Command("git", args...)
 	cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stderr, os.Stderr, os.Stdin
 	return cmd.Run()
+}
+
+// gitQuiet runs git without letting it near the terminal: the finder may own
+// the screen, and a stray "Preparing worktree" line would land on top of it.
+// Whatever git printed comes back in the error instead of being shown.
+func gitQuiet(args ...string) error {
+	out, err := exec.Command("git", args...).CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	if msg := gitMessage(out); msg != "" {
+		return errors.New(msg)
+	}
+	return err
+}
+
+// gitMessage picks the line worth repeating out of git's output: what it
+// complained about, or failing that the first thing it said.
+func gitMessage(out []byte) string {
+	var first string
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "" || strings.HasPrefix(line, "hint:"):
+			continue
+		case strings.HasPrefix(line, "fatal: "), strings.HasPrefix(line, "error: "):
+			return strings.TrimSpace(line[strings.Index(line, " ")+1:])
+		case first == "":
+			first = line
+		}
+	}
+	return first
+}
+
+// ValidBranch reports whether git would take this as a branch name. gm asks
+// before it builds a path out of one: a name like "../.." would otherwise
+// make a directory outside the tree before git ever saw it.
+func ValidBranch(name string) bool {
+	if name == "" || strings.HasPrefix(name, "-") || strings.Contains(name, "..") {
+		return false
+	}
+	return exec.Command("git", "check-ref-format", "--branch", name).Run() == nil
 }
 
 // GitIn runs git inside dir and returns its trimmed output.
@@ -311,6 +355,9 @@ func BranchExists(dir, branch string) bool {
 // AddWorktree checks branch out at dir, starting the branch from HEAD when it
 // does not exist yet.
 func AddWorktree(repoDir, dir, branch string) error {
+	if !ValidBranch(branch) {
+		return fmt.Errorf("%q is not a branch name", branch)
+	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return err
 	}
@@ -320,7 +367,7 @@ func AddWorktree(repoDir, dir, branch string) error {
 	} else {
 		args = append(args, "-b", branch, dir)
 	}
-	return Git(args...)
+	return gitQuiet(args...)
 }
 
 // RemoveWorktree takes a checkout away. force is what the caller has already
@@ -330,5 +377,5 @@ func RemoveWorktree(repoDir, dir string, force bool) error {
 	if force {
 		args = append(args, "--force")
 	}
-	return Git(append(args, dir)...)
+	return gitQuiet(append(args, dir)...)
 }

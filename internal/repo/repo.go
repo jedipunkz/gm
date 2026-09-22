@@ -288,10 +288,11 @@ func (t *Tree) Create(ref string, ssh bool) (Repo, error) {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return Repo{}, err
 	}
-	if err := Git("-C", dst, "init", "--quiet"); err != nil {
+	// Quietly: this runs under the finder as well as from the command line.
+	if err := gitQuiet("-C", dst, "init", "--quiet"); err != nil {
 		return Repo{}, err
 	}
-	if err := Git("-C", dst, "remote", "add", "origin", u.String()); err != nil {
+	if err := gitQuiet("-C", dst, "remote", "add", "origin", u.String()); err != nil {
 		return Repo{}, err
 	}
 	return Repo{Root: t.Primary(), Rel: rel}, nil

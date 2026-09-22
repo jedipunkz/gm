@@ -1487,3 +1487,65 @@ func TestWorktreeCreateRefusesADuplicate(t *testing.T) {
 		t.Errorf("the note does not explain why: %q", m.note)
 	}
 }
+
+// TestWorktreeCreateRefusesABogusBranch says so under the prompt rather than
+// letting git print a page of hints over the list.
+func TestWorktreeCreateRefusesABogusBranch(t *testing.T) {
+	root := t.TempDir()
+	r := repo.Repo{Root: root, Rel: "github.com/acme/alpha"}
+	realRepo(t, r.Path())
+
+	m := newTestModel(t, []repo.Repo{r}, "")
+	next, _ := m.openWorktrees()
+	m = next.(model)
+
+	m, cmd := runSlash(t, m, "/create ../../escaped")
+	if cmd != nil || m.over != overlayNone {
+		t.Error("/create acted on a name that is not a branch name")
+	}
+	if !strings.Contains(m.note, "not a branch name") {
+		t.Errorf("the note does not explain why: %q", m.note)
+	}
+	if _, err := os.Stat(filepath.Join(root, repo.WorktreeRoot)); !os.IsNotExist(err) {
+		t.Errorf("it made directories anyway: %v", err)
+	}
+}
+
+// TestRemovingTheLastRepositoryLeavesAUsableFinder: an empty list has no
+// selection, and everything that reads one has to cope.
+func TestRemovingTheLastRepositoryLeavesAUsableFinder(t *testing.T) {
+	root := t.TempDir()
+	r := repo.Repo{Root: root, Rel: "github.com/acme/alpha"}
+	if err := os.MkdirAll(filepath.Join(r.Path(), ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := newTestModel(t, []repo.Repo{r}, "")
+	m.w, m.h = 80, 12
+
+	m, _ = runSlash(t, m, "/remove")
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	next, _ = next.(model).Update(cmd())
+	m = next.(model)
+
+	if len(m.view) != 0 {
+		t.Fatalf("the list still has %v", rows(m))
+	}
+	if _, ok := m.current(); ok {
+		t.Error("an empty list still reports a selection")
+	}
+	// None of these may panic on an empty list.
+	if out := stripANSI(m.View().Content); !strings.Contains(out, "no match") {
+		t.Errorf("the pane does not say the list is empty:\n%s", out)
+	}
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyUp}, {Code: tea.KeyDown}, {Code: tea.KeyEnter}} {
+		after, _ := m.Update(key)
+		if after.(model).result.Arg != "" {
+			t.Errorf("%v chose something out of an empty list", key)
+		}
+	}
+	// And a command that needs a selection says so.
+	m, _ = runSlash(t, m, "/remove")
+	if m.over != overlayNone || !strings.Contains(m.note, "nothing is selected") {
+		t.Errorf("/remove on an empty list: over=%v note=%q", m.over, m.note)
+	}
+}
