@@ -139,6 +139,7 @@ type model struct {
 	origin string // in worktree mode, the repository the list belongs to
 	saved  *stash
 	keys   Keys
+	query  string // the query the view was built from; a command is not one
 	help   bool   // the command list is up
 	note   string // a one-line answer under the prompt, cleared on the next keystroke
 	// worktreesOf is the seam the tests replace; it is repo.Worktrees in
@@ -205,6 +206,11 @@ func (m *model) filter() {
 	if isCommand(q) {
 		q = ""
 	}
+	// The cursor follows the ranking, and the ranking only moves when the
+	// query does. Typing a slash command changes the input without changing
+	// the query, and the selection has to stay where the user put it.
+	ranked := q != m.query || m.view == nil
+	m.query = q
 	if q == "" {
 		m.view = make([]int, len(m.all))
 		for i := range m.all {
@@ -237,7 +243,10 @@ func (m *model) filter() {
 		})
 		m.view = idx
 	}
-	m.cursor = len(m.view) - 1
+
+	if ranked {
+		m.cursor = len(m.view) - 1
+	}
 }
 
 // runeIndexes converts fuzzy's byte offsets into rune positions, which is what

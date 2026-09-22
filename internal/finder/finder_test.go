@@ -883,3 +883,49 @@ func TestCommandCompletion(t *testing.T) {
 		t.Errorf("tab produced %q", got)
 	}
 }
+
+// TestCursorSurvivesACommand guards the bug where typing a slash threw the
+// selection back to the best match: the rows do not move while a command is
+// typed, so neither should the cursor.
+func TestCursorSurvivesACommand(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{
+		{Root: root, Rel: "github.com/acme/alpha"},
+		{Root: root, Rel: "github.com/acme/bravo"},
+		{Root: root, Rel: "github.com/acme/charlie"},
+	}
+	m := newTestModel(t, repos, "")
+
+	// Move up one from the bottom row, the way ↑ does.
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	m = next.(model)
+	want, _ := m.current()
+	if m.cursor != len(m.view)-2 {
+		t.Fatalf("cursor at %d, want one above the bottom", m.cursor)
+	}
+
+	for _, r := range "/he" {
+		next, _ = m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		m = next.(model)
+		got, ok := m.current()
+		if !ok || got.label != want.label {
+			t.Fatalf("after typing %q the selection moved to %q, want %q", string(r), got.label, want.label)
+		}
+	}
+
+	// Erasing it back to an empty query must not move it either.
+	for range "/he" {
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+		m = next.(model)
+	}
+	if got, _ := m.current(); got.label != want.label {
+		t.Errorf("erasing the command moved the selection to %q, want %q", got.label, want.label)
+	}
+
+	// A real query still puts the cursor on the best match.
+	next, _ = m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	m = next.(model)
+	if m.cursor != len(m.view)-1 {
+		t.Errorf("a query left the cursor at %d, want the bottom row %d", m.cursor, len(m.view)-1)
+	}
+}
