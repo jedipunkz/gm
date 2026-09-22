@@ -87,8 +87,14 @@ completes it as you go, and `Tab` accepts what it offers.
 | Command | What it does |
 |---|---|
 | `/help` | Show the command list; `q` or `Esc` closes it |
+| `/dirty` | Show only repositories with uncommitted work; run it again to show all |
 | `/worktrees` | Same as `Ctrl-W` |
 | `/remote` | Same as `Ctrl-Alt-B` |
+
+`/dirty` asks git about every repository the first time it is used, in
+parallel and off the drawing thread — the list stays usable while the answer
+comes back, and the line under the prompt says `dirty only` while the filter
+is on. Typing a query narrows what the filter left.
 
 Only a leading slash starts a command — repository paths are full of slashes,
 and `acme/alpha` keeps filtering the way it always did.

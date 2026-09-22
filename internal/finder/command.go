@@ -33,6 +33,29 @@ var commands = []command{
 	{"/remote", "open the selected repository's remote in a browser", func(m model) (model, tea.Cmd) {
 		return m, m.openRemote()
 	}},
+	{"/dirty", "show only repositories with uncommitted work; again shows all", func(m model) (model, tea.Cmd) {
+		if m.mode != modeRepos {
+			m.note = "/dirty applies to the repository list"
+			return m, nil
+		}
+		if m.dirtyOnly {
+			m.dirtyOnly = false
+			m.filter()
+			m.cursor = len(m.view) - 1
+			return m, nil
+		}
+		m.dirtyOnly = true
+		if m.dirty == nil {
+			// The answer needs a git call per repository, so it is asked for
+			// the first time someone wants it, not at startup.
+			m.scanning = true
+			m.note = "checking every repository for uncommitted work…"
+			return m, m.scanDirty()
+		}
+		m.filter()
+		m.cursor = len(m.view) - 1
+		return m, nil
+	}},
 }
 
 func commandNames() []string {
