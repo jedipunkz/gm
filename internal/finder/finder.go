@@ -1,4 +1,9 @@
-package main
+// Package finder is the interactive repository picker: a fuzzy filter over the
+// repositories, ranked by match quality and then by how often they are used.
+//
+// The best match sits at the BOTTOM of the list, next to the prompt and the
+// cursor's resting place, so the most likely repository needs zero keystrokes.
+package finder
 
 import (
 	"fmt"
@@ -11,40 +16,34 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/sahilm/fuzzy"
+
+	"github.com/jedipunkz/gm/internal/repo"
 )
 
-// The best match sits at the BOTTOM of the list, next to the prompt and the
-// cursor's resting place, so the most likely repository needs zero keystrokes.
-
-func fg(hex string) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(hex))
+// Run draws the finder and returns the path the user chose, or "" if they
+// quit. It draws on the terminal itself, never on stdout: stdout carries the
+// chosen path back to the shell binding.
+func Run(repos []repo.Repo, h *repo.History, theme Theme) (string, error) {
+	opts := []tea.ProgramOption{tea.WithOutput(os.Stderr)}
+	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+		defer tty.Close()
+		opts = []tea.ProgramOption{tea.WithInput(tty), tea.WithOutput(tty)}
+	}
+	res, err := tea.NewProgram(newModel(repos, h, theme), opts...).Run()
+	if err != nil {
+		return "", err
+	}
+	m, ok := res.(model)
+	if !ok {
+		return "", nil
+	}
+	return m.chosen, nil
 }
 
-// Set by applyTheme; see theme.go.
-var (
-	styleRow     lipgloss.Style
-	styleRowSel  lipgloss.Style
-	styleHit     lipgloss.Style
-	styleHitSel  lipgloss.Style
-	styleMarker  lipgloss.Style
-	styleDivider lipgloss.Style
-	styleLabel   lipgloss.Style
-	styleName    lipgloss.Style
-	stylePath    lipgloss.Style
-	styleRemote  lipgloss.Style
-	styleBranch  lipgloss.Style
-	styleCommit  lipgloss.Style
-	styleClean   lipgloss.Style
-	styleDirty   lipgloss.Style
-	styleVisits  lipgloss.Style
-	styleDim     lipgloss.Style
-	styleBox     lipgloss.Style
-)
-
 type item struct {
-	repo  Repo
+	repo  repo.Repo
 	score float64
-	seen  visit
+	seen  repo.Visit
 }
 
 type source []item
@@ -52,14 +51,10 @@ type source []item
 func (s source) String(i int) string { return s[i].repo.Rel }
 func (s source) Len() int            { return len(s) }
 
-type repoInfo struct {
-	remote, branch, commit string
-	dirty                  int
-}
-
-type infoMsg struct {
-	path string
-	info repoInfo
+// statusMsg carries one repository's git status back to the UI thread.
+type statusMsg struct {
+	path   string
+	status repo.Status
 }
 
 type model struct {
@@ -68,17 +63,17 @@ type model struct {
 	matched map[int][]int // item index -> matched rune positions
 	cursor  int           // index into view
 	input   textinput.Model
-	info    map[string]repoInfo
+	status  map[string]repo.Status
+	st      Styles
 	w, h    int
 	chosen  string
 }
 
-func newModel(repos []Repo) model {
-	freq := LoadFrecency()
+func newModel(repos []repo.Repo, hist *repo.History, theme Theme) model {
 	now := time.Now()
 	items := make([]item, 0, len(repos))
 	for _, r := range repos {
-		v := freq[r.Path()]
+		v := hist.Visit(r.Path())
 		items = append(items, item{repo: r, score: v.Score(now), seen: v})
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -88,27 +83,35 @@ func newModel(repos []Repo) model {
 		return items[i].repo.Rel < items[j].repo.Rel
 	})
 
+	st := theme.Styles()
 	in := textinput.New()
 	in.Prompt = "❯ "
 	in.Placeholder = "filter"
 	in.SetVirtualCursor(true)
 	in.Focus()
-	st := textinput.DefaultDarkStyles()
-	if theme.light {
-		st = textinput.DefaultLightStyles()
+	ts := textinput.DefaultDarkStyles()
+	if theme.Light {
+		ts = textinput.DefaultLightStyles()
 	}
-	st.Focused.Prompt = fg(theme.blue)
-	st.Focused.Text = fg(theme.fg)
-	st.Focused.Placeholder = fg(theme.comment)
-	in.SetStyles(st)
+	ts.Focused.Prompt = fg(theme.Blue)
+	ts.Focused.Text = fg(theme.Fg)
+	ts.Focused.Placeholder = fg(theme.Comment)
+	in.SetStyles(ts)
 
-	m := model{all: items, input: in, info: map[string]repoInfo{}, w: 80, h: 24}
+	m := model{
+		all:    items,
+		input:  in,
+		status: map[string]repo.Status{},
+		st:     st,
+		w:      80,
+		h:      24,
+	}
 	m.filter()
 	return m
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, m.loadInfo())
+	return tea.Batch(textinput.Blink, m.loadStatus())
 }
 
 func (m *model) filter() {
@@ -177,25 +180,18 @@ func (m model) current() (item, bool) {
 	return m.all[m.view[m.cursor]], true
 }
 
-// loadInfo asks git about the selected repository off the UI thread.
-func (m model) loadInfo() tea.Cmd {
+// loadStatus asks git about the selected repository off the UI thread.
+func (m model) loadStatus() tea.Cmd {
 	it, ok := m.current()
 	if !ok {
 		return nil
 	}
 	p := it.repo.Path()
-	if _, done := m.info[p]; done {
+	if _, done := m.status[p]; done {
 		return nil
 	}
 	return func() tea.Msg {
-		var i repoInfo
-		i.branch, _ = capture(p, "git", "rev-parse", "--abbrev-ref", "HEAD")
-		i.remote, _ = capture(p, "git", "remote", "get-url", "origin")
-		i.commit, _ = capture(p, "git", "log", "-1", "--format=%h  %cr  %s")
-		if st, err := capture(p, "git", "status", "--porcelain"); err == nil && st != "" {
-			i.dirty = len(strings.Split(st, "\n"))
-		}
-		return infoMsg{path: p, info: i}
+		return statusMsg{path: p, status: repo.Describe(p)}
 	}
 }
 
@@ -205,8 +201,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.w, m.h = msg.Width, msg.Height
 		return m, nil
 
-	case infoMsg:
-		m.info[msg.path] = msg.info
+	case statusMsg:
+		m.status[msg.path] = msg.status
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -222,12 +218,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.view)-1 {
 				m.cursor++
 			}
-			return m, m.loadInfo()
+			return m, m.loadStatus()
 		case "up", "ctrl+p":
 			if m.cursor > 0 {
 				m.cursor--
 			}
-			return m, m.loadInfo()
+			return m, m.loadStatus()
 		}
 	}
 
@@ -237,7 +233,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.input.Value() != before {
 		m.filter()
 	}
-	return m, tea.Batch(cmd, m.loadInfo())
+	return m, tea.Batch(cmd, m.loadStatus())
 }
 
 func (m model) View() tea.View {
@@ -289,9 +285,9 @@ func (m model) View() tea.View {
 			b.WriteString(lines[i] + "\n")
 			continue
 		}
-		b.WriteString(lines[i] + styleDivider.Render(" │ ") + info[i] + "\n")
+		b.WriteString(lines[i] + m.st.Divider.Render(" │ ") + info[i] + "\n")
 	}
-	b.WriteString(styleBox.Width(m.w - 2).Render(m.input.View()))
+	b.WriteString(m.st.Box.Width(m.w - 2).Render(m.input.View()))
 
 	v := tea.NewView(b.String())
 	v.AltScreen = true
@@ -302,9 +298,9 @@ func (m model) View() tea.View {
 // matched and, when selected, the whole line.
 func (m model) renderRow(i int, selected bool, width int) string {
 	it := m.all[m.view[i]]
-	base, hit, marker := styleRow, styleHit, "  "
+	base, hit, marker := m.st.Row, m.st.Hit, "  "
 	if selected {
-		base, hit, marker = styleRowSel, styleHitSel, styleMarker.Render("▸ ")
+		base, hit, marker = m.st.RowSel, m.st.HitSel, m.st.Marker.Render("▸ ")
 	}
 
 	label := highlight(it.repo.Rel, m.matched[m.view[i]], width-2, base, hit)
@@ -358,50 +354,50 @@ func highlight(s string, hits []int, width int, base, hit lipgloss.Style) string
 func (m model) infoLines(w int) []string {
 	it, ok := m.current()
 	if !ok {
-		return []string{styleDim.Render("no match")}
+		return []string{m.st.Dim.Render("no match")}
 	}
 
 	var out []string
-	field := func(k, v string, st lipgloss.Style) {
+	field := func(k, v string, style lipgloss.Style) {
 		if v == "" {
 			v = "-"
 		}
-		out = append(out, styleLabel.Render(k))
-		out = append(out, wrap(v, w, st)...)
+		out = append(out, m.st.Label.Render(k))
+		out = append(out, wrap(v, w, style)...)
 	}
 
-	out = append(out, wrap(it.repo.Rel, w, styleName)...)
+	out = append(out, wrap(it.repo.Rel, w, m.st.Name)...)
 	out = append(out, "")
-	field("path", tildify(it.repo.Path()), stylePath)
+	field("path", tildify(it.repo.Path()), m.st.Path)
 
-	i, loaded := m.info[it.repo.Path()]
+	s, loaded := m.status[it.repo.Path()]
 	if !loaded {
-		field("git", "loading…", styleDim)
+		field("git", "loading…", m.st.Dim)
 		return out
 	}
-	field("remote", i.remote, styleRemote)
-	field("branch", i.branch, styleBranch)
-	field("commit", i.commit, styleCommit)
-	if i.dirty > 0 {
-		field("status", fmt.Sprintf("%d changed", i.dirty), styleDirty)
+	field("remote", s.Remote, m.st.Remote)
+	field("branch", s.Branch, m.st.Branch)
+	field("commit", s.Commit, m.st.Commit)
+	if s.Dirty > 0 {
+		field("status", fmt.Sprintf("%d changed", s.Dirty), m.st.Dirty)
 	} else {
-		field("status", "clean", styleClean)
+		field("status", "clean", m.st.Clean)
 	}
 	if it.seen.Count > 0 {
-		field("visits", fmt.Sprintf("%d, last %s", it.seen.Count, ago(time.Unix(it.seen.Last, 0))), styleVisits)
+		field("visits", fmt.Sprintf("%d, last %s", it.seen.Count, ago(time.Unix(it.seen.Last, 0))), m.st.Visits)
 	} else {
-		field("visits", "never", styleDim)
+		field("visits", "never", m.st.Dim)
 	}
 	return out
 }
 
 // wrap renders v across as many lines of width w as it needs, so a long path
 // or remote URL is folded rather than cut.
-func wrap(v string, w int, st lipgloss.Style) []string {
+func wrap(v string, w int, style lipgloss.Style) []string {
 	if w < 1 {
 		return nil
 	}
-	return strings.Split(st.Width(w).Render(v), "\n")
+	return strings.Split(style.Width(w).Render(v), "\n")
 }
 
 func tildify(p string) string {
