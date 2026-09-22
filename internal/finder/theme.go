@@ -126,6 +126,8 @@ type Styles struct {
 	Visits  lipgloss.Style
 	Dim     lipgloss.Style
 	Box     lipgloss.Style
+	Help    lipgloss.Style // the hint line's prose
+	HelpKey lipgloss.Style // the key names inside it
 }
 
 func fg(hex string) lipgloss.Style {
@@ -181,5 +183,7 @@ func (t Theme) Styles() Styles {
 		Box: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(t.Border)),
+		Help:    fg(t.Comment),
+		HelpKey: fg(t.Blue),
 	}
 }

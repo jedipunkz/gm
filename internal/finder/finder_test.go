@@ -448,3 +448,49 @@ func TestBlendRejectsJunk(t *testing.T) {
 		t.Errorf("blend(black, white, 1) = %q, want #ffffff", got)
 	}
 }
+
+// TestHelpLine pins the hints under the prompt: they name the keys for the
+// list that is up, the key names carry their own colour, and a narrow window
+// drops hints instead of wrapping.
+func TestHelpLine(t *testing.T) {
+	root := t.TempDir()
+	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
+	m.w, m.h = 90, 12
+
+	lines := strings.Split(m.View().Content, "\n")
+	help := lines[len(lines)-1]
+	plain := stripANSI(help)
+	for _, want := range []string{"↑↓ ctrl-p/n move", "enter jump", "ctrl-w worktrees", "esc quit"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("the hint line is missing %q: %q", want, plain)
+		}
+	}
+	if !strings.Contains(help, ansi("38", themes[DefaultTheme].Blue)) {
+		t.Errorf("the key names are not coloured: %q", help)
+	}
+
+	// In the worktree list the same keys go back instead of out.
+	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
+	}
+	next, _ := m.openWorktrees()
+	wm := next.(model)
+	wm.w, wm.h = 90, 12
+	wl := strings.Split(wm.View().Content, "\n")
+	plain = stripANSI(wl[len(wl)-1])
+	if !strings.Contains(plain, "ctrl-w/g/esc repos") {
+		t.Errorf("the worktree hints are wrong: %q", plain)
+	}
+
+	// Too narrow for everything: the tail is dropped, nothing wraps.
+	narrow := stripANSI(m.helpLine(24))
+	if strings.Contains(narrow, "\n") {
+		t.Errorf("the hint line wrapped: %q", narrow)
+	}
+	if strings.Contains(narrow, "esc") {
+		t.Errorf("a hint that does not fit was drawn anyway: %q", narrow)
+	}
+	if !strings.Contains(narrow, "↑↓ ctrl-p/n move") {
+		t.Errorf("the first hint was dropped: %q", narrow)
+	}
+}

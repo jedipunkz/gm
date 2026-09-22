@@ -60,7 +60,8 @@ work the same in both.
 | `Esc` | Quit without printing | Back to the repositories |
 | `Ctrl-C` | Quit without printing | Quit without printing |
 
-Going back keeps the query, the cursor and the highlights as they were. The
+The line under the prompt lists the keys for whichever list is up. Going back
+keeps the query, the cursor and the highlights as they were. The
 best match is the row at the bottom, next to the prompt; in the worktree list
 that row is the main worktree.
 
