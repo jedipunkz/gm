@@ -3,6 +3,7 @@ package repo
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -283,4 +284,51 @@ func DirtyMap(paths []string) map[string]bool {
 	}
 	wg.Wait()
 	return out
+}
+
+// WorktreeRoot is where gm keeps the checkouts it creates:
+//
+//	<root>/.worktrees/<host>/<user>/<repo>/<branch>
+//
+// The dot matters. A worktree has a .git file, so IsRepo answers yes for one,
+// and a worktree in the open would be listed as a repository and refused by
+// gm migrate. FindRepos never descends into a dotted directory, so this one
+// stays out of the way.
+const WorktreeRoot = ".worktrees"
+
+// WorktreeDir is where a branch's checkout of r belongs.
+func (t *Tree) WorktreeDir(r Repo, branch string) string {
+	return filepath.Join(r.Root, WorktreeRoot, filepath.FromSlash(r.Rel), filepath.FromSlash(branch))
+}
+
+// BranchExists reports whether the repository already has this branch, which
+// decides whether a worktree starts one or checks one out.
+func BranchExists(dir, branch string) bool {
+	err := exec.Command("git", "-C", dir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch).Run()
+	return err == nil
+}
+
+// AddWorktree checks branch out at dir, starting the branch from HEAD when it
+// does not exist yet.
+func AddWorktree(repoDir, dir, branch string) error {
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return err
+	}
+	args := []string{"-C", repoDir, "worktree", "add"}
+	if BranchExists(repoDir, branch) {
+		args = append(args, dir, branch)
+	} else {
+		args = append(args, "-b", branch, dir)
+	}
+	return Git(args...)
+}
+
+// RemoveWorktree takes a checkout away. force is what the caller has already
+// confirmed: git refuses on its own when there is work in it.
+func RemoveWorktree(repoDir, dir string, force bool) error {
+	args := []string{"-C", repoDir, "worktree", "remove"}
+	if force {
+		args = append(args, "--force")
+	}
+	return Git(append(args, dir)...)
 }

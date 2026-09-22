@@ -89,8 +89,9 @@ completes it as you go, and `Tab` accepts what it offers.
 | `/help` | Show the command list; `q` or `Esc` closes it |
 | `/dirty` | Show only repositories with uncommitted work; `Esc` shows all |
 | `/create <repo>` | Create a repository, after asking; adds it to the list |
+| `/create <branch>` | In the worktree list: check that branch out as a worktree |
 | `/get <repo>` | Same as `gm get`, then go to the clone |
-| `/remove` | Remove the selected repository, after asking |
+| `/remove` | Remove the selected repository, or worktree, after asking |
 | `/worktrees` | Same as `Ctrl-W` |
 | `/remote` | Same as `Ctrl-Alt-B` |
 
@@ -99,6 +100,23 @@ completes it as you go, and `Tab` accepts what it offers.
 the created one is added and selected, and the line under the prompt says what
 happened. A repository with uncommitted changes says so in the question before
 you agree to lose them.
+
+In the worktree list the same two commands work on worktrees. `/create
+<branch>` checks the branch out — starting it from `HEAD` if it does not exist
+yet, which the question tells you before you agree — and `/remove` takes the
+selected one away. The main worktree is refused: that is the repository
+itself, and removing it is `/remove` in the repository list.
+
+Worktrees go where `gm` decides, so the branch name is the only thing to type:
+
+```
+~/ghq/github.com/jedipunkz/gm/            the repository
+~/ghq/.worktrees/github.com/jedipunkz/gm/feat/login
+```
+
+The leading dot is not decoration. A worktree has a `.git` file, so `gm` would
+otherwise list it as a repository and `gm migrate` would refuse it; the walk
+never descends into a dotted directory.
 
 `/get` is the exception: cloning needs the network, a progress bar and
 sometimes a passphrase, so it closes the finder and runs on the terminal you
