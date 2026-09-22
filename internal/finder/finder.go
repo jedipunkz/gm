@@ -579,16 +579,16 @@ func (m model) infoLines(w int) []string {
 	}
 	out = append(out, m.st.Label.Render(label))
 	for _, c := range s.Commits {
-		out = append(out, m.commitLine(c, w))
+		out = append(out, m.commitLines(c, w)...)
 	}
 	return out
 }
 
-// commitLine draws one commit the way `git log --oneline --decorate` does:
-// the hash, then the refs pointing at it, then the subject. It is clipped
-// rather than wrapped, so five commits stay five lines however long one
-// subject is.
-func (m model) commitLine(c repo.Commit, w int) string {
+// commitLines draws one commit the way `git log --oneline --decorate` does:
+// the hash, then the refs pointing at it, then the subject. A line too long
+// for the pane is folded, with its continuations indented so one commit still
+// reads as one entry.
+func (m model) commitLines(c repo.Commit, w int) []string {
 	segs := []seg{{c.Hash, m.st.Commit}}
 	if len(c.Refs) > 0 {
 		segs = append(segs, seg{" (", m.st.Punct})
@@ -601,8 +601,12 @@ func (m model) commitLine(c repo.Commit, w int) string {
 		segs = append(segs, seg{")", m.st.Punct})
 	}
 	segs = append(segs, seg{" " + c.Subject, m.st.Subject})
-	return clip(segs, w)
+	return wrapSegs(segs, w, commitIndent)
 }
+
+// commitIndent sets the continuation lines of a folded commit in from the
+// hashes, so the eye can still count the commits.
+const commitIndent = "  "
 
 func (m model) refStyle(k repo.RefKind) lipgloss.Style {
 	switch k {
@@ -617,40 +621,76 @@ func (m model) refStyle(k repo.RefKind) lipgloss.Style {
 	}
 }
 
-// seg is a run of text with one style, the unit clip counts in.
+// seg is a run of text with one style, the unit wrapping counts in.
 type seg struct {
 	text  string
 	style lipgloss.Style
 }
 
-// clip renders the segments up to w columns, marking a cut with an ellipsis.
-// The head is kept: a commit line starts with its hash and the beginning of
-// its subject, which is what identifies it.
-func clip(segs []seg, w int) string {
-	if w <= 1 {
-		return ""
+// wrapSegs lays styled pieces out across lines of width w, breaking at a
+// space where it can and mid-word when a word is longer than the pane. Every
+// line after the first starts with indent. Styles survive the fold: a ref cut
+// across two lines keeps its colour on both.
+func wrapSegs(segs []seg, w int, indent string) []string {
+	if w < 1 {
+		return nil
 	}
-	var b strings.Builder
-	left := w
-	for _, s := range segs {
-		r := []rune(s.text)
-		if len(r) <= left {
-			b.WriteString(s.style.Render(s.text))
-			left -= len(r)
-			continue
+	// Flattening to runes keeps the two concerns apart: where the line breaks
+	// falls out of the text, and which style each rune carries is remembered
+	// alongside it.
+	var (
+		runes []rune
+		owner []int
+	)
+	for i, s := range segs {
+		for _, r := range s.text {
+			runes = append(runes, r)
+			owner = append(owner, i)
 		}
-		if left > 1 {
-			b.WriteString(s.style.Render(string(r[:left-1])))
+	}
+
+	render := func(from, to int) string {
+		var b strings.Builder
+		for i := from; i < to; {
+			j := i
+			for j < to && owner[j] == owner[i] {
+				j++
+			}
+			b.WriteString(segs[owner[i]].style.Render(string(runes[i:j])))
+			i = j
 		}
-		b.WriteString(m0.Render("…"))
 		return b.String()
 	}
-	return b.String()
-}
 
-// m0 renders the ellipsis clip leaves behind, in no particular colour: it
-// belongs to the pane, not to the text it cut.
-var m0 = lipgloss.NewStyle()
+	var lines []string
+	for start, pad := 0, ""; start < len(runes); pad = indent {
+		avail := max(w-len([]rune(pad)), 1)
+		if len(runes)-start <= avail {
+			lines = append(lines, pad+render(start, len(runes)))
+			break
+		}
+		// Break at the last space that fits; failing that, mid-word.
+		end := start + avail
+		brk := -1
+		for i := end; i > start; i-- {
+			if runes[i] == ' ' {
+				brk = i
+				break
+			}
+		}
+		next := end
+		if brk > start {
+			end, next = brk, brk+1
+		}
+		lines = append(lines, pad+render(start, end))
+		// A fold never starts a line with the spaces it broke on.
+		for next < len(runes) && runes[next] == ' ' {
+			next++
+		}
+		start = next
+	}
+	return lines
+}
 
 // openWorktrees replaces the repository list with the checkouts of the
 // selected repository. A repository git cannot answer for is left alone: the

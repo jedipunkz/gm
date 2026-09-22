@@ -147,10 +147,9 @@ func TestInfoPaneStacksAndWraps(t *testing.T) {
 	if !strings.Contains(joined, "https://github.com/acme") {
 		t.Errorf("the remote line lost text:\n%s", joined)
 	}
-	// A commit is clipped instead, so one long subject cannot push the
-	// commits below it off the pane.
-	if !strings.Contains(joined, "abc1234") || !strings.Contains(joined, "…") {
-		t.Errorf("the commit line was not clipped:\n%s", joined)
+	// A commit folds too, with its continuations indented.
+	if !strings.Contains(joined, "abc1234") || !strings.Contains(joined, "\n"+commitIndent) {
+		t.Errorf("the commit line did not fold:\n%s", joined)
 	}
 }
 
@@ -649,7 +648,7 @@ func TestCommitLineColours(t *testing.T) {
 	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
 	th := themes[DefaultTheme]
 
-	line := m.commitLine(repo.Commit{
+	lines := m.commitLines(repo.Commit{
 		Hash: "b1b7b91",
 		Refs: []repo.Ref{
 			{Name: "HEAD", Kind: repo.RefHead},
@@ -659,6 +658,10 @@ func TestCommitLineColours(t *testing.T) {
 		},
 		Subject: "refactor: name the flag",
 	}, 120)
+	if len(lines) != 1 {
+		t.Fatalf("a line that fits should not fold: %q", lines)
+	}
+	line := lines[0]
 
 	for _, want := range []struct{ what, hex string }{
 		{"hash", th.Yellow},
@@ -678,9 +681,10 @@ func TestCommitLineColours(t *testing.T) {
 	}
 }
 
-// TestCommitLineClips keeps five commits to five lines: the line is cut with
-// an ellipsis rather than wrapped, and never exceeds the pane.
-func TestCommitLineClips(t *testing.T) {
+// TestCommitLineWraps folds a long commit instead of cutting it: no text is
+// lost, no line is wider than the pane, and the continuations are indented so
+// one commit still reads as one entry.
+func TestCommitLineWraps(t *testing.T) {
 	root := t.TempDir()
 	m := newTestModel(t, []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}, "")
 	c := repo.Commit{
@@ -688,16 +692,36 @@ func TestCommitLineClips(t *testing.T) {
 		Refs:    []repo.Ref{{Name: "origin/a-long-branch-name", Kind: repo.RefRemote}},
 		Subject: "a subject far too long for the pane to hold in one line",
 	}
-	for _, w := range []int{80, 40, 20, 8, 1} {
-		plain := stripANSI(m.commitLine(c, w))
-		if strings.Contains(plain, "\n") {
-			t.Errorf("width %d wrapped: %q", w, plain)
+	const whole = "b1b7b91 (origin/a-long-branch-name) a subject far too long for the pane to hold in one line"
+	for _, w := range []int{80, 40, 20, 8, 3} {
+		lines := m.commitLines(c, w)
+		var words []string
+		for i, l := range lines {
+			plain := stripANSI(l)
+			if got := len([]rune(plain)); got > w {
+				t.Errorf("width %d, line %d is %d columns: %q", w, i, got, plain)
+			}
+			if i > 0 && !strings.HasPrefix(plain, commitIndent) {
+				t.Errorf("width %d, line %d is not indented: %q", w, i, plain)
+			}
+			words = append(words, strings.TrimPrefix(plain, commitIndent))
 		}
-		if got := len([]rune(plain)); got > w {
-			t.Errorf("width %d produced %d columns: %q", w, got, plain)
+		// Folding must not lose or duplicate anything. Where the break lands
+		// is not the point, so compare without the spaces: a break at a space
+		// drops it, and a break mid-word does not.
+		squash := func(s string) string { return strings.ReplaceAll(s, " ", "") }
+		if got := squash(strings.Join(words, "")); got != squash(whole) {
+			t.Errorf("width %d lost text:\n got %q\nwant %q", w, got, squash(whole))
 		}
 	}
-	if plain := stripANSI(m.commitLine(c, 30)); !strings.HasPrefix(plain, "b1b7b91") || !strings.HasSuffix(plain, "…") {
-		t.Errorf("a clipped line should keep its hash and end in an ellipsis: %q", plain)
+
+	// The fold keeps the colours: a ref broken across two lines is still a ref
+	// on both.
+	lines := m.commitLines(c, 24)
+	if len(lines) < 2 {
+		t.Fatalf("width 24 should fold: %q", lines)
+	}
+	if !strings.Contains(lines[0], ansi("38", themes[DefaultTheme].Yellow)) {
+		t.Errorf("the first line lost the hash colour: %q", lines[0])
 	}
 }
