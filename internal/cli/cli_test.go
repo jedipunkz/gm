@@ -37,24 +37,6 @@ func TestNamesAreUnique(t *testing.T) {
 	}
 }
 
-func TestParseKeybind(t *testing.T) {
-	for _, in := range []string{"ctrl-r", "ctrl+r", "Ctrl-R", "c-r", "^R", " ctrl-r "} {
-		k, err := parseKeybind(in)
-		if err != nil {
-			t.Errorf("parseKeybind(%q) = %v", in, err)
-			continue
-		}
-		if k.letter != 'r' || k.display != "Ctrl-R" {
-			t.Errorf("parseKeybind(%q) = %q/%q, want r/Ctrl-R", in, string(k.letter), k.display)
-		}
-	}
-	for _, bad := range []string{"", "r", "ctrl-", "ctrl-rr", "alt-r", "ctrl-1", "f5"} {
-		if k, err := parseKeybind(bad); err == nil {
-			t.Errorf("parseKeybind(%q) = %v, want an error", bad, k)
-		}
-	}
-}
-
 // TestShellSnippetsBindTheConfiguredKey checks the spelling each shell needs,
 // and that no template placeholder survives into the output.
 func TestShellSnippetsBindTheConfiguredKey(t *testing.T) {
@@ -65,7 +47,7 @@ func TestShellSnippetsBindTheConfiguredKey(t *testing.T) {
 	}
 	for sh, want := range cases {
 		out := captureStdout(t, func() {
-			a := &app{cfg: config.Config{Keybind: "ctrl-r"}}
+			a := &app{cfg: config.Config{LaunchKey: "ctrl-r"}}
 			if err := a.shell([]string{sh}); err != nil {
 				t.Fatal(err)
 			}
@@ -83,7 +65,7 @@ func TestShellSnippetsBindTheConfiguredKey(t *testing.T) {
 
 	// An unusable key must stop gm rather than print a binding that silently
 	// does nothing.
-	a := &app{cfg: config.Config{Keybind: "alt-r"}}
+	a := &app{cfg: config.Config{LaunchKey: "alt-r"}}
 	if err := a.shell([]string{"zsh"}); err == nil {
 		t.Error("an unsupported chord should be an error")
 	}

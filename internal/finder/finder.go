@@ -17,19 +17,34 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/sahilm/fuzzy"
 
+	"github.com/jedipunkz/gm/internal/config"
 	"github.com/jedipunkz/gm/internal/repo"
 )
+
+// DefaultWorktreeKey opens the worktree list when gm.toml says nothing.
+const DefaultWorktreeKey = "ctrl-w"
+
+// reserved are the Ctrl chords the finder already answers to; binding the
+// worktree list to one of them would shadow quitting or moving.
+var reserved = map[byte]string{
+	'c': "quit",
+	'n': "move down",
+	'p': "move up",
+}
 
 // Run draws the finder and returns the path the user chose, or "" if they
 // quit. It draws on the terminal itself, never on stdout: stdout carries the
 // chosen path back to the shell binding.
-func Run(repos []repo.Repo, h *repo.History, theme Theme) (string, error) {
+func Run(repos []repo.Repo, h *repo.History, theme Theme, worktreeKey config.Chord) (string, error) {
+	if what, taken := reserved[worktreeKey.Letter]; taken {
+		return "", fmt.Errorf("worktree_key cannot be %s: the finder uses it to %s", worktreeKey.Display, what)
+	}
 	opts := []tea.ProgramOption{tea.WithOutput(os.Stderr)}
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
 		defer tty.Close()
 		opts = []tea.ProgramOption{tea.WithInput(tty), tea.WithOutput(tty)}
 	}
-	res, err := tea.NewProgram(newModel(repos, h, theme), opts...).Run()
+	res, err := tea.NewProgram(newModel(repos, h, theme, worktreeKey), opts...).Run()
 	if err != nil {
 		return "", err
 	}
@@ -92,12 +107,13 @@ type model struct {
 	mode   mode
 	origin string // in worktree mode, the repository the list belongs to
 	saved  *stash
+	wtKey  config.Chord // the key that opens and closes the worktree list
 	// worktreesOf is the seam the tests replace; it is repo.Worktrees in
 	// every real run.
 	worktreesOf func(dir string) ([]repo.Worktree, error)
 }
 
-func newModel(repos []repo.Repo, hist *repo.History, theme Theme) model {
+func newModel(repos []repo.Repo, hist *repo.History, theme Theme, worktreeKey config.Chord) model {
 	now := time.Now()
 	items := make([]item, 0, len(repos))
 	for _, r := range repos {
@@ -133,6 +149,7 @@ func newModel(repos []repo.Repo, hist *repo.History, theme Theme) model {
 		st:          st,
 		w:           80,
 		h:           24,
+		wtKey:       worktreeKey,
 		worktreesOf: repo.Worktrees,
 	}
 	m.filter()
@@ -235,6 +252,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		// The worktree key is configurable, so it cannot be a switch case.
+		if msg.String() == m.wtKey.Key() {
+			if m.mode == modeWorktrees {
+				m.restore()
+				return m, m.loadStatus()
+			}
+			return m.openWorktrees()
+		}
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
@@ -250,13 +275,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			return m, nil
-		case "ctrl+w":
-			// The same key toggles the worktree list back off.
-			if m.mode == modeWorktrees {
-				m.restore()
-				return m, m.loadStatus()
-			}
-			return m.openWorktrees()
 		case "enter":
 			if it, ok := m.current(); ok {
 				m.chosen = it.path
@@ -349,17 +367,18 @@ type hint struct{ key, what string }
 // helpLine draws the key hints, dropping the ones that do not fit rather than
 // wrapping onto a second line.
 func (m model) helpLine(width int) string {
+	wt := m.wtKey.Short()
 	hints := []hint{
 		{"↑↓ ctrl-p/n", "move"},
 		{"enter", "jump"},
-		{"ctrl-w", "worktrees"},
+		{wt, "worktrees"},
 		{"esc", "quit"},
 	}
 	if m.mode == modeWorktrees {
 		hints = []hint{
 			{"↑↓ ctrl-p/n", "move"},
 			{"enter", "jump"},
-			{"ctrl-w/g/esc", "repos"},
+			{wt + "/g/esc", "repos"},
 		}
 	}
 

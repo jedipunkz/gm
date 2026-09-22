@@ -20,7 +20,7 @@ go install github.com/jedipunkz/gm@latest
 
 `gm` with no arguments opens the finder and prints the chosen path on stdout;
 the TUI draws on stderr, so it composes with `$(...)`. One binding per shell
-turns that into a `cd` on `Ctrl-G`, or on whatever `keybind` says.
+turns that into a `cd` on `Ctrl-G`, or on whatever `launch_key` says.
 
 ### fish
 
@@ -55,7 +55,7 @@ work the same in both.
 | `↑` / `Ctrl-P` | Move up | Move up |
 | `↓` / `Ctrl-N` | Move down | Move down |
 | `Enter` | Print the repository path and exit | Print the worktree path and exit |
-| `Ctrl-W` | Show the worktrees of the selected repository | Back to the repositories |
+| `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories |
 | `Ctrl-G` | — | Back to the repositories |
 | `Esc` | Quit without printing | Back to the repositories |
 | `Ctrl-C` | Quit without printing | Quit without printing |
@@ -87,13 +87,15 @@ on), except `Ctrl-W`, which no longer deletes the word before the cursor.
 ## Configuration
 
 `~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`) is optional; a file
-that cannot be parsed stops `gm` rather than letting it clone somewhere
-unexpected.
+that cannot be parsed — or that holds a key `gm` does not know — stops `gm`
+rather than letting it clone somewhere unexpected or quietly ignore half the
+file.
 
 ```toml
-root    = "~/ghq"          # or ["~/ghq", "~/src"], searched in order
-theme   = "tokyonight"
-keybind = "ctrl-g"
+root         = "~/ghq"       # or ["~/ghq", "~/src"], searched in order
+theme        = "tokyonight"
+launch_key   = "ctrl-g"      # the shell key that opens gm
+worktree_key = "ctrl-w"      # the finder key that lists worktrees
 ```
 
 The root is resolved in this order, so an existing ghq tree works untouched:
@@ -120,15 +122,21 @@ The root is resolved in this order, so an existing ghq tree works untouched:
 
 An unknown name is an error listing the valid ones.
 
-### Keybind
+### Key bindings
 
-`keybind` is the chord `gm shell` binds, written as `ctrl-g`, `ctrl+g`, `c-g`
-or `^g`. Only Ctrl chords are supported, and anything else is an error rather
-than a binding that quietly does nothing.
+`launch_key` is the chord `gm shell` binds, and `worktree_key` the one that
+opens the worktree list inside the finder. Both are written as `ctrl-g`,
+`ctrl+g`, `c-g` or `^g`; anything else is an error rather than a binding that
+quietly does nothing.
 
-Re-run `gm shell <shell>` (or restart the shell, if you source it from your rc
-file) after changing it. Some chords are already taken: `ctrl-r` is
-reverse history search, `ctrl-c`, `ctrl-d` and `ctrl-z` are terminal signals.
+After changing `launch_key`, re-run `gm shell <shell>` (or restart the shell,
+if you source it from your rc file). Some chords are already taken: `ctrl-r` is
+reverse history search, and `ctrl-c`, `ctrl-d` and `ctrl-z` are terminal
+signals.
+
+`worktree_key` cannot be `ctrl-c`, `ctrl-n` or `ctrl-p`, which the finder uses
+to quit and to move. The hint line under the prompt always names the chord you
+configured.
 
 ## Ranking
 

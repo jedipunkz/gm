@@ -69,6 +69,10 @@ func TestRoots(t *testing.T) {
 		"wrong type": "root = 42\n",
 		"mixed list": "root = [\"/a\", 7]\n",
 		"empty list": "root = []\n",
+		// A key gm does not know is a typo or a renamed setting; either way
+		// the file says one thing and gm would do another.
+		"unknown key": "root = \"/a\"\nkeybind = \"ctrl-g\"\n",
+		"typo":        "root = \"/a\"\nthemes = \"dracula\"\n",
 	} {
 		t.Run(name+" is an error", func(t *testing.T) {
 			write(t, body)
@@ -96,5 +100,43 @@ func TestTheme(t *testing.T) {
 	}
 	if c.Theme != "" {
 		t.Errorf("Theme = %q, want the empty default", c.Theme)
+	}
+}
+
+func TestParseChord(t *testing.T) {
+	for _, in := range []string{"ctrl-r", "ctrl+r", "Ctrl-R", "c-r", "^R", " ctrl-r "} {
+		c, err := ParseChord(in, "ctrl-g")
+		if err != nil {
+			t.Errorf("ParseChord(%q) = %v", in, err)
+			continue
+		}
+		if c.Letter != 'r' || c.Display != "Ctrl-R" || c.Key() != "ctrl+r" || c.Short() != "ctrl-r" {
+			t.Errorf("ParseChord(%q) = %+v", in, c)
+		}
+	}
+
+	// The empty string means "unset" and takes the fallback.
+	if c, err := ParseChord("", "ctrl-g"); err != nil || c.Letter != 'g' {
+		t.Errorf("ParseChord(\"\") = %+v, %v; want the fallback", c, err)
+	}
+
+	for _, bad := range []string{"r", "ctrl-", "ctrl-rr", "alt-r", "ctrl-1", "f5"} {
+		if c, err := ParseChord(bad, "ctrl-g"); err == nil {
+			t.Errorf("ParseChord(%q) = %+v, want an error", bad, c)
+		}
+	}
+}
+
+func TestKeys(t *testing.T) {
+	write(t, "root = \"/a\"\nlaunch_key = \"ctrl-j\"\nworktree_key = \"ctrl-t\"\n")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.LaunchKey != "ctrl-j" {
+		t.Errorf("LaunchKey = %q, want ctrl-j", c.LaunchKey)
+	}
+	if c.WorktreeKey != "ctrl-t" {
+		t.Errorf("WorktreeKey = %q, want ctrl-t", c.WorktreeKey)
 	}
 }

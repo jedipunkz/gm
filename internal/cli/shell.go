@@ -3,40 +3,12 @@ package cli
 import (
 	"fmt"
 	"strings"
+
+	"github.com/jedipunkz/gm/internal/config"
 )
 
-// DefaultKeybind is the key gm binds when gm.toml says nothing.
-const DefaultKeybind = "ctrl-g"
-
-// keybind is one Ctrl-<letter> chord, in the spellings each shell wants.
-type keybind struct {
-	letter  byte   // lowercase, e.g. 'g'
-	display string // "Ctrl-G", for the comment at the top of the snippet
-}
-
-// parseKeybind accepts ctrl-g, ctrl+g, c-g and ^g, in any case. Only Ctrl
-// chords are supported: they are what a shell can bind to a widget without
-// fighting the terminal over escape sequences.
-func parseKeybind(s string) (keybind, error) {
-	fail := func() (keybind, error) {
-		return keybind{}, fmt.Errorf("cannot bind %q: use a Ctrl chord such as ctrl-g", s)
-	}
-	t := strings.ToLower(strings.TrimSpace(s))
-	switch {
-	case strings.HasPrefix(t, "ctrl-"), strings.HasPrefix(t, "ctrl+"):
-		t = t[5:]
-	case strings.HasPrefix(t, "c-"):
-		t = t[2:]
-	case strings.HasPrefix(t, "^"):
-		t = t[1:]
-	default:
-		return fail()
-	}
-	if len(t) != 1 || t[0] < 'a' || t[0] > 'z' {
-		return fail()
-	}
-	return keybind{letter: t[0], display: "Ctrl-" + strings.ToUpper(t)}, nil
-}
+// DefaultLaunchKey is the shell key gm binds when gm.toml says nothing.
+const DefaultLaunchKey = "ctrl-g"
 
 func (a *app) shell(args []string) error {
 	if len(args) != 1 {
@@ -46,17 +18,13 @@ func (a *app) shell(args []string) error {
 	if !ok {
 		return fmt.Errorf("unsupported shell %q (fish, zsh, bash)", args[0])
 	}
-	name := a.cfg.Keybind
-	if name == "" {
-		name = DefaultKeybind
-	}
-	k, err := parseKeybind(name)
+	k, err := config.ParseChord(a.cfg.LaunchKey, DefaultLaunchKey)
 	if err != nil {
 		return err
 	}
 	fmt.Print(strings.NewReplacer(
-		"{{key}}", string(k.letter),
-		"{{name}}", k.display,
+		"{{key}}", string(k.Letter),
+		"{{name}}", k.Display,
 	).Replace(tmpl))
 	return nil
 }
