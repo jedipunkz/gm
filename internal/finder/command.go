@@ -134,8 +134,8 @@ var commands = []command{
 		m.dirtyOnly = true
 		if m.dirty == nil {
 			// The answer needs a git call per repository, so it is asked for
-			// the first time someone wants it, not at startup.
-			m.scanning = true
+			// the first time someone wants it, not at startup. The note is
+			// what says a scan is running; nothing else needs to know.
 			m.note = "checking every repository for uncommitted work…"
 			return m, m.scanDirty()
 		}
