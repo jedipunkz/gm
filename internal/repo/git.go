@@ -335,6 +335,42 @@ const dirtyWorkers = 8
 // work in progress, not to report on git's health.
 func DirtyMap(paths []string) map[string]bool {
 	out := make(map[string]bool, len(paths))
+	for p, s := range StatusMap(paths) {
+		out[p] = s.Dirty > 0
+	}
+	return out
+}
+
+// State is what a repository holds that nothing else does: work not
+// committed, and commits not pushed. It comes out of one `git status
+// --porcelain -b`, which reads the refs already on disk and never fetches, so
+// the answer is as fresh as the last time something did.
+type State struct {
+	Branch   string // as git names it, "HEAD" when detached
+	Upstream bool   // the branch tracks something
+	Ahead    int    // commits here the upstream does not have
+	Behind   int    // and the other way round
+	Dirty    int    // changed files
+}
+
+// Unfinished reports whether this is work someone walked away from. Being
+// behind is the remote's news rather than the user's, so it alone does not
+// make a repository worth listing.
+func (s State) Unfinished() bool { return s.Dirty > 0 || s.Ahead > 0 }
+
+// StatusOf reads one repository's state.
+func StatusOf(dir string) State {
+	out, err := GitIn(dir, "status", "--porcelain", "-b")
+	if err != nil {
+		return State{}
+	}
+	return parseStatus(out)
+}
+
+// StatusMap reads every path, a few at a time: git is the slow part and the
+// disk is shared, so more workers than this buys nothing.
+func StatusMap(paths []string) map[string]State {
+	out := make(map[string]State, len(paths))
 	var (
 		mu sync.Mutex
 		wg sync.WaitGroup
@@ -347,14 +383,63 @@ func DirtyMap(paths []string) map[string]bool {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			d, _ := IsDirty(p)
+			s := StatusOf(p)
 			mu.Lock()
-			out[p] = d
+			out[p] = s
 			mu.Unlock()
 		}()
 	}
 	wg.Wait()
 	return out
+}
+
+// parseStatus reads `git status --porcelain -b`: a "## " header naming the
+// branch and how far it has drifted, then a line per changed file.
+func parseStatus(out string) State {
+	var s State
+	for i, l := range strings.Split(out, "\n") {
+		if i == 0 && strings.HasPrefix(l, "## ") {
+			s.parseBranch(strings.TrimPrefix(l, "## "))
+			continue
+		}
+		if l != "" {
+			s.Dirty++
+		}
+	}
+	return s
+}
+
+// parseBranch reads the header, which git writes as one of:
+//
+//	main...origin/main [ahead 1, behind 2]
+//	main...origin/main
+//	main
+//	HEAD (no branch)
+//	No commits yet on main
+func (s *State) parseBranch(l string) {
+	if i := strings.LastIndex(l, " ["); i >= 0 && strings.HasSuffix(l, "]") {
+		for _, part := range strings.Split(l[i+2:len(l)-1], ", ") {
+			// "gone" has no number and means the upstream was deleted.
+			kind, num, ok := strings.Cut(part, " ")
+			n, err := strconv.Atoi(num)
+			if !ok || err != nil {
+				continue
+			}
+			switch kind {
+			case "ahead":
+				s.Ahead = n
+			case "behind":
+				s.Behind = n
+			}
+		}
+		l = l[:i]
+	}
+	l = strings.TrimPrefix(l, "No commits yet on ")
+	if b, up, ok := strings.Cut(l, "..."); ok {
+		s.Branch, s.Upstream = b, up != ""
+		return
+	}
+	s.Branch = strings.TrimSuffix(l, " (no branch)")
 }
 
 // WorktreeRoot is where gm keeps the checkouts it creates:
