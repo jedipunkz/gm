@@ -1,0 +1,102 @@
+---
+import { loadThemes, themeVars, DEFAULT_THEME } from "../lib/themes";
+
+const themes = loadThemes();
+const style = (vars: Record<string, string>) =>
+  Object.entries(vars)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(";");
+---
+
+<ul class="gallery">
+  {
+    themes.map((t) => (
+      <li class="card" style={style(themeVars(t))}>
+        <div class="mini" aria-hidden="true">
+          <div class="r">
+            {"  "}github.com/acme/<b class="h">a</b>lpha
+          </div>
+          <div class="r sel">
+            <span class="mk">▸ </span>github.com/jedipunkz/<b class="h">gm</b>
+          </div>
+          <div class="k">
+            <span class="b">main</span> <span class="g">clean</span> <span class="rd">3 changed</span>
+          </div>
+        </div>
+        <div class="meta">
+          <code>{t.name}</code>
+          {t.name === DEFAULT_THEME && <span class="tag">default</span>}
+          {t.Light && <span class="tag">light</span>}
+        </div>
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .gallery {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .mini {
+    background: var(--t-bg);
+    color: var(--t-row);
+    font: 12px/1.7 var(--font-mono);
+    padding: 12px 10px;
+    white-space: pre;
+    overflow: hidden;
+  }
+  .r.sel {
+    background: var(--t-bghi);
+    color: var(--t-fg);
+    font-weight: 700;
+  }
+  .mk {
+    color: var(--t-blue);
+  }
+  .h {
+    color: var(--t-orange);
+  }
+  .k {
+    margin-top: 6px;
+    padding-left: 2ch;
+  }
+  .b {
+    color: var(--t-magenta);
+  }
+  .g {
+    color: var(--t-green);
+  }
+  .rd {
+    color: var(--t-red);
+  }
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+  .meta code {
+    border: 0;
+    background: none;
+    padding: 0;
+  }
+  .tag {
+    font-size: 0.7rem;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    padding: 0 8px;
+  }
+</style>

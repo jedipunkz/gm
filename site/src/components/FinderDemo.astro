@@ -1,0 +1,289 @@
+---
+import { loadThemes, themeVars, DEFAULT_THEME } from "../lib/themes";
+import { repos, ROOT } from "../lib/demo";
+
+const themes = loadThemes();
+const initial = themes.find((t) => t.name === DEFAULT_THEME) ?? themes[0];
+const vars = Object.entries(themeVars(initial))
+  .map(([k, v]) => `${k}:${v}`)
+  .join(";");
+const payload = JSON.stringify({
+  root: ROOT,
+  repos,
+  themes: Object.fromEntries(themes.map((t) => [t.name, themeVars(t)])),
+});
+---
+
+<div class="term" style={vars} data-finder-demo>
+  <div class="bar">
+    <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="bar-title">gm — ~/ghq</span>
+    <label class="theme-pick">
+      <span class="sr-only">Theme</span>
+      <select aria-label="Theme">
+        {themes.map((t) => <option value={t.name} selected={t.name === initial.name}>{t.name}</option>)}
+      </select>
+    </label>
+  </div>
+  <div class="screen">
+    <div class="panes">
+      <div class="list" role="listbox" aria-label="Repositories"></div>
+      <div class="divider" aria-hidden="true"></div>
+      <div class="info" aria-live="polite"></div>
+    </div>
+    <div class="box">
+      <span class="prompt" aria-hidden="true">❯</span>
+      <input
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        autocapitalize="off"
+        aria-label="Filter repositories, or type / for a command"
+      />
+    </div>
+    <div class="hints"></div>
+    <div class="overlay" hidden></div>
+  </div>
+  <script type="application/json" set:html={payload} />
+</div>
+
+<style>
+  .term {
+    --row: 1.55em;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: var(--row);
+    background: var(--t-bg);
+    color: var(--t-row);
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--t-border) 70%, transparent);
+    box-shadow:
+      0 30px 80px -20px rgba(0, 0, 0, 0.55),
+      0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    overflow: hidden;
+    transition: background 0.25s ease;
+    text-align: left;
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--t-border) 60%, transparent);
+    color: var(--t-comment);
+    font-size: 12px;
+  }
+  .dots {
+    display: flex;
+    gap: 6px;
+  }
+  .dots i {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--t-border);
+  }
+  .dots i:nth-child(1) {
+    background: var(--t-red);
+  }
+  .dots i:nth-child(2) {
+    background: var(--t-yellow);
+  }
+  .dots i:nth-child(3) {
+    background: var(--t-green);
+  }
+  .bar-title {
+    flex: 1;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .theme-pick select {
+    font: inherit;
+    color: var(--t-fg);
+    background: var(--t-bghi);
+    border: 1px solid var(--t-border);
+    border-radius: 6px;
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+  .screen {
+    position: relative;
+    padding: 10px 12px 8px;
+    cursor: text;
+  }
+  .panes {
+    display: grid;
+    grid-template-columns: 3fr auto 2fr;
+    gap: 0 10px;
+    height: calc(var(--row) * 12);
+  }
+  .list {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .divider {
+    width: 1px;
+    background: var(--t-border);
+  }
+  .info {
+    overflow: hidden;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 640px) {
+    .panes {
+      grid-template-columns: 1fr;
+    }
+    .divider,
+    .info {
+      display: none;
+    }
+  }
+  .box {
+    display: flex;
+    align-items: center;
+    gap: 1ch;
+    border: 1px solid var(--t-border);
+    border-radius: 8px;
+    padding: 0 1ch;
+    margin-top: 4px;
+  }
+  .prompt {
+    color: var(--t-blue);
+  }
+  .box input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    line-height: var(--row);
+    color: var(--t-fg);
+    caret-color: var(--t-fg);
+    background: transparent;
+    border: 0;
+    outline: 0;
+    padding: 0;
+  }
+  .hints {
+    padding: 2px 1ch 0;
+    color: var(--t-comment);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: var(--row);
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 12px;
+  }
+  .overlay[hidden] {
+    display: none;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  /* Rendered by the script, so these reach through the component scope. */
+  .term :global(.row) {
+    white-space: pre;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .term :global(.row.sel) {
+    background: var(--t-bghi);
+    color: var(--t-fg);
+    font-weight: 700;
+  }
+  .term :global(.mk) {
+    color: var(--t-blue);
+  }
+  .term :global(.hit) {
+    color: var(--t-orange);
+    font-weight: 700;
+  }
+  .term :global(.lbl) {
+    color: var(--t-fg);
+    font-weight: 700;
+  }
+  .term :global(.name) {
+    color: var(--t-blue);
+    font-weight: 700;
+  }
+  .term :global(.dim),
+  .term :global(.punct) {
+    color: var(--t-comment);
+  }
+  .term :global(.path),
+  .term :global(.clean) {
+    color: var(--t-green);
+  }
+  .term :global(.remote) {
+    color: var(--t-cyan);
+  }
+  .term :global(.branch) {
+    color: var(--t-magenta);
+  }
+  .term :global(.dirty) {
+    color: var(--t-red);
+  }
+  .term :global(.visits) {
+    color: var(--t-orange);
+  }
+  .term :global(.hash) {
+    color: var(--t-commit);
+  }
+  .term :global(.subject) {
+    color: var(--t-row);
+  }
+  .term :global(.ref-head) {
+    color: var(--t-cyan);
+    font-weight: 700;
+  }
+  .term :global(.ref-local) {
+    color: var(--t-blue);
+    font-weight: 700;
+  }
+  .term :global(.ref-remote) {
+    color: var(--t-ref-remote);
+  }
+  .term :global(.ref-tag) {
+    color: var(--t-ref-tag);
+  }
+  .term :global(.key) {
+    color: var(--t-blue);
+  }
+  .term :global(button.key) {
+    font: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+  .term :global(.panel) {
+    background: var(--t-bg);
+    border: 1px solid var(--t-border);
+    border-radius: 8px;
+    padding: 4px 2ch;
+    max-width: 100%;
+    white-space: pre-wrap;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  }
+</style>
+
+<script>
+  import { mount } from "../lib/finder-demo";
+  for (const el of document.querySelectorAll<HTMLElement>("[data-finder-demo]")) mount(el);
+</script>
