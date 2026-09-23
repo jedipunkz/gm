@@ -122,7 +122,9 @@ export function mount(root: HTMLElement) {
   const select = root.querySelector<HTMLSelectElement>(".theme-pick select")!;
   const screen = root.querySelector<HTMLElement>(".screen")!;
 
-  const ROWS = 12;
+  // Kept in step with --rows in FinderDemo.astro: the list draws as many rows
+  // as the pane is tall.
+  const ROWS = 22;
 
   const repoItems: Item[] = data.repos
     .map((r) => ({
@@ -262,7 +264,10 @@ export function mount(root: HTMLElement) {
     }
     const label = it.commits.length === 1 ? "last commit" : `last ${it.commits.length} commits`;
     html += `<div>${span("lbl", label)}</div>`;
-    for (const c of it.commits) html += `<div>${span("hash", c.hash)}${refs(c)} ${span("subject", c.subject)}</div>`;
+    // A commit that does not fit folds under itself, indented, the way
+    // wrapSegs lays it out in the finder.
+    for (const c of it.commits)
+      html += `<div class="commit">${span("hash", c.hash)}${refs(c)} ${span("subject", c.subject)}</div>`;
     infoEl.innerHTML = html;
   }
 
