@@ -90,6 +90,22 @@ var commands = []command{
 				force:  dirty > 0,
 			}), nil
 		}
+		// The worktrees go with it, so the question has to say so.
+		if wts, err := m.worktreesOf(it.path); err == nil {
+			var labels []string
+			for _, w := range wts {
+				// The main worktree is the repository itself. git prints the
+				// resolved path, so a mismatch here is one entry too many
+				// rather than a wrong answer.
+				if !repo.SamePath(w.Path, it.path) {
+					labels = append(labels, w.Label())
+				}
+			}
+			if len(labels) > 0 {
+				detail = append(detail, fmt.Sprintf("%s will go too: %s",
+					plural(len(labels), "worktree", "worktrees"), strings.Join(labels, ", ")))
+			}
+		}
 		return m.confirm(pending{
 			kind:   changeRemove,
 			arg:    it.path,
@@ -127,6 +143,14 @@ var commands = []command{
 		m.cursor = len(m.view) - 1
 		return m, nil
 	}},
+}
+
+// plural counts a thing in the words for it.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + many
 }
 
 func commandNames() []string {

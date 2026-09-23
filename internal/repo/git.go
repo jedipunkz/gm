@@ -340,9 +340,14 @@ func DirtyMap(paths []string) map[string]bool {
 // stays out of the way.
 const WorktreeRoot = ".worktrees"
 
+// WorktreesDir is where gm keeps every checkout of one repository.
+func WorktreesDir(r Repo) string {
+	return filepath.Join(r.Root, WorktreeRoot, filepath.FromSlash(r.Rel))
+}
+
 // WorktreeDir is where a branch's checkout of r belongs.
 func (t *Tree) WorktreeDir(r Repo, branch string) string {
-	return filepath.Join(r.Root, WorktreeRoot, filepath.FromSlash(r.Rel), filepath.FromSlash(branch))
+	return filepath.Join(WorktreesDir(r), filepath.FromSlash(branch))
 }
 
 // BranchExists reports whether the repository already has this branch, which
