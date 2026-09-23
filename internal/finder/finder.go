@@ -437,7 +437,7 @@ func (m model) openRemote() tea.Cmd {
 		if remote == "" {
 			// Not fetched yet for this row; ask git now rather than making
 			// the key do nothing on the first press.
-			remote = repo.Describe(path).Remote
+			remote = repo.OriginURL(path)
 		}
 		if remote == "" {
 			return nil

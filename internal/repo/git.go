@@ -87,10 +87,11 @@ func GitConfigAll(key string) []string {
 // Status is what git says about a working copy. Every field is best-effort:
 // a repository git cannot read still has to be listed and jumped to.
 type Status struct {
-	Remote  string
-	Branch  string
-	Commits []Commit // newest first
-	Dirty   int      // changed files
+	Remote    string
+	Branch    string
+	Commits   []Commit   // newest first
+	Dirty     int        // changed files
+	Worktrees []Worktree // the other checkouts, without the main one
 }
 
 // recentCommits is how many commits Describe collects. Three answers "is this
@@ -106,6 +107,7 @@ func Describe(dir string) Status {
 	names, origin := remotes(dir)
 	s.Remote = origin
 	s.Commits = commits(dir, names)
+	s.Worktrees = otherWorktrees(dir)
 	if out, err := GitIn(dir, "status", "--porcelain"); err == nil && out != "" {
 		s.Dirty = len(strings.Split(out, "\n"))
 	}
@@ -153,6 +155,13 @@ func commits(dir string, remotes []string) []Commit {
 // remotes reads the configured remotes in one call: their names, and origin's
 // URL. Both halves come out of `git remote -v`, so asking git separately for
 // each of them is one process more than the answer costs.
+// OriginURL is origin's URL on its own, for the caller that wants nothing
+// else about the repository and should not pay for a whole Describe.
+func OriginURL(dir string) string {
+	_, origin := remotes(dir)
+	return origin
+}
+
 func remotes(dir string) (names []string, origin string) {
 	out, err := GitIn(dir, "remote", "-v")
 	if err != nil || out == "" {

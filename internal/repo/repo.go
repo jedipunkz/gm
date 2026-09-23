@@ -334,14 +334,17 @@ func Delete(r Repo) error {
 // OtherWorktrees are the checkouts of r that are not r itself. A repository
 // git cannot answer for has none, which is the right answer for a directory
 // that is about to be deleted.
-func OtherWorktrees(r Repo) []Worktree {
-	all, err := Worktrees(r.Path())
+func OtherWorktrees(r Repo) []Worktree { return otherWorktrees(r.Path()) }
+
+// otherWorktrees is the same thing for a path, which is all Describe has.
+func otherWorktrees(dir string) []Worktree {
+	all, err := Worktrees(dir)
 	if err != nil {
 		return nil
 	}
 	out := make([]Worktree, 0, len(all))
 	for _, w := range all {
-		if SamePath(w.Path, r.Path()) {
+		if SamePath(w.Path, dir) {
 			continue // the main worktree is the repository
 		}
 		out = append(out, w)

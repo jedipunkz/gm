@@ -676,3 +676,25 @@ func TestRemotesReadsNamesAndOriginInOneCall(t *testing.T) {
 		t.Errorf("no remotes: got %v %q", names, origin)
 	}
 }
+
+// TestDescribeReportsTheOtherWorktrees covers the field the details pane
+// draws. The main worktree is the repository itself and must not be in it,
+// which on macOS means comparing /private/var with /var.
+func TestDescribeReportsTheOtherWorktrees(t *testing.T) {
+	base := t.TempDir()
+	r := Repo{Root: base, Rel: "github.com/acme/alpha"}
+	gitRepo(t, r.Path())
+
+	if got := Describe(r.Path()).Worktrees; len(got) != 0 {
+		t.Errorf("a repository with only its main worktree reported %v", got)
+	}
+
+	tree := &Tree{Roots: []string{base}}
+	if err := AddWorktree(r.Path(), tree.WorktreeDir(r, "feat/login"), "feat/login"); err != nil {
+		t.Fatal(err)
+	}
+	got := Describe(r.Path()).Worktrees
+	if len(got) != 1 || got[0].Label() != "feat/login" {
+		t.Fatalf("Worktrees = %v, want just feat/login", got)
+	}
+}
