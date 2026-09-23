@@ -356,3 +356,48 @@ func TestRemovingTheLastRepositoryLeavesAUsableFinder(t *testing.T) {
 		t.Errorf("/remove on an empty list: over=%v note=%q", m.over, m.note)
 	}
 }
+
+// TestProbeWaitsForTheCursorToSettle is the point of the delay: a row the
+// cursor swept past is never described, so holding an arrow key through a
+// tree of repositories starts no git processes at all.
+func TestProbeWaitsForTheCursorToSettle(t *testing.T) {
+	repos := []repo.Repo{
+		{Root: "/r", Rel: "github.com/acme/alpha"},
+		{Root: "/r", Rel: "github.com/acme/beta"},
+	}
+	m := newTestModel(t, repos, "")
+	here, ok := m.current()
+	if !ok {
+		t.Fatal("nothing selected")
+	}
+
+	// A probe for a row that is no longer selected does nothing.
+	if cmd := m.probe("/r/github.com/acme/gone"); cmd != nil {
+		t.Error("probed a row the cursor had left")
+	}
+	if len(m.probing) != 0 {
+		t.Errorf("probing = %v, want empty", m.probing)
+	}
+
+	// One for the selected row asks git, and only once while the answer is
+	// still on its way.
+	if cmd := m.probe(here.path); cmd == nil {
+		t.Fatal("did not probe the selected row")
+	}
+	if !m.probing[here.path] {
+		t.Error("the probe was not recorded as in flight")
+	}
+	if cmd := m.probe(here.path); cmd != nil {
+		t.Error("probed the same row twice")
+	}
+
+	// And once the answer is in, it is not asked for again.
+	next, _ := m.Update(statusMsg{path: here.path, status: repo.Status{Branch: "main"}})
+	m = next.(model)
+	if m.probing[here.path] {
+		t.Error("the in-flight mark outlived the answer")
+	}
+	if cmd := m.loadStatus(); cmd != nil {
+		t.Error("asked again for a status it already has")
+	}
+}

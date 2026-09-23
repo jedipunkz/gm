@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -638,5 +639,40 @@ func TestDeleteWithoutWorktrees(t *testing.T) {
 	}
 	if _, err := os.Stat(r.Path()); !os.IsNotExist(err) {
 		t.Errorf("the repository survived: %v", err)
+	}
+}
+
+// TestRemotesReadsNamesAndOriginInOneCall pins the parse of `git remote -v`,
+// which answers what used to take two git processes.
+func TestRemotesReadsNamesAndOriginInOneCall(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "repo")
+	gitRepo(t, dir)
+	for _, args := range [][]string{
+		{"remote", "add", "upstream", "https://example.com/upstream.git"},
+		{"remote", "add", "origin", "git@github.com:acme/alpha.git"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	names, origin := remotes(dir)
+	if origin != "git@github.com:acme/alpha.git" {
+		t.Errorf("origin = %q", origin)
+	}
+	// Each remote is listed twice, for fetch and for push, and has to be
+	// counted once: the names tell a remote ref from a local branch.
+	want := []string{"origin", "upstream"}
+	if !reflect.DeepEqual(names, want) {
+		t.Errorf("names = %v, want %v", names, want)
+	}
+
+	// A repository with no remotes is normal, not an error.
+	bare := filepath.Join(t.TempDir(), "bare")
+	gitRepo(t, bare)
+	if names, origin := remotes(bare); names != nil || origin != "" {
+		t.Errorf("no remotes: got %v %q", names, origin)
 	}
 }

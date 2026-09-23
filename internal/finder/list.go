@@ -102,6 +102,7 @@ func (m *model) drop(path string) {
 	}
 	m.all = kept
 	delete(m.status, path)
+	delete(m.probing, path)
 	m.view = nil
 	m.filter()
 }

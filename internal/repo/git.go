@@ -98,13 +98,14 @@ type Status struct {
 // pane draws fewer when it is short of height.
 const recentCommits = 3
 
-// Describe collects the status of one working copy. It shells out four times,
-// so callers keep it off any hot path.
+// Describe collects the status of one working copy. It still shells out, so
+// callers keep it off any hot path and off rows the cursor only passed over.
 func Describe(dir string) Status {
 	var s Status
 	s.Branch, _ = GitIn(dir, "rev-parse", "--abbrev-ref", "HEAD")
-	s.Remote, _ = GitIn(dir, "remote", "get-url", "origin")
-	s.Commits = commits(dir)
+	names, origin := remotes(dir)
+	s.Remote = origin
+	s.Commits = commits(dir, names)
 	if out, err := GitIn(dir, "status", "--porcelain"); err == nil && out != "" {
 		s.Dirty = len(strings.Split(out, "\n"))
 	}
@@ -137,25 +138,42 @@ type Ref struct {
 	Kind RefKind
 }
 
-// commits reads the newest commits and their decorations.
-func commits(dir string) []Commit {
+// commits reads the newest commits and their decorations. The remote names
+// come from the caller: without them "origin/main" and a local branch called
+// "release/main" look alike, both being a name with a slash in it.
+func commits(dir string, remotes []string) []Commit {
 	out, err := GitIn(dir, "log", "-n", strconv.Itoa(recentCommits),
 		"--format=%h"+commitFormatSep+"%D"+commitFormatSep+"%s")
 	if err != nil {
 		return nil
 	}
-	return parseCommits(out, remoteNames(dir))
+	return parseCommits(out, remotes)
 }
 
-// remoteNames lists the configured remotes. Without them "origin/main" and a
-// local branch called "release/main" look alike: both are a name with a
-// slash in it.
-func remoteNames(dir string) []string {
-	out, err := GitIn(dir, "remote")
+// remotes reads the configured remotes in one call: their names, and origin's
+// URL. Both halves come out of `git remote -v`, so asking git separately for
+// each of them is one process more than the answer costs.
+func remotes(dir string) (names []string, origin string) {
+	out, err := GitIn(dir, "remote", "-v")
 	if err != nil || out == "" {
-		return nil
+		return nil, ""
 	}
-	return strings.Split(out, "\n")
+	// Each remote gets a fetch line and a push line: "origin<TAB>URL (fetch)".
+	seen := map[string]bool{}
+	for _, l := range strings.Split(out, "\n") {
+		name, rest, ok := strings.Cut(l, "\t")
+		if !ok {
+			continue
+		}
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+		if name == "origin" && origin == "" {
+			origin, _, _ = strings.Cut(rest, " ")
+		}
+	}
+	return names, origin
 }
 
 // The fields of one log line are separated by a NUL, which cannot appear in a
