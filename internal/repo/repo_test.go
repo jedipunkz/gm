@@ -698,3 +698,42 @@ func TestDescribeReportsTheOtherWorktrees(t *testing.T) {
 		t.Fatalf("Worktrees = %v, want just feat/login", got)
 	}
 }
+
+// TestParseStatus covers every shape of the `## ` header git writes, which is
+// the whole of what gm status knows about a repository.
+func TestParseStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		out  string
+		want State
+	}{
+		{"tracking and drifted", "## main...origin/main [ahead 1, behind 2]",
+			State{Branch: "main", Upstream: true, Ahead: 1, Behind: 2}},
+		{"ahead only", "## main...origin/main [ahead 3]",
+			State{Branch: "main", Upstream: true, Ahead: 3}},
+		{"in sync", "## main...origin/main", State{Branch: "main", Upstream: true}},
+		{"no upstream", "## main", State{Branch: "main"}},
+		{"detached", "## HEAD (no branch)", State{Branch: "HEAD"}},
+		{"empty repository", "## No commits yet on main", State{Branch: "main"}},
+		// The upstream branch was deleted: there is no count to read, and the
+		// branch still tracks something as far as the config is concerned.
+		{"gone upstream", "## main...origin/main [gone]", State{Branch: "main", Upstream: true}},
+		{"changes counted", "## main...origin/main\n M a.go\n?? b.go\nD  c.go",
+			State{Branch: "main", Upstream: true, Dirty: 3}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := parseStatus(c.out); got != c.want {
+				t.Errorf("parseStatus(%q) = %+v, want %+v", c.out, got, c.want)
+			}
+		})
+	}
+
+	// Being behind is the remote's news, not work anyone left behind.
+	if (State{Behind: 4, Upstream: true}).Unfinished() {
+		t.Error("behind alone counted as unfinished work")
+	}
+	if !(State{Ahead: 1, Upstream: true}).Unfinished() {
+		t.Error("an unpushed commit did not count as unfinished work")
+	}
+}

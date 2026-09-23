@@ -33,6 +33,7 @@ var commands = []command{
 	{name: "list", aliases: []string{"ls"}, usage: "list [-p] [-e] [--unique] [<query>]", run: (*app).list},
 	{name: "remove", aliases: []string{"rm"}, usage: "remove [--dry-run] [-y] <repo>...", run: (*app).remove},
 	{name: "create", aliases: []string{"new"}, usage: "create [-p] <repo>", run: (*app).create},
+	{name: "status", usage: "status [--dirty] [--unpushed] [-a] [-p]", run: (*app).status},
 	{name: "wt", usage: "wt <create|remove> [-y] <repo> <branch>", run: (*app).wt},
 	{name: "migrate", usage: "migrate [--dry-run] [-y] [-r] <directory>...", run: (*app).migrate},
 	{name: "root", usage: "root [--all]", run: (*app).root},
