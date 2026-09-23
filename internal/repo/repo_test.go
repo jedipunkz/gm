@@ -203,6 +203,39 @@ func TestHistoryRoundTrip(t *testing.T) {
 	}
 }
 
+// TestHistoryBumpKeepsConcurrentVisits covers the window the finder holds open:
+// a visit written by another gm after this History was opened must survive this
+// History's own bump.
+func TestHistoryBumpKeepsConcurrentVisits(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "frecency.json")
+	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	for _, p := range []string{a, b} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	h := OpenHistory(path) // the finder opens the log and holds it
+	if err := OpenHistory(path).Bump(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Bump(a); err != nil {
+		t.Fatal(err)
+	}
+
+	again := OpenHistory(path)
+	if got := again.Visit(a).Count; got != 1 {
+		t.Errorf("visit count for a = %d, want 1", got)
+	}
+	if got := again.Visit(b).Count; got != 1 {
+		t.Errorf("visit written while the finder was open is lost (count %d, want 1)", got)
+	}
+	if got := h.Visit(b).Count; got != 1 {
+		t.Errorf("in-memory log disagrees with the file (count %d, want 1)", got)
+	}
+}
+
 func TestParseWorktrees(t *testing.T) {
 	const out = `worktree /home/u/ghq/github.com/u/agx
 HEAD 0123456789abcdef0123456789abcdef01234567

@@ -73,8 +73,16 @@ func OpenHistory(path string) *History {
 // never entered.
 func (h *History) Visit(path string) Visit { return h.visits[path] }
 
-// Bump records a visit and prunes entries whose repository is gone.
+// Bump records a visit and prunes entries whose repository is gone. It applies
+// both to the log as it is on disk right now, not to the copy read when this
+// History was opened: the finder holds that copy for a whole session, and
+// every visit another gm wrote in the meantime would otherwise be written back
+// out of existence.
 func (h *History) Bump(path string) error {
+	if h.Path != "" {
+		h.visits = OpenHistory(h.Path).visits
+	}
+
 	v := h.visits[path]
 	v.Count++
 	v.Last = time.Now().Unix()
@@ -101,11 +109,27 @@ func (h *History) save() error {
 	if err != nil {
 		return err
 	}
-	tmp := h.Path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// A unique name, so two gm processes saving at once cannot write and
+	// rename the same temporary file.
+	f, err := os.CreateTemp(filepath.Dir(h.Path), "frecency-*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, h.Path)
+	tmp := f.Name()
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(tmp, 0o644)
+	}
+	if err == nil {
+		err = os.Rename(tmp, h.Path)
+	}
+	if err != nil {
+		_ = os.Remove(tmp) // no half-written log left next to the real one
+	}
+	return err
 }
 
 // Bump records a visit in the user's log. Commands use it for the one-line
