@@ -2,13 +2,11 @@ package finder
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/jedipunkz/gm/internal/repo"
 )
@@ -166,43 +164,6 @@ func commandNames() []string {
 // as a filter.
 func isCommand(s string) bool { return strings.HasPrefix(s, commandPrefix) }
 
-// confirmWorktree asks about checking a branch out beside the repository.
-// The path is gm's to decide, so the branch name is all it needs.
-func (m model) confirmWorktree(branch string) (model, tea.Cmd) {
-	if !repo.ValidBranch(branch) {
-		m.note = strconv.Quote(branch) + " is not a branch name"
-		return m, nil
-	}
-	r, ok := m.tree.At(m.repoAt)
-	if !ok {
-		m.note = m.repoAt + " is not under any root"
-		return m, nil
-	}
-	dir := m.tree.WorktreeDir(r, branch)
-	if _, err := os.Stat(dir); err == nil {
-		m.note = tildify(dir) + " already exists"
-		return m, nil
-	}
-
-	start := "new branch"
-	if repo.BranchExists(m.repoAt, branch) {
-		start = "existing branch"
-	}
-	return m.confirm(pending{
-		kind:   changeAddWorktree,
-		arg:    branch,
-		dir:    dir,
-		title:  "create worktree",
-		detail: []string{branch + ", " + start, tildify(dir)},
-	}), nil
-}
-
-// confirm puts the question on screen. Nothing happens until it is answered.
-func (m model) confirm(p pending) model {
-	m.over, m.ask, m.note = overlayConfirm, p, ""
-	return m
-}
-
 // leaveWith closes the finder and hands the work to gm, which runs it on the
 // terminal the user can see: a clone's progress, a password prompt and a
 // confirmation all belong there, not inside an alternate screen.
@@ -232,50 +193,4 @@ func (m model) runCommand(typed string) (model, tea.Cmd) {
 	}
 	m.note = "unknown command " + name + " — /help lists them"
 	return m, nil
-}
-
-// boxWidth is how wide a panel may be: narrow enough to leave the list
-// visible around it, and never wider than the window.
-func (m model) boxWidth() int {
-	return max(min(m.w-10, 76), 20)
-}
-
-// confirmBox asks before anything changes, and says exactly what will. It is
-// narrower than the help panel: a question should not blot out the list it is
-// asking about.
-func (m model) confirmBox() string {
-	w := min(m.boxWidth(), 56)
-	rows := []string{m.st.Label.Render(m.ask.title)}
-	for _, d := range m.ask.detail {
-		rows = append(rows, wrapSegs([]seg{{d, m.st.Subject}}, w, "  ")...)
-	}
-	rows = append(rows, "",
-		m.st.RefLocal.Render("y")+m.st.Subject.Render(" do it")+
-			m.st.Dim.Render("   ")+m.st.RefLocal.Render("n")+m.st.Subject.Render(" cancel"))
-	return m.st.Box.Padding(0, 1).Render(strings.Join(rows, "\n"))
-}
-
-// helpBox draws the command list as a panel.
-func (m model) helpBox() string {
-	rows := make([]string, 0, len(commands)+2)
-	rows = append(rows, m.st.Label.Render("commands"), "")
-
-	names := 0
-	for _, c := range commands {
-		names = max(names, lipgloss.Width(c.label()))
-	}
-	// The descriptions fold under themselves rather than push the panel wider
-	// than the window.
-	w := max(m.boxWidth()-names-2, 20)
-	for _, c := range commands {
-		pad := strings.Repeat(" ", names-lipgloss.Width(c.label()))
-		lines := wrapSegs([]seg{{c.what, m.st.Subject}}, w, "")
-		rows = append(rows, m.st.RefLocal.Render(c.label())+pad+"  "+lines[0])
-		for _, extra := range lines[1:] {
-			rows = append(rows, strings.Repeat(" ", names+2)+extra)
-		}
-	}
-	rows = append(rows, "", m.st.Dim.Render("q or esc closes this"))
-
-	return m.st.Box.Padding(0, 1).Render(strings.Join(rows, "\n"))
 }
