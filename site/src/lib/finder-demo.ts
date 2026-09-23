@@ -440,8 +440,11 @@ export function mount(root: HTMLElement) {
   // ---- wiring ----
 
   let touched = false;
+  let autoplay: ReturnType<typeof setTimeout> | undefined;
   const touch = () => {
     touched = true;
+    // Whatever the demo was about to type next, the visitor is driving now.
+    clearTimeout(autoplay);
   };
 
   input.addEventListener("input", () => {
@@ -516,22 +519,53 @@ export function mount(root: HTMLElement) {
   filter();
   draw();
 
-  // Type a query once, the first time the demo scrolls into view, unless the
-  // visitor got there first or asked for less motion.
+  // The demo types a query, rests on the result long enough to read it, wipes
+  // itself and goes round again — so a visitor who looks up a moment too late
+  // still sees it happen. It stops for good the first time they touch it, and
+  // never runs at all for someone who asked for less motion.
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const script = "api";
-  const io = new IntersectionObserver((entries) => {
-    if (!entries.some((en) => en.isIntersecting)) return;
-    io.disconnect();
-    let i = 0;
-    const tick = () => {
-      if (touched || i >= script.length) return;
+  const typeDelay = 220; // between keystrokes
+  const readDelay = 5000; // on the finished query, before starting over
+  const startDelay = 900; // after it scrolls into view
+
+  let i = 0;
+  const tick = () => {
+    if (touched) return;
+    if (i < script.length) {
       input.value += script[i++];
       filter();
       draw();
-      setTimeout(tick, 220);
-    };
-    setTimeout(tick, 900);
+      autoplay = setTimeout(tick, typeDelay);
+      return;
+    }
+    autoplay = setTimeout(() => {
+      if (touched) return;
+      i = 0;
+      input.value = "";
+      filter();
+      draw();
+      autoplay = setTimeout(tick, typeDelay);
+    }, readDelay);
+  };
+
+  // Only while it is on screen: a loop left running behind a scrolled-past
+  // page is work nobody sees.
+  const io = new IntersectionObserver((entries) => {
+    if (touched) {
+      io.disconnect();
+      return;
+    }
+    if (entries.some((en) => en.isIntersecting)) {
+      if (!autoplay) autoplay = setTimeout(tick, startDelay);
+      return;
+    }
+    clearTimeout(autoplay);
+    autoplay = undefined;
+    i = 0;
+    input.value = "";
+    filter();
+    draw();
   });
   io.observe(root);
 }
