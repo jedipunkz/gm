@@ -30,6 +30,20 @@ export interface DemoRepo {
 
 const c = (hash: string, subject: string, refs: DemoCommit["refs"] = []): DemoCommit => ({ hash, refs, subject });
 
+// The tail of a real tree: repositories that are cloned and rarely opened.
+// They exist so the list is longer than the window, the way it is on a
+// machine that has been collecting clones for a while.
+const quiet = (rel: string, branch = "main"): DemoRepo => ({
+  rel,
+  remote: `https://${rel}`,
+  branch,
+  dirty: 0,
+  visits: 0,
+  last: "",
+  frecency: 0,
+  commits: [c("a1b2c3d", "chore: bump dependencies", [{ name: "HEAD", kind: "head" }, { name: branch, kind: "local" }])],
+});
+
 export const ROOT = "~/ghq";
 
 export const repos: DemoRepo[] = [
@@ -178,4 +192,24 @@ export const repos: DemoRepo[] = [
     frecency: 0,
     commits: [c("7e21c90", "fish: bind ctrl-g to gm", [{ name: "HEAD", kind: "head" }, { name: "main", kind: "local" }])],
   },
+  quiet("github.com/jedipunkz/tmux-window-frame"),
+  quiet("github.com/jedipunkz/tokyonight.chrome"),
+  quiet("github.com/jedipunkz/keyboard-checker"),
+  quiet("github.com/jedipunkz/linux-tiny-exporter"),
+  quiet("github.com/jedipunkz/hn-digest"),
+  quiet("github.com/jedipunkz/miniecs"),
+  quiet("github.com/jedipunkz/kanban"),
+  quiet("github.com/jedipunkz/soliton"),
+  quiet("github.com/acme/web"),
+  quiet("github.com/acme/cli"),
+  quiet("github.com/acme/docs"),
+  quiet("github.com/acme/terraform-modules"),
+  quiet("github.com/acme/proto-schemas"),
+  quiet("github.com/acme/grafana-dashboards"),
+  quiet("github.com/BurntSushi/toml"),
+  quiet("github.com/sahilm/fuzzy", "master"),
+  quiet("github.com/spf13/cobra"),
+  quiet("gitlab.com/acme/runners"),
+  quiet("git.sr.ht/~acme/scratch"),
+  quiet("codeberg.org/acme/notes"),
 ];

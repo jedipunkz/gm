@@ -50,6 +50,7 @@ const payload = JSON.stringify({
 <style>
   .term {
     --row: 1.55em;
+    --rows: 22;
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: var(--row);
@@ -117,7 +118,9 @@ const payload = JSON.stringify({
     display: grid;
     grid-template-columns: 3fr auto 2fr;
     gap: 0 10px;
-    height: calc(var(--row) * 12);
+    /* Tall enough for the details pane to finish: name, six fields and three
+       commits, the last of which the old height cut off entirely. */
+    height: calc(var(--row) * var(--rows));
   }
   .list {
     display: flex;
@@ -142,6 +145,12 @@ const payload = JSON.stringify({
     .divider,
     .info {
       display: none;
+    }
+    /* Without the details beside it, the list alone need not be this tall.
+       It hangs from the prompt, so the rows that go are the ones furthest
+       from the cursor. */
+    .term {
+      --rows: 12;
     }
   }
   .box {
@@ -199,6 +208,9 @@ const payload = JSON.stringify({
     white-space: pre;
     overflow: hidden;
     cursor: pointer;
+    /* The list is a flex column: without this the rows squeeze to fit
+       instead of overflowing past the top, which is what a terminal does. */
+    flex: none;
   }
   .term :global(.row.sel) {
     background: var(--t-bghi);
@@ -245,6 +257,13 @@ const payload = JSON.stringify({
   }
   .term :global(.subject) {
     color: var(--t-row);
+  }
+  /* One commit stays one entry: the continuations are set in from the hash,
+     and a line breaks at a space unless a single word is wider than the pane. */
+  .term :global(.commit) {
+    padding-left: 2ch;
+    text-indent: -2ch;
+    overflow-wrap: break-word;
   }
   .term :global(.ref-head) {
     color: var(--t-cyan);
