@@ -134,6 +134,12 @@ The leading dot is not decoration. A worktree has a `.git` file, so `gm` would
 otherwise list it as a repository and `gm migrate` would refuse it; the walk
 never descends into a dotted directory.
 
+`gm wt create <repo> <branch>` and `gm wt remove <repo> <branch>` do the same
+two things without the finder, for a script that wants them — a dotfiles
+bootstrap checking out the branches you always want. `create` prints the new
+worktree's path, so `cd (gm wt create gm feat/login)` works; `remove` warns
+about uncommitted work and asks before anything goes, unless given `-y`.
+
 `/get` is the exception: cloning needs the network, a progress bar and
 sometimes a passphrase, so it closes the finder and runs on the terminal you
 can see, then prints the path of the clone for the shell binding to take you
@@ -162,6 +168,7 @@ clearing the query holds the selection where it is.
 | `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
 | `gm remove [--dry-run] [-y] <repo>...` | Remove a repository and its worktrees after confirming, pruning empty parents (`gm rm` also works) |
 | `gm create [-p] <repo>` | Create and `git init` a repository with `origin` already set |
+| `gm wt <create\|remove> [-y] <repo> <branch>` | Add or remove a worktree from a script; the finder is better for doing it by hand |
 | `gm migrate [--dry-run] [-y] [-r] <dir>...` | Move an existing clone into the tree, using its `origin` remote; `-r` searches the directory for them |
 | `gm root [--all]` | Print the root directory |
 | `gm shell <fish\|zsh\|bash>` | Print the `Ctrl-G` binding |
