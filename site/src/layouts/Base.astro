@@ -7,6 +7,12 @@ interface Props {
 }
 const { title, description } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+
+// The card networks show when the site is linked. Both have to be absolute:
+// a relative og:image is ignored by most of them. See og/card.html for where
+// the picture comes from.
+const canonical = new URL(base, Astro.site);
+const ogImage = new URL(`${base}og.png`, Astro.site);
 ---
 
 <!doctype html>
@@ -16,9 +22,20 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="gm" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="gm — jump to any repository, or any of its worktrees. The finder, filtered to one user's repositories."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="theme-color" content="#0b0c10" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />

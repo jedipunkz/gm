@@ -1,0 +1,190 @@
+<!doctype html>
+<!--
+  The source of public/og.png — the card X, Slack, Discord and the rest pull
+  in when the site is linked. It is a screenshot rather than a live page so
+  that sharing costs no render, and it is kept here so the next person can
+  make another one:
+
+    cd site && npm run og
+
+  Anything that changes the hero should change this too.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap"
+    />
+    <style>
+      /* The tokens are copied from src/styles/global.css rather than imported:
+         this file is opened straight off disk by the screenshot. */
+      :root {
+        --bg: #0b0c10;
+        --surface: #161922;
+        --line: #242836;
+        --text: #e6e8ef;
+        --muted: #9aa0b4;
+        --faint: #6b7185;
+        --accent: #7aa2f7;
+        --accent-2: #ff9e64;
+        --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+        /* tokyonight, the finder's default */
+        --t-bg: #1a1b26;
+        --t-border: #3b4261;
+        --t-row: #7b84af;
+        --t-fg: #c0caf5;
+        --t-blue: #7aa2f7;
+        --t-green: #9ece6a;
+        --t-orange: #ff9e64;
+        --t-comment: #565f89;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background:
+          radial-gradient(70% 60% at 22% 0%, rgba(122, 162, 247, 0.22), transparent 70%),
+          radial-gradient(50% 50% at 100% 100%, rgba(255, 158, 100, 0.14), transparent 70%),
+          var(--bg);
+        color: var(--text);
+        font-family: var(--font-sans);
+        display: grid;
+        grid-template-columns: 1fr 452px;
+        align-items: center;
+        gap: 40px;
+        padding: 64px;
+      }
+      .mark {
+        font-family: var(--font-mono);
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 30px;
+      }
+      .mark span {
+        color: var(--accent);
+        margin-right: 10px;
+      }
+      h1 {
+        /* Sized so each sentence is one line: the break is the one in the
+           markup, not one the box forced. */
+        font-size: 48px;
+        line-height: 1.07;
+        font-weight: 700;
+        letter-spacing: -0.035em;
+        margin: 0 0 26px;
+      }
+      .grad {
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      p {
+        font-size: 23px;
+        line-height: 1.45;
+        color: var(--muted);
+        margin: 0 0 34px;
+        max-width: 19em;
+      }
+      .cmd {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+        font-family: var(--font-mono);
+        font-size: 23px;
+        color: var(--text);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 22px;
+      }
+      .cmd i {
+        color: var(--accent-2);
+        font-style: normal;
+      }
+
+      /* A slice of the finder, sized so the rows stay readable in a timeline. */
+      .term {
+        font-family: var(--font-mono);
+        font-size: 17px;
+        line-height: 1.62;
+        background: var(--t-bg);
+        color: var(--t-row);
+        border: 1px solid var(--t-border);
+        border-radius: 14px;
+        padding: 18px 20px;
+        box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.6);
+        white-space: pre;
+      }
+      .sel {
+        display: block;
+        background: #292e42;
+        color: var(--t-fg);
+        font-weight: 700;
+        border-radius: 5px;
+        margin: 0 -8px;
+        padding: 0 8px;
+      }
+      .mk {
+        color: var(--t-blue);
+      }
+      .hit {
+        color: var(--t-orange);
+        font-weight: 700;
+      }
+      .lbl {
+        color: var(--t-fg);
+        font-weight: 700;
+      }
+      .name {
+        color: var(--t-blue);
+        font-weight: 700;
+      }
+      .path,
+      .clean {
+        color: var(--t-green);
+      }
+      .rule {
+        border-top: 1px solid var(--t-border);
+        margin: 12px -20px;
+      }
+      .prompt {
+        color: var(--t-blue);
+      }
+      .caret {
+        background: var(--t-fg);
+        color: var(--t-bg);
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <div class="mark"><span>❯</span>gm</div>
+      <h1>Jump to any repository.<br /><span class="grad">Or any of its worktrees.</span></h1>
+      <p>A ghq-style repository manager with a built-in fuzzy finder.</p>
+      <div class="cmd"><i>$</i>brew install jedipunkz/gm/gm</div>
+    </div>
+
+    <div class="term">  github.com/<span class="hit">jedi</span>punkz/dotfiles
+  github.com/<span class="hit">jedi</span>punkz/kanban
+  github.com/<span class="hit">jedi</span>punkz/miniecs
+  github.com/<span class="hit">jedi</span>punkz/soliton
+<span class="sel"><span class="mk">▸ </span>github.com/<span class="hit">jedi</span>punkz/gm</span>
+<div class="rule"></div><span class="name">github.com/jedipunkz/gm</span>
+
+<span class="lbl">path</span>
+<span class="path">~/ghq/github.com/jedipunkz/gm</span>
+<span class="lbl">status</span>
+<span class="clean">clean</span>
+<div class="rule"></div><span class="prompt">❯</span> jedi<span class="caret"> </span></div>
+  </body>
+</html>
