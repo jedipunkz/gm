@@ -554,3 +554,89 @@ func TestValidBranch(t *testing.T) {
 		t.Errorf("it made directories anyway: %v", err)
 	}
 }
+
+// TestDeleteTakesTheWorktrees guards the bug where a removed repository left
+// its checkouts behind, pointing at a .git that was gone.
+func TestDeleteTakesTheWorktrees(t *testing.T) {
+	base := t.TempDir()
+	r := Repo{Root: base, Rel: "github.com/acme/alpha"}
+	gitRepo(t, r.Path())
+	tree := &Tree{Roots: []string{base}}
+
+	login := tree.WorktreeDir(r, "feat/login")
+	timeout := tree.WorktreeDir(r, "fix/timeout")
+	for branch, dir := range map[string]string{"feat/login": login, "fix/timeout": timeout} {
+		if err := AddWorktree(r.Path(), dir, branch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One of them has work in it: the repository is going regardless, so this
+	// must not stop the removal half way.
+	if err := os.WriteFile(filepath.Join(login, "scratch.txt"), []byte("wip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := OtherWorktrees(r); len(got) != 2 {
+		t.Fatalf("OtherWorktrees() = %v, want the two that are not the repository", got)
+	}
+
+	if err := Delete(r); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{r.Path(), login, timeout} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("%s survived: %v", dir, err)
+		}
+	}
+	// And nothing empty is left standing over them.
+	if _, err := os.Stat(filepath.Join(base, WorktreeRoot)); !os.IsNotExist(err) {
+		t.Errorf("%s survived: %v", WorktreeRoot, err)
+	}
+	if _, err := os.Stat(filepath.Join(base, "github.com")); !os.IsNotExist(err) {
+		t.Errorf("github.com survived: %v", err)
+	}
+}
+
+// TestDeleteWithAWorktreeGitLostTrackOf: a checkout git can no longer remove
+// must not block the removal, or the repository can never be deleted.
+func TestDeleteWithAWorktreeGitLostTrackOf(t *testing.T) {
+	base := t.TempDir()
+	r := Repo{Root: base, Rel: "github.com/acme/alpha"}
+	gitRepo(t, r.Path())
+	tree := &Tree{Roots: []string{base}}
+
+	dir := tree.WorktreeDir(r, "feat/login")
+	if err := AddWorktree(r.Path(), dir, "feat/login"); err != nil {
+		t.Fatal(err)
+	}
+	// Break git's link to it, the way deleting .git by hand would.
+	if err := os.Remove(filepath.Join(dir, ".git")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Delete(r); err != nil {
+		t.Fatalf("Delete() = %v, want it to get through anyway", err)
+	}
+	for _, p := range []string{r.Path(), dir} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s survived: %v", p, err)
+		}
+	}
+}
+
+// TestDeleteWithoutWorktrees is the ordinary case, unchanged.
+func TestDeleteWithoutWorktrees(t *testing.T) {
+	base := t.TempDir()
+	r := Repo{Root: base, Rel: "github.com/acme/alpha"}
+	gitRepo(t, r.Path())
+
+	if got := OtherWorktrees(r); len(got) != 0 {
+		t.Errorf("OtherWorktrees() = %v, want none", got)
+	}
+	if err := Delete(r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.Path()); !os.IsNotExist(err) {
+		t.Errorf("the repository survived: %v", err)
+	}
+}

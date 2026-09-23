@@ -107,6 +107,10 @@ completes it as you go, and `Tab` accepts what it offers.
 | `/worktrees` | Same as `Ctrl-W` |
 | `/remote` | Same as `Ctrl-Alt-B` |
 
+Removing a repository takes its worktrees with it — they are checkouts of a
+repository that is about to stop existing — and the question says how many
+before you agree to it.
+
 `/create` and `/remove` ask first, in a panel over the list, and answer `y` or
 `n`. They do the work without leaving the finder: the removed row disappears,
 the created one is added and selected, and the line under the prompt says what
@@ -156,7 +160,7 @@ clearing the query holds the selection where it is.
 | `gm` | Open the fuzzy finder; print the selected path |
 | `gm get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...` | Clone into the tree; `-u` updates an existing clone |
 | `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
-| `gm remove [--dry-run] [-y] <repo>...` | Remove a repository after confirming, pruning empty parents (`gm rm` also works) |
+| `gm remove [--dry-run] [-y] <repo>...` | Remove a repository and its worktrees after confirming, pruning empty parents (`gm rm` also works) |
 | `gm create [-p] <repo>` | Create and `git init` a repository with `origin` already set |
 | `gm migrate [--dry-run] [-y] [-r] <dir>...` | Move an existing clone into the tree, using its `origin` remote; `-r` searches the directory for them |
 | `gm root [--all]` | Print the root directory |

@@ -1549,3 +1549,51 @@ func TestRemovingTheLastRepositoryLeavesAUsableFinder(t *testing.T) {
 		t.Errorf("/remove on an empty list: over=%v note=%q", m.over, m.note)
 	}
 }
+
+// TestRemoveSaysTheWorktreesGoToo: they are deleted along with the
+// repository, so the question has to name them before anyone says yes.
+func TestRemoveSaysTheWorktreesGoToo(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+	m := newTestModel(t, repos, "")
+	m.w, m.h = 90, 18
+	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+		return []repo.Worktree{
+			{Path: dir, Branch: "main"}, // the repository itself
+			{Path: "/tmp/wt/login", Branch: "feat/login"},
+			{Path: "/tmp/wt/timeout", Branch: "fix/timeout"},
+		}, nil
+	}
+
+	m, _ = runSlash(t, m, "/remove")
+	if m.over != overlayConfirm {
+		t.Fatalf("/remove did not ask: %q", m.note)
+	}
+	box := stripANSI(m.View().Content)
+	for _, want := range []string{"2 worktrees will go too", "feat/login", "fix/timeout"} {
+		if !strings.Contains(box, want) {
+			t.Errorf("the question does not mention %q:\n%s", want, box)
+		}
+	}
+	// The repository is not one of its own worktrees.
+	if strings.Contains(box, "3 worktrees") {
+		t.Errorf("the repository was counted as a worktree:\n%s", box)
+	}
+}
+
+// TestRemoveSaysNothingWithoutWorktrees keeps the ordinary question short.
+func TestRemoveSaysNothingWithoutWorktrees(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+	m := newTestModel(t, repos, "")
+	m.w, m.h = 90, 18
+	m.worktreesOf = func(dir string) ([]repo.Worktree, error) {
+		return []repo.Worktree{{Path: dir, Branch: "main"}}, nil
+	}
+
+	m, _ = runSlash(t, m, "/remove")
+	// "worktree" on its own would match the hint line under the prompt.
+	if box := stripANSI(m.View().Content); strings.Contains(box, "will go too") {
+		t.Errorf("the question talks about worktrees there are none of:\n%s", box)
+	}
+}

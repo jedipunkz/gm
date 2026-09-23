@@ -298,12 +298,71 @@ func (t *Tree) Create(ref string, ssh bool) (Repo, error) {
 	return Repo{Root: t.Primary(), Rel: rel}, nil
 }
 
-// Delete removes a repository and the host/user directories it leaves empty
-// behind it. It asks nothing: the caller has already confirmed.
+// Delete removes a repository, every worktree checked out of it, and the
+// directories that are left empty above them. It asks nothing: the caller has
+// already confirmed.
+//
+// The worktrees go first. Their administrative files live inside the
+// repository, so once it is gone git can no longer remove them and they are
+// left as directories whose .git points at nothing.
 func Delete(r Repo) error {
+	for _, w := range OtherWorktrees(r) {
+		if err := RemoveWorktree(r.Path(), w.Path, true); err != nil {
+			// The repository is going anyway, so git's bookkeeping about
+			// this checkout does not need to survive; the directory does not
+			// either. This is the path a worktree git has lost track of
+			// takes, and it must not block the removal.
+			if err := os.RemoveAll(w.Path); err != nil {
+				return err
+			}
+		}
+	}
+	// The branch directories the checkouts hung under are gm's own, and
+	// pruning them by the paths git reported would not work: git resolves
+	// symlinks, so on macOS its /private/var is not the /var the tree was
+	// walked as.
+	_ = os.RemoveAll(WorktreesDir(r))
+	PruneEmptyParents(r.Root, filepath.Dir(WorktreesDir(r)))
+
 	if err := os.RemoveAll(r.Path()); err != nil {
 		return err
 	}
 	PruneEmptyParents(r.Root, filepath.Dir(r.Path()))
 	return nil
+}
+
+// OtherWorktrees are the checkouts of r that are not r itself. A repository
+// git cannot answer for has none, which is the right answer for a directory
+// that is about to be deleted.
+func OtherWorktrees(r Repo) []Worktree {
+	all, err := Worktrees(r.Path())
+	if err != nil {
+		return nil
+	}
+	out := make([]Worktree, 0, len(all))
+	for _, w := range all {
+		if SamePath(w.Path, r.Path()) {
+			continue // the main worktree is the repository
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
+// SamePath reports whether two paths name the same directory. git prints the
+// resolved path, which on macOS is not the one gm walked to find it: /var is
+// a symlink to /private/var.
+func SamePath(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ra, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		return false
+	}
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		return false
+	}
+	return ra == rb
 }
