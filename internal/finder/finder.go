@@ -110,6 +110,16 @@ type statusMsg struct {
 	status repo.Status
 }
 
+// probeMsg says the cursor has rested on path for statusDelay. It is dropped
+// if the selection moved on in the meantime, which is what keeps a held arrow
+// key from asking git about every row it swept past.
+type probeMsg struct{ path string }
+
+// statusDelay is how long a row has to stay selected before git is asked
+// about it. Key repeat is faster than this, so scrolling through a tree costs
+// nothing and the row the eye stops on is described right away.
+const statusDelay = 100 * time.Millisecond
+
 type model struct {
 	all     []item        // ascending by frecency: the best is last
 	view    []int         // indices into all, same convention
@@ -117,6 +127,7 @@ type model struct {
 	cursor  int           // index into view
 	input   textinput.Model
 	status  map[string]repo.Status
+	probing map[string]bool // paths git is being asked about right now
 	st      Styles
 	w, h    int
 	result  Result
@@ -178,6 +189,7 @@ func newModel(tree *repo.Tree, repos []repo.Repo, hist *repo.History, theme Them
 		all:         items,
 		input:       in,
 		status:      map[string]repo.Status{},
+		probing:     map[string]bool{},
 		st:          st,
 		w:           80,
 		h:           24,
@@ -201,7 +213,8 @@ func (m model) current() (item, bool) {
 	return m.all[m.view[m.cursor]], true
 }
 
-// loadStatus asks git about the selected repository off the UI thread.
+// loadStatus arms the delay for the selected repository. No git runs yet: the
+// probe that follows checks the cursor is still here first.
 func (m model) loadStatus() tea.Cmd {
 	it, ok := m.current()
 	if !ok {
@@ -211,8 +224,22 @@ func (m model) loadStatus() tea.Cmd {
 	if _, done := m.status[p]; done {
 		return nil
 	}
+	return tea.Tick(statusDelay, func(time.Time) tea.Msg { return probeMsg{path: p} })
+}
+
+// probe asks git about path, off the UI thread, unless the cursor has since
+// moved elsewhere or the answer is already on its way.
+func (m *model) probe(path string) tea.Cmd {
+	it, ok := m.current()
+	if !ok || it.path != path || m.probing[path] {
+		return nil
+	}
+	if _, done := m.status[path]; done {
+		return nil
+	}
+	m.probing[path] = true
 	return func() tea.Msg {
-		return statusMsg{path: p, status: repo.Describe(p)}
+		return statusMsg{path: path, status: repo.Describe(path)}
 	}
 }
 
@@ -222,7 +249,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.w, m.h = msg.Width, msg.Height
 		return m, nil
 
+	case probeMsg:
+		return m, m.probe(msg.path)
+
 	case statusMsg:
+		delete(m.probing, msg.path)
 		m.status[msg.path] = msg.status
 		return m, nil
 
