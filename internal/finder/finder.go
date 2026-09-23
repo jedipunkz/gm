@@ -63,20 +63,20 @@ func (k Keys) check() error {
 	return nil
 }
 
-// Action is what the finder decided, beyond picking a path.
+// Action is the work the finder could not finish itself. Making and removing
+// repositories and worktrees happen under it, behind a confirmation; what is
+// left is going somewhere, and cloning, which wants a terminal of its own for
+// its progress and its passwords.
 type Action int
 
 const (
-	ActionNone   Action = iota // the user quit
-	ActionJump                 // go to Arg, a repository or worktree path
-	ActionCreate               // create Arg, a repository reference
-	ActionGet                  // clone Arg, a repository reference
-	ActionRemove               // remove Arg, a repository path
+	ActionNone Action = iota // the user quit
+	ActionJump               // go to Arg, a repository or worktree path
+	ActionGet                // clone Arg, a repository reference
 )
 
-// Result is what the finder leaves behind. Everything that touches the
-// network, the disk or the user's confirmation happens after it has closed,
-// on the terminal the user can see.
+// Result is what the finder leaves behind for gm to carry out once the
+// alternate screen is gone.
 type Result struct {
 	Action Action
 	Arg    string
@@ -210,7 +210,6 @@ type model struct {
 	// until one has. dirtyOnly is the filter itself.
 	dirty     map[string]bool
 	dirtyOnly bool
-	scanning  bool
 	note      string // a one-line answer under the prompt, cleared on the next keystroke
 	// worktreesOf and dirtyOf are the seams the tests replace; they are
 	// repo.Worktrees and repo.DirtyMap in every real run.
@@ -458,7 +457,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadStatus()
 
 	case dirtyMsg:
-		m.dirty, m.scanning, m.note = msg, false, ""
+		m.dirty, m.note = msg, ""
 		m.filter()
 		m.cursor = len(m.view) - 1
 		return m, m.loadStatus()
