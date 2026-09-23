@@ -1,0 +1,61 @@
+---
+// A code block with a copy button. The copied text is `copy` when given,
+// otherwise the block itself.
+interface Props {
+  code: string;
+  copy?: string;
+  label?: string;
+}
+const { code, copy, label } = Astro.props;
+---
+
+<div class="code">
+  {label && <div class="code-label">{label}</div>}
+  <pre><code>{code}</code></pre>
+  <button type="button" class="copy" data-copy={copy ?? code} aria-label="Copy to clipboard">Copy</button>
+</div>
+
+<style>
+  .code {
+    position: relative;
+  }
+  .code-label {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--faint);
+    margin-bottom: 6px;
+  }
+  pre {
+    padding-right: 78px;
+  }
+  .copy {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    font: 500 0.75rem var(--font-sans);
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .copy:hover {
+    color: var(--text);
+    border-color: var(--faint);
+  }
+</style>
+
+<script>
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(".copy")) {
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copy ?? "");
+        btn.textContent = "Copied";
+      } catch {
+        btn.textContent = "Failed";
+      }
+      setTimeout(() => (btn.textContent = "Copy"), 1500);
+    });
+  }
+</script>

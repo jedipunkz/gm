@@ -1,0 +1,71 @@
+# Builds the Astro site in site/ and publishes it to GitHub Pages. The site
+# reads the finder's themes from internal/finder/theme.go at build time, so a
+# change there redeploys it too.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - internal/finder/theme.go
+      - .github/workflows/pages.yaml
+  pull_request:
+    paths:
+      - site/**
+      - internal/finder/theme.go
+      - .github/workflows/pages.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push supersedes a queued one, but never
+# cancels a deployment already under way.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      # Only a push to main or a manual run publishes; a pull request stops at
+      # proving the site still builds.
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
