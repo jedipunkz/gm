@@ -44,6 +44,11 @@ func (a *app) finder() error {
 // act carries out what the finder decided, now that the alternate screen is
 // gone: a clone's progress, a password prompt and a confirmation all belong
 // on the terminal the user can see.
+//
+// One rule about the visit log, so a repository is never counted twice: it is
+// recorded by whatever fetched, made or moved the repository, and by the
+// finder only for a row that was simply chosen. gm get has already recorded
+// the clone by the time this sees it.
 func (a *app) act(res finder.Result, hist *repo.History) error {
 	switch res.Action {
 	case finder.ActionJump:
@@ -57,7 +62,7 @@ func (a *app) act(res finder.Result, hist *repo.History) error {
 		if err != nil {
 			return err
 		}
-		return a.goTo(a.tree.PathFor(repo.RelPathOf(u)), hist)
+		return printPath(a.tree.PathFor(repo.RelPathOf(u)))
 
 	}
 	return nil // the user quit
@@ -71,6 +76,15 @@ func (a *app) goTo(path string, hist *repo.History) error {
 	}
 	if err := hist.Bump(path); err != nil {
 		fmt.Fprintf(os.Stderr, "gm: could not record visit: %v\n", err)
+	}
+	return printPath(path)
+}
+
+// printPath hands the path to the shell binding and records nothing: the
+// subcommand that just fetched the repository has already done that.
+func printPath(path string) error {
+	if path == "" {
+		return nil
 	}
 	fmt.Println(path)
 	return nil
