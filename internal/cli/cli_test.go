@@ -3,10 +3,13 @@ package cli
 import (
 	"io"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/jedipunkz/gm/internal/config"
+	"github.com/jedipunkz/gm/internal/repo"
 )
 
 // TestUsageCoversEveryCommand guards the help text against drifting away from
@@ -91,4 +94,33 @@ func captureStdout(t *testing.T, f func()) string {
 		t.Fatal(err)
 	}
 	return b.String()
+}
+
+// TestListUniqueStaysUniqueUnderAQuery pins --unique to the whole tree: a
+// query must not shorten a name down to one that gm rm would call ambiguous.
+func TestListUniqueStaysUniqueUnderAQuery(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{"github.com/alice/gm", "github.com/alice/tools", "github.com/bob/gm"} {
+		if err := os.MkdirAll(filepath.Join(root, rel, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tree := &repo.Tree{Roots: []string{root}}
+
+	out := captureStdout(t, func() {
+		a := &app{tree: tree}
+		if err := a.list([]string{"--unique", "alice"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	got := strings.Fields(out)
+	want := []string{"alice/gm", "tools"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("gm list --unique alice printed %v, want %v", got, want)
+	}
+	for _, name := range got {
+		if _, err := tree.Resolve(name); err != nil {
+			t.Errorf("printed name %q does not resolve: %v", name, err)
+		}
+	}
 }
