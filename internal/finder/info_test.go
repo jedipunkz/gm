@@ -166,3 +166,42 @@ func TestPaneLabelsStandOut(t *testing.T) {
 		t.Errorf("the label still carries the comment colour: %q", label)
 	}
 }
+
+// TestWorktreesInTheDetailsPane is how a row says whether the worktree key is
+// worth pressing on it. A repository without any says nothing at all: the
+// pane is for what is there.
+func TestWorktreesInTheDetailsPane(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
+	m := newTestModel(t, repos, "")
+	path := repos[0].Path()
+
+	pane := func() string {
+		var plain []string
+		for _, l := range m.infoLines(40) {
+			plain = append(plain, strings.TrimRight(stripANSI(l), " "))
+		}
+		return strings.Join(plain, "\n")
+	}
+
+	m.status[path] = repo.Status{Branch: "main"}
+	if strings.Contains(pane(), "worktrees") {
+		t.Errorf("a repository with no worktrees mentioned them:\n%s", pane())
+	}
+
+	m.status[path] = repo.Status{
+		Branch: "main",
+		Worktrees: []repo.Worktree{
+			{Path: root + "/.worktrees/a", Branch: "feat/login"},
+			{Path: root + "/.worktrees/b", Head: "abc1234def"},
+		},
+	}
+	got := pane()
+	if !strings.Contains(got, "\nworktrees\n") {
+		t.Errorf("no worktrees label:\n%s", got)
+	}
+	// A detached checkout has no branch to name it, so it goes by its hash.
+	if !strings.Contains(got, "feat/login") || !strings.Contains(got, "abc1234") {
+		t.Errorf("a worktree is missing from the pane:\n%s", got)
+	}
+}
