@@ -3,6 +3,7 @@ package finder
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,13 +58,11 @@ func (m model) infoLines(w int) []string {
 		}
 		// Only when there are some: the pane is for what is there, and this
 		// is also the only way to tell whether the worktree key is worth
-		// pressing on this row.
-		if len(s.Worktrees) > 0 {
-			labels := make([]string, 0, len(s.Worktrees))
-			for _, w := range s.Worktrees {
-				labels = append(labels, w.Label())
-			}
-			field("worktrees", strings.Join(labels, ", "), m.st.Branch)
+		// pressing on this row. The count, not the names: a repository with
+		// dozens of worktrees would push everything below it off the pane,
+		// and the list is one ctrl-t away.
+		if n := len(s.Worktrees); n > 0 {
+			field("worktrees", strconv.Itoa(n), m.st.Branch)
 		}
 	}
 

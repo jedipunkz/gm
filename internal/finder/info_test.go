@@ -197,11 +197,12 @@ func TestWorktreesInTheDetailsPane(t *testing.T) {
 		},
 	}
 	got := pane()
-	if !strings.Contains(got, "\nworktrees\n") {
-		t.Errorf("no worktrees label:\n%s", got)
+	// The count only: naming them overruns the pane on a repository with
+	// many, and ctrl-t lists them.
+	if !strings.Contains(got, "\nworktrees\n2\n") {
+		t.Errorf("no worktree count:\n%s", got)
 	}
-	// A detached checkout has no branch to name it, so it goes by its hash.
-	if !strings.Contains(got, "feat/login") || !strings.Contains(got, "abc1234") {
-		t.Errorf("a worktree is missing from the pane:\n%s", got)
+	if strings.Contains(got, "feat/login") {
+		t.Errorf("the pane named a worktree instead of counting them:\n%s", got)
 	}
 }
