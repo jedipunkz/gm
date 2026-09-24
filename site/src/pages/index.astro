@@ -229,7 +229,8 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
           there is none — a remote branch becomes a local one that tracks it.
           <kbd>Ctrl</kbd>+<kbd>J</kbd> lists the open pull requests, drafts marked, through the
           <a href="https://cli.github.com/">GitHub CLI</a>; <kbd>Enter</kbd> has <code>gh pr checkout --worktree</code> make
-          the worktree.
+          the worktree. While gm waits on git or GitHub, the line under the prompt shows a spinner, what it is waiting on
+          and the seconds so far.
         </p>
         <div class="table-wrap">
           <table>

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -154,6 +155,12 @@ type model struct {
 	dirty     map[string]bool
 	dirtyOnly bool
 	note      string // a one-line answer under the prompt, cleared on the next keystroke
+	// busy says what gm is waiting on — git or GitHub, off the UI thread —
+	// and stays under the prompt, with a spinner and the time taken so far,
+	// until the answer arrives. Empty when nothing is running.
+	busy      string
+	busySince time.Time
+	spin      spinner.Model
 	// worktreesOf, branchesOf, prsOf and dirtyOf are the seams the tests
 	// replace; they are repo.Worktrees, repo.Branches, repo.PullRequests and
 	// repo.DirtyMap in every real run.
@@ -201,6 +208,7 @@ func newModel(tree *repo.Tree, repos []repo.Repo, hist *repo.History, theme Them
 		input:       in,
 		status:      map[string]repo.Status{},
 		probing:     map[string]bool{},
+		spin:        spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(st.HelpKey)),
 		st:          st,
 		w:           80,
 		h:           24,
@@ -273,7 +281,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status[msg.path] = msg.status
 		return m, nil
 
+	case spinner.TickMsg:
+		// Ticks stop once nothing is running: the chain ends here.
+		if m.busy == "" {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.spin, cmd = m.spin.Update(msg)
+		return m, cmd
+
 	case doneMsg:
+		m.busy = ""
 		if msg.err != nil {
 			m.note = msg.err.Error()
 			return m, nil
@@ -295,7 +313,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.showPRs(msg)
 
 	case dirtyMsg:
-		m.dirty, m.note = msg, ""
+		m.dirty, m.note, m.busy = msg, "", ""
 		m.filter()
 		m.cursor = len(m.view) - 1
 		return m, m.loadStatus()
@@ -496,6 +514,10 @@ func (m model) helpLine(width int) string {
 	if m.note != "" {
 		return strings.Join(wrapSegs([]seg{{m.note, m.st.Dirty}}, width, "")[:1], "")
 	}
+	if m.busy != "" {
+		elapsed := fmt.Sprintf("%s %ds", m.busy, int(time.Since(m.busySince).Seconds()))
+		return m.spin.View() + " " + strings.Join(wrapSegs([]seg{{elapsed, m.st.Help}}, width-2, "")[:1], "")
+	}
 	if isCommand(m.input.Value()) {
 		return m.st.Help.Render("enter runs the command  ·  tab completes it  ·  ") +
 			m.st.HelpKey.Render("/help") + m.st.Help.Render(" lists them")
@@ -577,4 +599,11 @@ func (m model) hints(width int) string {
 		b.WriteString(m.st.Help.Render(" " + h.what))
 	}
 	return b.String()
+}
+
+// startBusy puts what gm now waits on under the prompt and starts the spinner
+// that shows it has not hung. The returned command is the first tick.
+func (m *model) startBusy(what string) tea.Cmd {
+	m.busy, m.busySince, m.note = what, time.Now(), ""
+	return m.spin.Tick
 }
