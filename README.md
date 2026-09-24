@@ -156,8 +156,9 @@ The hint line says which it will do next.
 
 Only a leading slash starts a command — repository paths are full of slashes,
 and `acme/alpha` keeps filtering the way it always did. To act on a repository
-you just searched for, press `Esc` to empty the box and then type the command:
-clearing the query holds the selection where it is.
+you just searched for, end the query with `;` and type the command after it:
+`gm;/remove` selects `gm` and removes it. Pressing `Esc` to empty the box, then
+typing the command, does the same: clearing the query holds the selection.
 
 ## 🧰 Sub Commands
 

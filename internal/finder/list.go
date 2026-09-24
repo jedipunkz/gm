@@ -31,11 +31,9 @@ type dirtyMsg map[string]bool
 func (m *model) filter() {
 	m.matched = map[int][]int{}
 	m.note = ""
-	q := strings.TrimSpace(m.input.Value())
-	// A command is not a query: the list stays as it was while one is typed.
-	if isCommand(q) {
-		q = ""
-	}
+	// A command is not a query: the list stays as the query before it left it.
+	q, _, _ := splitInput(strings.TrimSpace(m.input.Value()))
+	q = strings.TrimSpace(q)
 	// The selection follows the item, not the row number, whenever the query
 	// is not making a new ranking statement — a command being typed, or the
 	// query being cleared. Clearing it has to hold the selection still, or

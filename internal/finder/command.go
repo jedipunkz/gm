@@ -16,6 +16,10 @@ import (
 // slashes, and every one of those has to keep filtering.
 const commandPrefix = "/"
 
+// commandSep ends a query so a command can follow it — "gm;/remove" finds a
+// repository and acts on it in one go. No repository path holds one.
+const commandSep = ";"
+
 // command is one slash command. Adding another is one entry here; the help
 // popup and the completion both read this table.
 type command struct {
@@ -160,9 +164,33 @@ func commandNames() []string {
 	return names
 }
 
+// splitInput tells the query in the box from a command typed with it: a
+// command either is the whole input, or follows the query after commandSep.
+func splitInput(s string) (query, cmd string, ok bool) {
+	if strings.HasPrefix(s, commandPrefix) {
+		return "", s, true
+	}
+	return strings.Cut(s, commandSep)
+}
+
 // isCommand reports whether the input is being typed as a command rather than
-// as a filter.
-func isCommand(s string) bool { return strings.HasPrefix(s, commandPrefix) }
+// only as a filter.
+func isCommand(s string) bool {
+	_, _, ok := splitInput(s)
+	return ok
+}
+
+// completions offers the command names as the whole box would read with them,
+// the query in front of the separator included.
+func completions(s string) []string {
+	names := commandNames()
+	if q, _, ok := splitInput(s); ok && q != "" {
+		for i, n := range names {
+			names[i] = q + commandSep + n
+		}
+	}
+	return names
+}
 
 // leaveWith closes the finder and hands the work to gm, which runs it on the
 // terminal the user can see: a clone's progress, a password prompt and a

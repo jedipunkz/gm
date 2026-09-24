@@ -326,7 +326,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter":
-			if typed := m.input.Value(); isCommand(typed) {
+			if _, typed, ok := splitInput(m.input.Value()); ok {
 				next, cmd := m.runCommand(typed)
 				return next, cmd
 			}
@@ -351,6 +351,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	before := m.input.Value()
 	m.input, cmd = m.input.Update(msg)
 	if m.input.Value() != before {
+		m.input.SetSuggestions(completions(m.input.Value()))
 		m.filter()
 	}
 	return m, tea.Batch(cmd, m.loadStatus())

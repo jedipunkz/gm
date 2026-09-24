@@ -96,3 +96,40 @@ func TestActionsNeedTheirArgument(t *testing.T) {
 		}
 	}
 }
+
+// TestCommandAfterAQuery is the flow of issue #73: find a repository, then act
+// on it without emptying the box first. A semicolon ends the query.
+func TestCommandAfterAQuery(t *testing.T) {
+	root := t.TempDir()
+	repos := []repo.Repo{
+		{Root: root, Rel: "github.com/acme/alpha"},
+		{Root: root, Rel: "github.com/acme/bravo"},
+		{Root: root, Rel: "github.com/other/charlie"},
+	}
+	var mm tea.Model = newTestModel(t, repos, "")
+
+	for i, r := range "bravo;/remov" {
+		mm, _ = mm.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		m := mm.(model)
+		// The query keeps filtering while the command is typed after it.
+		if it, _ := m.current(); i >= len("bravo")-1 && it.label != "github.com/acme/bravo" {
+			t.Fatalf("after %q the selection is %q", m.input.Value(), it.label)
+		}
+	}
+	if got := stripANSI(mm.(model).input.View()); !strings.Contains(got, "bravo;/remove") {
+		t.Errorf("the box does not complete the command after the query: %q", got)
+	}
+	mm, _ = mm.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := mm.(model).input.Value(); got != "bravo;/remove" {
+		t.Errorf("tab produced %q", got)
+	}
+
+	mm, _ = mm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m := mm.(model)
+	if m.over != overlayConfirm || m.ask.arg != repos[1].Path() {
+		t.Errorf("/remove asked about %+v, want the queried repository", m.ask)
+	}
+	if !isCommand("bravo;") || !isCommand("bravo;/help") || isCommand("acme/alpha") {
+		t.Error("isCommand disagrees with the rule")
+	}
+}

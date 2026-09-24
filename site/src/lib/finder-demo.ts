@@ -96,7 +96,13 @@ const COMMANDS: { name: string; arg: string; what: string }[] = [
   { name: "/dirty", arg: "", what: "show only repositories with uncommitted work" },
 ];
 
-const isCommand = (s: string) => s.trimStart().startsWith("/");
+// A command is the whole input, or follows the query after ";": "gm;/remote".
+function splitInput(s: string): [query: string, cmd: string, ok: boolean] {
+  if (s.trimStart().startsWith("/")) return ["", s, true];
+  const i = s.indexOf(";");
+  return i < 0 ? [s, "", false] : [s.slice(0, i), s.slice(i + 1), true];
+}
+const isCommand = (s: string) => splitInput(s)[2];
 
 // ---- helpers ------------------------------------------------------------
 
@@ -156,8 +162,7 @@ export function mount(root: HTMLElement) {
   function filter() {
     st.matched = new Map();
     st.note = "";
-    let q = input.value.trim();
-    if (isCommand(q)) q = "";
+    const q = splitInput(input.value.trim())[0].trim();
     const hold = st.view.length > 0 && (q === st.query || q === "");
     const held = hold ? st.view[st.cursor] : -1;
     st.query = q;
@@ -420,16 +425,19 @@ export function mount(root: HTMLElement) {
   }
 
   function enter() {
-    if (isCommand(input.value)) return runCommand(input.value);
+    const [, cmd, ok] = splitInput(input.value);
+    if (ok) return runCommand(cmd);
     const it = current();
     if (it) say(`gm prints ${it.path} and your shell cds there`, "clean");
   }
 
   function complete() {
-    const typed = input.value.trim();
-    if (!isCommand(typed) || typed.includes(" ")) return;
+    const [query, cmd, ok] = splitInput(input.value);
+    const typed = cmd.trim();
+    if (!ok || typed.includes(" ")) return;
     const hits = COMMANDS.filter((c) => c.name.startsWith(typed));
-    if (hits.length === 1) input.value = hits[0].name + (hits[0].arg ? " " : "");
+    const before = query ? query + ";" : "";
+    if (hits.length === 1) input.value = before + hits[0].name + (hits[0].arg ? " " : "");
   }
 
   function move(d: number) {
