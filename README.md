@@ -34,7 +34,7 @@ still *listed*), bare clones, partial clones, parallel import, `--vcs`, and
 ## 📋 Requirements
 
 - `git` on `$PATH`
-- Go 1.25 or newer, only to build it yourself
+- Go 1.27 or newer, only to build it yourself
 - A true-color terminal, for the finder's themes to look as intended
 
 ## 📦 Install
