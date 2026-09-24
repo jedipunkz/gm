@@ -18,6 +18,9 @@ type item struct {
 	path  string
 	score float64    // frecency; zero for worktrees
 	seen  repo.Visit // the visit log; empty for worktrees
+	// branch is the branch a row of the branch list stands for. Such a row
+	// has a path only when the branch is already checked out somewhere.
+	branch repo.Branch
 }
 
 type source []item

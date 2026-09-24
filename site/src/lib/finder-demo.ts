@@ -92,6 +92,7 @@ const COMMANDS: { name: string; arg: string; what: string }[] = [
   { name: "/get", arg: "<repo>", what: "clone a repository, then go there" },
   { name: "/remove", arg: "", what: "remove the selected repository or worktree" },
   { name: "/worktrees", arg: "", what: "list the worktrees of the selected repository" },
+  { name: "/branches", arg: "", what: "list the branches of the selected repository" },
   { name: "/remote", arg: "", what: "open the selected repository's remote in a browser" },
   { name: "/dirty", arg: "", what: "show only repositories with uncommitted work" },
 ];
@@ -296,13 +297,14 @@ export function mount(root: HTMLElement) {
 
     const hints =
       st.mode === "worktrees"
-        ? [hintKey("↑↓ ctrl-p/n", "move"), hintKey("enter", "jump"), hintKey("ctrl-w/g/esc", "repos", "back"), hintKey("ctrl-alt-b", "remote", "remote")]
+        ? [hintKey("↑↓ ctrl-p/n", "move"), hintKey("enter", "jump"), hintKey("ctrl-w/g/esc", "repos", "back"), hintKey("ctrl-alt-b", "remote", "remote"), hintKey("ctrl-l", "branches")]
         : [
             hintKey("↑↓ ctrl-p/n", "move"),
             hintKey("enter", "jump"),
             hintKey("ctrl-w", "worktrees", "worktrees"),
             hintKey("esc", out, "esc"),
             hintKey("ctrl-alt-b", "remote", "remote"),
+            hintKey("ctrl-l", "branches"),
           ];
     hintsEl.innerHTML = (st.dirtyOnly && st.mode === "repos" ? span("dirty", "dirty only") + sep : "") + hints.join(sep);
   }
@@ -413,6 +415,9 @@ export function mount(root: HTMLElement) {
         break;
       case "/remote":
         remote();
+        break;
+      case "/branches":
+        say("the branch list asks git about a real repository, so it only runs in a real terminal", "dim");
         break;
       case "/create":
       case "/get":

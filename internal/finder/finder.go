@@ -20,10 +20,12 @@ import (
 	"github.com/jedipunkz/gm/internal/repo"
 )
 
-// DefaultWorktreeKey opens the worktree list, and DefaultRemoteKey the
-// selected repository's remote, when gm.toml says nothing.
+// DefaultWorktreeKey opens the worktree list, DefaultBranchKey the branch
+// list, and DefaultRemoteKey the selected repository's remote, when gm.toml
+// says nothing.
 const (
 	DefaultWorktreeKey = "ctrl-w"
+	DefaultBranchKey   = "ctrl-l"
 	DefaultRemoteKey   = "ctrl-alt-b"
 )
 
@@ -39,25 +41,29 @@ var reserved = map[byte]string{
 // Keys are the finder's configurable chords.
 type Keys struct {
 	Worktree config.Chord // open and close the worktree list
+	Branch   config.Chord // open and close the branch list
 	Remote   config.Chord // open the selected repository's remote
 }
 
 // check refuses a binding that would shadow one of the finder's fixed keys,
 // or that two actions would answer to at once.
 func (k Keys) check() error {
-	for _, c := range []struct {
+	named := []struct {
 		name  string
 		chord config.Chord
-	}{{"worktree_key", k.Worktree}, {"remote_key", k.Remote}} {
+	}{{"worktree_key", k.Worktree}, {"branch_key", k.Branch}, {"remote_key", k.Remote}}
+	for i, c := range named {
+		for _, o := range named[i+1:] {
+			if c.chord.Key() == o.chord.Key() {
+				return fmt.Errorf("%s and %s are both %s", c.name, o.name, c.chord.Display)
+			}
+		}
 		if !c.chord.Plain() {
 			continue // Alt or Shift can never collide with the fixed keys
 		}
 		if what, taken := reserved[c.chord.Letter]; taken {
 			return fmt.Errorf("%s cannot be %s: the finder uses it to %s", c.name, c.chord.Display, what)
 		}
-	}
-	if k.Worktree.Key() == k.Remote.Key() {
-		return fmt.Errorf("worktree_key and remote_key are both %s", k.Worktree.Display)
 	}
 	return nil
 }
@@ -133,7 +139,7 @@ type model struct {
 	result  Result
 
 	mode   mode
-	origin string // in worktree mode, the repository the list belongs to
+	origin string // in the worktree or branch list, the repository it belongs to
 	repoAt string // ...and where it is on disk
 	saved  *stash
 	keys   Keys
@@ -146,9 +152,11 @@ type model struct {
 	dirty     map[string]bool
 	dirtyOnly bool
 	note      string // a one-line answer under the prompt, cleared on the next keystroke
-	// worktreesOf and dirtyOf are the seams the tests replace; they are
-	// repo.Worktrees and repo.DirtyMap in every real run.
+	// worktreesOf, branchesOf and dirtyOf are the seams the tests replace;
+	// they are repo.Worktrees, repo.Branches and repo.DirtyMap in every real
+	// run.
 	worktreesOf func(dir string) ([]repo.Worktree, error)
+	branchesOf  func(dir string) ([]repo.Branch, error)
 	dirtyOf     func(paths []string) map[string]bool
 }
 
@@ -196,6 +204,7 @@ func newModel(tree *repo.Tree, repos []repo.Repo, hist *repo.History, theme Them
 		keys:        keys,
 		tree:        tree,
 		worktreesOf: repo.Worktrees,
+		branchesOf:  repo.Branches,
 		dirtyOf:     repo.DirtyMap,
 	}
 	m.filter()
@@ -221,6 +230,9 @@ func (m model) loadStatus() tea.Cmd {
 		return nil
 	}
 	p := it.path
+	if p == "" {
+		return nil // a branch with no worktree yet: there is nothing to ask git about
+	}
 	if _, done := m.status[p]; done {
 		return nil
 	}
@@ -269,6 +281,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case changeCreate, changeAddWorktree:
 			m.add(msg.label, msg.path)
 			m.note = "created " + tildify(msg.path)
+		case changeCheckOut:
+			m.result = Result{Action: ActionJump, Arg: msg.path}
+			return m, tea.Quit
 		}
 		return m, m.loadStatus()
 
@@ -288,11 +303,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The configurable keys cannot be switch cases.
 		switch msg.String() {
 		case m.keys.Worktree.Key():
-			if m.mode == modeWorktrees {
-				m.restore()
-				return m, m.loadStatus()
-			}
-			return m.openWorktrees()
+			return m.switchTo(modeWorktrees)
+		case m.keys.Branch.Key():
+			return m.switchTo(modeBranches)
 		case m.keys.Remote.Key():
 			return m, m.openRemote()
 		}
@@ -304,7 +317,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// quit gm: the worktree list first, then a filter. From the
 			// repository list with nothing to undo, Ctrl-G does nothing — it
 			// is the key that opened gm in the first place.
-			if m.mode == modeWorktrees {
+			if m.mode != modeRepos {
 				m.restore()
 				return m, m.loadStatus()
 			}
@@ -328,6 +341,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if _, typed, ok := splitInput(m.input.Value()); ok {
 				next, cmd := m.runCommand(typed)
+				return next, cmd
+			}
+			if m.mode == modeBranches {
+				next, cmd := m.checkOut()
 				return next, cmd
 			}
 			if it, ok := m.current(); ok {
@@ -433,6 +450,9 @@ func (m model) openRemote() tea.Cmd {
 		return nil
 	}
 	path := it.path
+	if path == "" {
+		path = m.repoAt // a branch with no worktree: the repository has the remote
+	}
 	remote := m.status[path].Remote
 	return func() tea.Msg {
 		if remote == "" {
@@ -478,7 +498,7 @@ func (m model) helpLine(width int) string {
 }
 
 func (m model) hints(width int) string {
-	wt := m.keys.Worktree.Short()
+	wt, br := m.keys.Worktree.Short(), m.keys.Branch.Short()
 	// Esc undoes one layer of narrowing at a time, so it has to say which.
 	out := "quit"
 	switch {
@@ -493,13 +513,24 @@ func (m model) hints(width int) string {
 		{wt, "worktrees"},
 		{"esc", out},
 		{m.keys.Remote.Short(), "remote"},
+		{br, "branches"},
 	}
-	if m.mode == modeWorktrees {
+	switch m.mode {
+	case modeWorktrees:
 		hints = []hint{
 			{"↑↓ ctrl-p/n", "move"},
 			{"enter", "jump"},
 			{wt + "/g/esc", "repos"},
 			{m.keys.Remote.Short(), "remote"},
+			{br, "branches"},
+		}
+	case modeBranches:
+		hints = []hint{
+			{"↑↓ ctrl-p/n", "move"},
+			{"enter", "check out"},
+			{br + "/g/esc", "repos"},
+			{m.keys.Remote.Short(), "remote"},
+			{wt, "worktrees"},
 		}
 	}
 
