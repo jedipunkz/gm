@@ -3,6 +3,7 @@ package finder
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jedipunkz/gm/internal/repo"
 )
@@ -189,19 +190,45 @@ func TestWorktreesInTheDetailsPane(t *testing.T) {
 		t.Errorf("a repository with no worktrees mentioned them:\n%s", pane())
 	}
 
+	now := time.Now()
+	wt := func(name string, d time.Duration) repo.Worktree {
+		return repo.Worktree{Path: root + "/.worktrees/" + name, Branch: name, CommittedAt: now.Add(-d).Unix()}
+	}
 	m.status[path] = repo.Status{
-		Branch: "main",
-		Worktrees: []repo.Worktree{
-			{Path: root + "/.worktrees/a", Branch: "feat/login"},
-			{Path: root + "/.worktrees/b", Head: "abc1234def"},
-		},
+		Branch:    "main",
+		Worktrees: []repo.Worktree{wt("feat/login", time.Hour), {Path: root + "/.worktrees/b", Head: "abc1234def"}},
 	}
 	got := pane()
-	if !strings.Contains(got, "\nworktrees\n") {
+	if !strings.Contains(got, "\nlast 2 worktrees\n") {
 		t.Errorf("no worktrees label:\n%s", got)
 	}
 	// A detached checkout has no branch to name it, so it goes by its hash.
 	if !strings.Contains(got, "feat/login") || !strings.Contains(got, "abc1234") {
 		t.Errorf("a worktree is missing from the pane:\n%s", got)
+	}
+	if !strings.Contains(got, "1h ago") {
+		t.Errorf("no commit date beside the worktree:\n%s", got)
+	}
+
+	// Newest first, and only three: a repository with many checkouts must not
+	// push the commits below it off the pane.
+	m.status[path] = repo.Status{
+		Branch: "main",
+		Worktrees: []repo.Worktree{
+			wt("stale", 30*24*time.Hour),
+			wt("newest", time.Minute),
+			wt("mid", 2*24*time.Hour),
+			wt("second", time.Hour),
+		},
+	}
+	got = pane()
+	if !strings.Contains(got, "\nlast 3 of 4 worktrees\n") {
+		t.Errorf("the label does not say how many were left out:\n%s", got)
+	}
+	if strings.Contains(got, "stale") {
+		t.Errorf("the oldest worktree was not dropped:\n%s", got)
+	}
+	if i, j := strings.Index(got, "newest"), strings.Index(got, "second"); i < 0 || j < 0 || i > j {
+		t.Errorf("the worktrees are not newest first:\n%s", got)
 	}
 }

@@ -261,10 +261,11 @@ func IsDirty(dir string) (bool, error) {
 // Worktree is one checkout of a repository: the main one, plus whatever
 // `git worktree add` created.
 type Worktree struct {
-	Path   string
-	Branch string // short name, empty when HEAD is detached
-	Head   string // commit hash
-	Bare   bool
+	Path        string
+	Branch      string // short name, empty when HEAD is detached
+	Head        string // commit hash
+	Bare        bool
+	CommittedAt int64 // unix seconds of the branch tip; 0 when unknown
 }
 
 // Label names a worktree in one word: its branch, or a detached HEAD's hash.
@@ -288,7 +289,46 @@ func Worktrees(dir string) ([]Worktree, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseWorktrees(out), nil
+	list := parseWorktrees(out)
+	dates := branchDates(dir, list)
+	for i := range list {
+		list[i].CommittedAt = dates[list[i].Branch]
+	}
+	return list, nil
+}
+
+// branchDates is when each checkout's branch was last committed to. One call
+// for all of them, so dating the checkouts costs a process and not one per
+// checkout, and it asks only for the branches that are checked out: a
+// repository with thousands of branches is no more work than one with three.
+// A detached HEAD has no branch to ask about and stays undated.
+func branchDates(dir string, list []Worktree) map[string]int64 {
+	args := []string{"for-each-ref", "--format=%(committerdate:unix) %(refname:short)"}
+	for _, w := range list {
+		if w.Branch != "" {
+			args = append(args, "refs/heads/"+w.Branch)
+		}
+	}
+	// Without a pattern for-each-ref lists every ref there is, which is the
+	// one call this must never make.
+	if len(args) == 2 {
+		return nil
+	}
+	out, err := GitIn(dir, args...)
+	if err != nil || out == "" {
+		return nil
+	}
+	dates := map[string]int64{}
+	for _, line := range strings.Split(out, "\n") {
+		ts, name, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok {
+			continue
+		}
+		if n, err := strconv.ParseInt(ts, 10, 64); err == nil {
+			dates[name] = n
+		}
+	}
+	return dates
 }
 
 // parseWorktrees reads `git worktree list --porcelain`: records separated by a

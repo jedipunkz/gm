@@ -730,6 +730,11 @@ func TestDescribeReportsTheOtherWorktrees(t *testing.T) {
 	if len(got) != 1 || got[0].Label() != "feat/login" {
 		t.Fatalf("Worktrees = %v, want just feat/login", got)
 	}
+	// The date is what ranks the checkouts in the details pane, so an
+	// undated worktree would silently sort to the bottom.
+	if got[0].CommittedAt <= 0 {
+		t.Errorf("worktree %q has no commit date", got[0].Label())
+	}
 }
 
 // TestParseStatus covers every shape of the `## ` header git writes, which is
