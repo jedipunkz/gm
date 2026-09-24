@@ -2,7 +2,6 @@ package finder
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -31,7 +30,8 @@ const (
 	changeRemove
 	changeAddWorktree
 	changeRemoveWorktree
-	changeCheckOut // a worktree for a branch in the branch list, then go there
+	changeCheckOut   // a worktree for a branch in the branch list, then go there
+	changeCheckOutPR // a worktree for a pull request, made by gh, then go there
 )
 
 // pending is the change a confirmation is waiting on. Nothing has happened
@@ -96,6 +96,16 @@ func (m model) perform(a pending) tea.Cmd {
 
 		case changeAddWorktree, changeCheckOut:
 			if err := repo.AddWorktreeFrom(repoAt, a.dir, a.arg, a.from); err != nil {
+				return done("", "", err)
+			}
+			return done(a.dir, a.arg, nil)
+
+		case changeCheckOutPR:
+			n, err := strconv.Atoi(a.arg)
+			if err == nil {
+				err = repo.CheckOutPullRequest(repoAt, a.dir, n)
+			}
+			if err != nil {
 				return done("", "", err)
 			}
 			return done(a.dir, a.arg, nil)
@@ -165,18 +175,9 @@ func (m model) helpBox() string {
 // confirmWorktree asks about checking a branch out beside the repository.
 // The path is gm's to decide, so the branch name is all it needs.
 func (m model) confirmWorktree(branch string) (model, tea.Cmd) {
-	if !repo.ValidBranch(branch) {
-		m.note = strconv.Quote(branch) + " is not a branch name"
-		return m, nil
-	}
-	r, ok := m.tree.At(m.repoAt)
-	if !ok {
-		m.note = m.repoAt + " is not under any root"
-		return m, nil
-	}
-	dir := m.tree.WorktreeDir(r, branch)
-	if _, err := os.Stat(dir); err == nil {
-		m.note = tildify(dir) + " already exists"
+	dir, why := m.worktreeFor(branch)
+	if why != "" {
+		m.note = why
 		return m, nil
 	}
 

@@ -31,11 +31,15 @@ func (a *app) finder() error {
 	if err != nil {
 		return err
 	}
+	prKey, err := config.ParseChord(a.cfg.PRKey, finder.DefaultPRKey)
+	if err != nil {
+		return err
+	}
 	remoteKey, err := config.ParseChord(a.cfg.RemoteKey, finder.DefaultRemoteKey)
 	if err != nil {
 		return err
 	}
-	keys := finder.Keys{Worktree: worktreeKey, Branch: branchKey, Remote: remoteKey}
+	keys := finder.Keys{Worktree: worktreeKey, Branch: branchKey, PR: prKey, Remote: remoteKey}
 
 	hist := repo.LoadHistory()
 	res, err := finder.Run(a.tree, repos, hist, theme, keys)

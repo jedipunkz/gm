@@ -836,3 +836,73 @@ func TestAddWorktreeFromARemoteBranch(t *testing.T) {
 		t.Errorf("the new branch tracks %q", got)
 	}
 }
+
+// TestParsePullRequests reads gh's JSON, and files a fork's branch under its
+// owner so a fork's main does not land on the repository's own.
+func TestParsePullRequests(t *testing.T) {
+	out := []byte(`[
+		{"number":7,"title":"Add login","headRefName":"feat/login","isDraft":false,"isCrossRepository":false,
+		 "author":{"login":"alice"},"headRepositoryOwner":{"login":"acme"}},
+		{"number":9,"title":"Fix typo","headRefName":"main","isDraft":true,"isCrossRepository":true,
+		 "author":{"login":"bob"},"headRepositoryOwner":{"login":"bob"}}
+	]`)
+	prs, err := parsePullRequests(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 2 {
+		t.Fatalf("parsed %d pull requests", len(prs))
+	}
+	for _, c := range []struct {
+		pr              PullRequest
+		label, checkout string
+	}{
+		{prs[0], "#7 Add login", "feat/login"},
+		{prs[1], "#9 [draft] Fix typo", "bob/main"},
+	} {
+		if c.pr.Label() != c.label || c.pr.Checkout() != c.checkout {
+			t.Errorf("#%d reads %q, filed under %q; want %q, %q", c.pr.Number, c.pr.Label(), c.pr.Checkout(), c.label, c.checkout)
+		}
+	}
+	if prs[1].Author.Login != "bob" {
+		t.Errorf("author = %q", prs[1].Author.Login)
+	}
+}
+
+// TestCheckOutPullRequest runs a stand-in gh that records its arguments and
+// makes the worktree the way the real one would.
+func TestCheckOutPullRequest(t *testing.T) {
+	main := filepath.Join(t.TempDir(), "main")
+	gitRepo(t, main)
+	bin := t.TempDir()
+	script := "#!/bin/sh\necho \"$@\" > \"$0.args\"\nexec git worktree add -b feat/login \"$5\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	dir := filepath.Join(t.TempDir(), "wt", "feat", "login")
+	if err := CheckOutPullRequest(main, dir, 7); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(filepath.Join(bin, "gh.args"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(args)); got != "pr checkout 7 --worktree "+dir {
+		t.Errorf("gh ran with %q", got)
+	}
+	if b, _ := GitIn(dir, "branch", "--show-current"); b != "feat/login" {
+		t.Errorf("the worktree is on %q", b)
+	}
+
+	// A gh that fails says why, in its own words.
+	fail := "#!/bin/sh\necho 'could not find pull request' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(fail), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err = CheckOutPullRequest(main, filepath.Join(t.TempDir(), "x"), 8)
+	if err == nil || !strings.Contains(err.Error(), "could not find pull request") {
+		t.Errorf("err = %v, want gh's message", err)
+	}
+}

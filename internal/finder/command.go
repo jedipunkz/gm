@@ -63,7 +63,7 @@ var commands = []command{
 		return m.leaveWith(ActionGet, arg)
 	}},
 	{"/remove", "", "remove the selected repository or worktree", func(m model, _ string) (model, tea.Cmd) {
-		if m.mode == modeBranches {
+		if m.mode == modeBranches || m.mode == modePRs {
 			m.note = "/remove applies to repositories and worktrees"
 			return m, nil
 		}
@@ -131,6 +131,13 @@ var commands = []command{
 			return m, nil
 		}
 		next, cmd := m.switchTo(modeBranches)
+		return next.(model), cmd
+	}},
+	{"/prs", "", "list the open pull requests of the repository", func(m model, _ string) (model, tea.Cmd) {
+		if m.mode == modePRs {
+			return m, nil
+		}
+		next, cmd := m.switchTo(modePRs)
 		return next.(model), cmd
 	}},
 	{"/remote", "", "open the selected repository's remote in a browser", func(m model, _ string) (model, tea.Cmd) {

@@ -2,8 +2,11 @@ package finder
 
 import (
 	"os"
+	"strconv"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/jedipunkz/gm/internal/repo"
 )
 
 // openBranches replaces the repository list with the branches of the selected
@@ -49,16 +52,29 @@ func (m model) checkOut() (model, tea.Cmd) {
 		m.result = Result{Action: ActionJump, Arg: it.path}
 		return m, tea.Quit
 	}
-	r, ok := m.tree.At(m.repoAt)
-	if !ok {
-		m.note = m.repoAt + " is not under any root"
-		return m, nil
-	}
-	dir := m.tree.WorktreeDir(r, it.branch.Name)
-	if _, err := os.Stat(dir); err == nil {
-		m.note = tildify(dir) + " already exists"
+	dir, why := m.worktreeFor(it.branch.Name)
+	if why != "" {
+		m.note = why
 		return m, nil
 	}
 	m.note = "checking " + it.branch.Name + " out at " + tildify(dir) + "…"
 	return m, m.perform(pending{kind: changeCheckOut, arg: it.branch.Name, from: it.branch.Remote, dir: dir})
+}
+
+// worktreeFor is where a new worktree filed under name goes in the repository
+// the list belongs to, or why one cannot go there. The name is checked before
+// a path is built from it: a branch name comes from whoever pushed it.
+func (m model) worktreeFor(name string) (dir, why string) {
+	if !repo.ValidBranch(name) {
+		return "", strconv.Quote(name) + " is not a branch name"
+	}
+	r, ok := m.tree.At(m.repoAt)
+	if !ok {
+		return "", m.repoAt + " is not under any root"
+	}
+	dir = m.tree.WorktreeDir(r, name)
+	if _, err := os.Stat(dir); err == nil {
+		return "", tildify(dir) + " already exists"
+	}
+	return dir, ""
 }

@@ -49,11 +49,15 @@ func testKeys(t *testing.T) Keys {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pr, err := config.ParseChord("", DefaultPRKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rm, err := config.ParseChord("", DefaultRemoteKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Keys{Worktree: wt, Branch: br, Remote: rm}
+	return Keys{Worktree: wt, Branch: br, PR: pr, Remote: rm}
 }
 
 // ansi renders a #rrggbb color the way lipgloss writes it into the output.

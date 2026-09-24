@@ -21,6 +21,9 @@ type item struct {
 	// branch is the branch a row of the branch list stands for. Such a row
 	// has a path only when the branch is already checked out somewhere.
 	branch repo.Branch
+	// pr is the pull request a row of the pull request list stands for, with
+	// a path the same way.
+	pr repo.PullRequest
 }
 
 type source []item

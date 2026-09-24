@@ -21,11 +21,12 @@ import (
 )
 
 // DefaultWorktreeKey opens the worktree list, DefaultBranchKey the branch
-// list, and DefaultRemoteKey the selected repository's remote, when gm.toml
-// says nothing.
+// list, DefaultPRKey the pull request list, and DefaultRemoteKey the selected
+// repository's remote, when gm.toml says nothing.
 const (
 	DefaultWorktreeKey = "ctrl-w"
 	DefaultBranchKey   = "ctrl-l"
+	DefaultPRKey       = "ctrl-j"
 	DefaultRemoteKey   = "ctrl-alt-b"
 )
 
@@ -42,6 +43,7 @@ var reserved = map[byte]string{
 type Keys struct {
 	Worktree config.Chord // open and close the worktree list
 	Branch   config.Chord // open and close the branch list
+	PR       config.Chord // open and close the pull request list
 	Remote   config.Chord // open the selected repository's remote
 }
 
@@ -51,7 +53,7 @@ func (k Keys) check() error {
 	named := []struct {
 		name  string
 		chord config.Chord
-	}{{"worktree_key", k.Worktree}, {"branch_key", k.Branch}, {"remote_key", k.Remote}}
+	}{{"worktree_key", k.Worktree}, {"branch_key", k.Branch}, {"pr_key", k.PR}, {"remote_key", k.Remote}}
 	for i, c := range named {
 		for _, o := range named[i+1:] {
 			if c.chord.Key() == o.chord.Key() {
@@ -152,11 +154,12 @@ type model struct {
 	dirty     map[string]bool
 	dirtyOnly bool
 	note      string // a one-line answer under the prompt, cleared on the next keystroke
-	// worktreesOf, branchesOf and dirtyOf are the seams the tests replace;
-	// they are repo.Worktrees, repo.Branches and repo.DirtyMap in every real
-	// run.
+	// worktreesOf, branchesOf, prsOf and dirtyOf are the seams the tests
+	// replace; they are repo.Worktrees, repo.Branches, repo.PullRequests and
+	// repo.DirtyMap in every real run.
 	worktreesOf func(dir string) ([]repo.Worktree, error)
 	branchesOf  func(dir string) ([]repo.Branch, error)
+	prsOf       func(dir string) ([]repo.PullRequest, error)
 	dirtyOf     func(paths []string) map[string]bool
 }
 
@@ -205,6 +208,7 @@ func newModel(tree *repo.Tree, repos []repo.Repo, hist *repo.History, theme Them
 		tree:        tree,
 		worktreesOf: repo.Worktrees,
 		branchesOf:  repo.Branches,
+		prsOf:       repo.PullRequests,
 		dirtyOf:     repo.DirtyMap,
 	}
 	m.filter()
@@ -281,11 +285,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case changeCreate, changeAddWorktree:
 			m.add(msg.label, msg.path)
 			m.note = "created " + tildify(msg.path)
-		case changeCheckOut:
+		case changeCheckOut, changeCheckOutPR:
 			m.result = Result{Action: ActionJump, Arg: msg.path}
 			return m, tea.Quit
 		}
 		return m, m.loadStatus()
+
+	case prsMsg:
+		return m.showPRs(msg)
 
 	case dirtyMsg:
 		m.dirty, m.note = msg, ""
@@ -306,6 +313,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.switchTo(modeWorktrees)
 		case m.keys.Branch.Key():
 			return m.switchTo(modeBranches)
+		case m.keys.PR.Key():
+			return m.switchTo(modePRs)
 		case m.keys.Remote.Key():
 			return m, m.openRemote()
 		}
@@ -343,8 +352,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				next, cmd := m.runCommand(typed)
 				return next, cmd
 			}
-			if m.mode == modeBranches {
+			switch m.mode {
+			case modeBranches:
 				next, cmd := m.checkOut()
+				return next, cmd
+			case modePRs:
+				next, cmd := m.checkOutPR()
 				return next, cmd
 			}
 			if it, ok := m.current(); ok {
@@ -498,7 +511,7 @@ func (m model) helpLine(width int) string {
 }
 
 func (m model) hints(width int) string {
-	wt, br := m.keys.Worktree.Short(), m.keys.Branch.Short()
+	wt, br, pr := m.keys.Worktree.Short(), m.keys.Branch.Short(), m.keys.PR.Short()
 	// Esc undoes one layer of narrowing at a time, so it has to say which.
 	out := "quit"
 	switch {
@@ -514,6 +527,7 @@ func (m model) hints(width int) string {
 		{"esc", out},
 		{m.keys.Remote.Short(), "remote"},
 		{br, "branches"},
+		{pr, "prs"},
 	}
 	switch m.mode {
 	case modeWorktrees:
@@ -523,6 +537,7 @@ func (m model) hints(width int) string {
 			{wt + "/g/esc", "repos"},
 			{m.keys.Remote.Short(), "remote"},
 			{br, "branches"},
+			{pr, "prs"},
 		}
 	case modeBranches:
 		hints = []hint{
@@ -531,6 +546,16 @@ func (m model) hints(width int) string {
 			{br + "/g/esc", "repos"},
 			{m.keys.Remote.Short(), "remote"},
 			{wt, "worktrees"},
+			{pr, "prs"},
+		}
+	case modePRs:
+		hints = []hint{
+			{"↑↓ ctrl-p/n", "move"},
+			{"enter", "check out"},
+			{pr + "/g/esc", "repos"},
+			{m.keys.Remote.Short(), "remote"},
+			{wt, "worktrees"},
+			{br, "branches"},
 		}
 	}
 

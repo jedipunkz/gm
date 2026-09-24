@@ -93,6 +93,11 @@ func TestRunRejectsReservedKeys(t *testing.T) {
 		if _, err := Run(nil, nil, hist, theme, k); err == nil {
 			t.Errorf("Run() accepted %s for branch_key, which the finder already uses", name)
 		}
+		k = keys
+		k.PR = c
+		if _, err := Run(nil, nil, hist, theme, k); err == nil {
+			t.Errorf("Run() accepted %s for pr_key, which the finder already uses", name)
+		}
 	}
 
 	// Two actions cannot answer to the same chord.
@@ -100,6 +105,7 @@ func TestRunRejectsReservedKeys(t *testing.T) {
 		{Worktree: keys.Worktree, Branch: keys.Branch, Remote: keys.Worktree},
 		{Worktree: keys.Worktree, Branch: keys.Worktree, Remote: keys.Remote},
 		{Worktree: keys.Worktree, Branch: keys.Remote, Remote: keys.Remote},
+		{Worktree: keys.Worktree, Branch: keys.Branch, PR: keys.Branch, Remote: keys.Remote},
 	} {
 		if _, err := Run(nil, nil, hist, theme, k); err == nil {
 			t.Errorf("Run() accepted the same chord twice: %+v", k)
