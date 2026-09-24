@@ -290,18 +290,31 @@ func Worktrees(dir string) ([]Worktree, error) {
 		return nil, err
 	}
 	list := parseWorktrees(out)
-	dates := branchDates(dir)
+	dates := branchDates(dir, list)
 	for i := range list {
 		list[i].CommittedAt = dates[list[i].Branch]
 	}
 	return list, nil
 }
 
-// branchDates is when each branch was last committed to. One call for the
-// whole repository, so dating the checkouts costs a process and not one per
-// checkout; a detached HEAD has no branch here and stays undated.
-func branchDates(dir string) map[string]int64 {
-	out, err := GitIn(dir, "for-each-ref", "--format=%(committerdate:unix) %(refname:short)", "refs/heads")
+// branchDates is when each checkout's branch was last committed to. One call
+// for all of them, so dating the checkouts costs a process and not one per
+// checkout, and it asks only for the branches that are checked out: a
+// repository with thousands of branches is no more work than one with three.
+// A detached HEAD has no branch to ask about and stays undated.
+func branchDates(dir string, list []Worktree) map[string]int64 {
+	args := []string{"for-each-ref", "--format=%(committerdate:unix) %(refname:short)"}
+	for _, w := range list {
+		if w.Branch != "" {
+			args = append(args, "refs/heads/"+w.Branch)
+		}
+	}
+	// Without a pattern for-each-ref lists every ref there is, which is the
+	// one call this must never make.
+	if len(args) == 2 {
+		return nil
+	}
+	out, err := GitIn(dir, args...)
 	if err != nil || out == "" {
 		return nil
 	}
