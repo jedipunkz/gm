@@ -109,7 +109,10 @@ land on the repository's own.
 The line under the prompt lists the keys for whichever list is up, naming the
 chords you configured. Going back keeps the query, the cursor and the
 highlights as they were. The best match is the row at the bottom; in the
-worktree list that row is the main worktree.
+worktree list that row is the main worktree. While `gm` waits on git or GitHub
+— asking for the pull requests, checking a branch or a pull request out, the
+`/dirty` scan — the line shows a spinner, what it is waiting on and the seconds
+so far, and the finder stays usable.
 
 Everything else is ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U` and so
 on), except `Ctrl-W`, which no longer deletes the word before the cursor.

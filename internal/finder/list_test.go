@@ -249,7 +249,7 @@ func TestDirtyFilter(t *testing.T) {
 		t.Errorf("the scan is not announced: %q", stripANSI(m.helpLine(90)))
 	}
 
-	next, _ := m.Update(cmd())
+	next, _ := m.Update(answer(cmd))
 	m = next.(model)
 	if got := rows(m); len(got) != 2 || got[0] != "github.com/acme/alpha" || got[1] != "github.com/acme/charlie" {
 		t.Fatalf("after the scan the list is %v, want the two dirty ones", got)

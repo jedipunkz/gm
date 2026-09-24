@@ -23,17 +23,18 @@ func (m model) openPRs() (tea.Model, tea.Cmd) {
 	if !ok || m.mode != modeRepos {
 		return m, nil
 	}
-	m.note = "asking GitHub about " + it.label + "…"
+	busy := m.startBusy("asking GitHub about " + it.label + "…")
 	prsOf, path := m.prsOf, it.path
-	return m, func() tea.Msg {
+	return m, tea.Batch(busy, func() tea.Msg {
 		prs, err := prsOf(path)
 		return prsMsg{path: path, prs: prs, err: err}
-	}
+	})
 }
 
 // showPRs puts the answer on screen, if the repository it is about is still
 // the one selected in the repository list; otherwise the user has moved on.
 func (m model) showPRs(msg prsMsg) (tea.Model, tea.Cmd) {
+	m.busy = ""
 	it, ok := m.current()
 	if !ok || m.mode != modeRepos || it.path != msg.path {
 		return m, nil
@@ -101,6 +102,6 @@ func (m model) checkOutPR() (model, tea.Cmd) {
 		m.note = why
 		return m, nil
 	}
-	m.note = fmt.Sprintf("checking #%d out at %s…", it.pr.Number, tildify(dir))
-	return m, m.perform(pending{kind: changeCheckOutPR, arg: strconv.Itoa(it.pr.Number), dir: dir})
+	busy := m.startBusy(fmt.Sprintf("checking #%d out at %s…", it.pr.Number, tildify(dir)))
+	return m, tea.Batch(busy, m.perform(pending{kind: changeCheckOutPR, arg: strconv.Itoa(it.pr.Number), dir: dir}))
 }

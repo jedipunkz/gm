@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/jedipunkz/gm/internal/config"
 	"github.com/jedipunkz/gm/internal/repo"
@@ -153,5 +154,27 @@ func realRepo(t *testing.T, dir string) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
+	}
+}
+
+// answer runs a command the way bubbletea would and returns the message that
+// carries the work's result: a batch is opened, and the spinner's ticks, which
+// only redraw, are skipped.
+func answer(cmd tea.Cmd) tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	switch msg := cmd().(type) {
+	case tea.BatchMsg:
+		for _, c := range msg {
+			if got := answer(c); got != nil {
+				return got
+			}
+		}
+		return nil
+	case spinner.TickMsg:
+		return nil
+	default:
+		return msg
 	}
 }

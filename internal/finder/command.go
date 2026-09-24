@@ -157,10 +157,9 @@ var commands = []command{
 		m.dirtyOnly = true
 		if m.dirty == nil {
 			// The answer needs a git call per repository, so it is asked for
-			// the first time someone wants it, not at startup. The note is
-			// what says a scan is running; nothing else needs to know.
-			m.note = "checking every repository for uncommitted work…"
-			return m, m.scanDirty()
+			// the first time someone wants it, not at startup.
+			busy := m.startBusy("checking every repository for uncommitted work…")
+			return m, tea.Batch(busy, m.scanDirty())
 		}
 		m.filter()
 		m.cursor = len(m.view) - 1

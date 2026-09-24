@@ -115,7 +115,7 @@ func TestBranchCheckOut(t *testing.T) {
 		t.Fatal("Enter did not start making the worktree")
 	}
 	// Run once: the command is git making the worktree.
-	msg := cmd()
+	msg := answer(cmd)
 	if _, ok := msg.(doneMsg); !ok {
 		t.Fatalf("Enter ran %T, want the worktree being made", msg)
 	}

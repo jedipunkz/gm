@@ -60,10 +60,10 @@ func openPRList(t *testing.T, m model, key tea.KeyPressMsg) model {
 	if cmd == nil {
 		t.Fatal("the key did not ask gh")
 	}
-	if !strings.Contains(m.note, "asking GitHub") {
-		t.Errorf("nothing says gh is being asked: %q", m.note)
+	if !strings.Contains(m.busy, "asking GitHub") {
+		t.Errorf("nothing says gh is being asked: %q", m.busy)
 	}
-	next, _ = m.Update(cmd())
+	next, _ = m.Update(answer(cmd))
 	return next.(model)
 }
 
@@ -118,7 +118,7 @@ func TestPRsCommand(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("/prs did not ask gh")
 	}
-	after, _ := next.Update(cmd())
+	after, _ := next.Update(answer(cmd))
 	if after.(model).mode != modePRs {
 		t.Error("/prs did not open the pull request list")
 	}
@@ -132,7 +132,7 @@ func TestPRModeDropsAStaleAnswer(t *testing.T) {
 	m = next.(model)
 	m.input.SetValue("bravo")
 	m.filter()
-	next, _ = m.Update(cmd())
+	next, _ = m.Update(answer(cmd))
 	if next.(model).mode != modeRepos {
 		t.Error("an answer about alpha opened while bravo was selected")
 	}
@@ -181,7 +181,7 @@ func TestPRCheckOut(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("Enter did not start the checkout: %q", next.(model).note)
 	}
-	msg := cmd()
+	msg := answer(cmd)
 	if _, ok := msg.(doneMsg); !ok {
 		t.Fatalf("Enter ran %T, want the checkout", msg)
 	}
@@ -192,5 +192,40 @@ func TestPRCheckOut(t *testing.T) {
 	}
 	if res := done.(model).result; !isQuit(quit) || res.Action != ActionJump || res.Arg != dir {
 		t.Errorf("the finder yielded %+v, want a jump to %s", res, dir)
+	}
+}
+
+// TestBusySpinner keeps what gm waits on under the prompt, with a spinner,
+// until the answer arrives, and lets the spinner stop once it has.
+func TestBusySpinner(t *testing.T) {
+	m, _ := prModel(t)
+	next, cmd := m.Update(ctrlJ)
+	m = next.(model)
+	line := stripANSI(m.helpLine(100))
+	if !strings.Contains(line, "asking GitHub about github.com/acme/alpha… 0s") {
+		t.Errorf("the wait is not on the hint line: %q", line)
+	}
+	if !strings.HasPrefix(line, m.spin.Spinner.Frames[0]) {
+		t.Errorf("the hint line has no spinner: %q", line)
+	}
+
+	// A keystroke answers nothing, so the wait stays on screen.
+	next, _ = m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	if next.(model).busy == "" {
+		t.Error("typing cleared the wait")
+	}
+
+	// The spinner keeps ticking while busy.
+	if _, tick := m.Update(m.spin.Tick()); tick == nil {
+		t.Error("the spinner stopped while gh was still being asked")
+	}
+
+	next, _ = m.Update(answer(cmd))
+	m = next.(model)
+	if m.busy != "" {
+		t.Errorf("the wait outlived the answer: %q", m.busy)
+	}
+	if _, tick := m.Update(m.spin.Tick()); tick != nil {
+		t.Error("the spinner kept ticking with nothing running")
 	}
 }

@@ -57,8 +57,8 @@ func (m model) checkOut() (model, tea.Cmd) {
 		m.note = why
 		return m, nil
 	}
-	m.note = "checking " + it.branch.Name + " out at " + tildify(dir) + "…"
-	return m, m.perform(pending{kind: changeCheckOut, arg: it.branch.Name, from: it.branch.Remote, dir: dir})
+	busy := m.startBusy("checking " + it.branch.Name + " out at " + tildify(dir) + "…")
+	return m, tea.Batch(busy, m.perform(pending{kind: changeCheckOut, arg: it.branch.Name, from: it.branch.Remote, dir: dir}))
 }
 
 // worktreeFor is where a new worktree filed under name goes in the repository

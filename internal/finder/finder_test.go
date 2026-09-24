@@ -275,7 +275,7 @@ func TestEscClearsTheFilter(t *testing.T) {
 	m, repos := dirtyModel(t)
 
 	m, cmd := runSlash(t, m, "/dirty")
-	next, _ := m.Update(cmd())
+	next, _ := m.Update(answer(cmd))
 	m = next.(model)
 	if len(m.view) != 2 {
 		t.Fatalf("the filter is not on: %v", rows(m))
@@ -314,7 +314,7 @@ func TestEscLeavesTheWorktreeListFirst(t *testing.T) {
 	}
 
 	m, cmd := runSlash(t, m, "/dirty")
-	next, _ := m.Update(cmd())
+	next, _ := m.Update(answer(cmd))
 	m = next.(model)
 
 	opened, _ := m.openWorktrees()
