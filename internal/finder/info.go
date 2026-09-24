@@ -30,11 +30,14 @@ func (m model) infoLines(w int) []string {
 		out = append(out, wrap(v, w, style)...)
 	}
 
-	out = append(out, wrap(it.label, w, m.st.Name)...)
+	// What the pane is about is a field like any other: named, so the top of
+	// the pane is not the one line whose meaning has to be inferred.
 	if m.mode == modeWorktrees {
-		out = append(out, wrap(m.origin, w, m.st.Dim)...)
+		field("worktree", it.label, m.st.Name)
+		field("repository", m.origin, m.st.Dim)
+	} else {
+		field("repository", it.label, m.st.Name)
 	}
-	out = append(out, "")
 	field("path", tildify(it.path), m.st.Path)
 
 	s, loaded := m.status[it.path]

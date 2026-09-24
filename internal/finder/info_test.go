@@ -28,7 +28,7 @@ func TestInfoPaneStacksAndWraps(t *testing.T) {
 	}
 	joined := strings.Join(plain, "\n")
 
-	for _, label := range []string{"path", "remote", "branch", "status", "visits", "last commit"} {
+	for _, label := range []string{"repository", "path", "remote", "branch", "status", "visits", "last commit"} {
 		if !strings.Contains(joined, "\n"+label+"\n") && !strings.HasPrefix(joined, label+"\n") {
 			t.Errorf("%q is not on a line of its own:\n%s", label, joined)
 		}
@@ -45,6 +45,11 @@ func TestInfoPaneStacksAndWraps(t *testing.T) {
 	// A commit folds too, with its continuations indented.
 	if !strings.Contains(joined, "abc1234") || !strings.Contains(joined, "\n"+commitIndent) {
 		t.Errorf("the commit line did not fold:\n%s", joined)
+	}
+	// Nothing is spaced apart: the labels carry the structure, and a blank
+	// line costs a row of the commits the pane is clipped from the bottom.
+	if strings.Contains(joined, "\n\n") {
+		t.Errorf("the pane has a blank line in it:\n%s", joined)
 	}
 }
 
@@ -135,9 +140,9 @@ func TestCommitLineWraps(t *testing.T) {
 	}
 }
 
-// TestPaneLabelsStandOut pins the field names as the brightest thing in the
-// details pane: the theme's foreground, in bold, not the comment colour the
-// dim text uses.
+// TestPaneLabelsStandOut pins the field names as the quiet half of the
+// details pane: the comment colour in bold, against values that keep the
+// theme's own colours. A label painted like a value reads as one.
 func TestPaneLabelsStandOut(t *testing.T) {
 	root := t.TempDir()
 	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
@@ -156,15 +161,19 @@ func TestPaneLabelsStandOut(t *testing.T) {
 	}
 
 	th := themes[DefaultTheme]
-	if !strings.Contains(label, ansi("38", th.Fg)) {
-		t.Errorf("the label is not painted in the foreground colour: %q", label)
+	if !strings.Contains(label, ansi("38", th.Comment)) {
+		t.Errorf("the label is not painted in the comment colour: %q", label)
 	}
 	// lipgloss folds bold into the same escape as the colour, as "1;".
 	if !strings.Contains(label, "\x1b[1;") {
 		t.Errorf("the label is not bold: %q", label)
 	}
-	if strings.Contains(label, ansi("38", th.Comment)) {
-		t.Errorf("the label still carries the comment colour: %q", label)
+	// The values are what carry colour; a label wearing one would compete
+	// with them instead of naming them.
+	for _, hex := range []string{th.Fg, th.Green, th.Cyan, th.Magenta} {
+		if strings.Contains(label, ansi("38", hex)) {
+			t.Errorf("the label carries the value colour %s: %q", hex, label)
+		}
 	}
 }
 
