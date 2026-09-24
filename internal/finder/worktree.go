@@ -11,6 +11,7 @@ const (
 	modeRepos mode = iota
 	modeWorktrees
 	modeBranches
+	modePRs
 )
 
 // stash is the repository list put aside while the worktree list is up, so
@@ -60,17 +61,20 @@ func (m model) replaceList(md mode, it item, items []item) model {
 	return m
 }
 
-// switchTo answers the worktree and branch keys. Each toggles its own list,
-// and goes from the other one straight to its own: both belong to the
-// repository the repository list has selected.
+// switchTo answers the worktree, branch and pull request keys. Each toggles
+// its own list, and goes from another one straight to its own: all of them
+// belong to the repository the repository list has selected.
 func (m model) switchTo(md mode) (tea.Model, tea.Cmd) {
 	if m.mode == md {
 		m.restore()
 		return m, m.loadStatus()
 	}
 	m.restore()
-	if md == modeBranches {
+	switch md {
+	case modeBranches:
 		return m.openBranches()
+	case modePRs:
+		return m.openPRs()
 	}
 	return m.openWorktrees()
 }

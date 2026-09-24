@@ -43,6 +43,20 @@ func (m model) infoLines(w int) []string {
 			field("worktree", "none yet; enter makes one", m.st.Dim)
 			return out
 		}
+	case modePRs:
+		p := it.pr
+		field("pull request", it.label, m.st.Name)
+		field("repository", m.origin, m.st.Dim)
+		field("author", p.Author.Login, m.st.Remote)
+		branch := p.Branch
+		if p.Fork {
+			branch = p.HeadOwner.Login + ":" + p.Branch
+		}
+		field("branch", branch, m.st.Branch)
+		if it.path == "" {
+			field("worktree", "none yet; enter makes one", m.st.Dim)
+			return out
+		}
 	default:
 		field("repository", it.label, m.st.Name)
 	}

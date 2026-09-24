@@ -20,6 +20,7 @@ import (
 //	launch_key   = "ctrl-g"    # the shell key that opens gm
 //	worktree_key = "ctrl-w"    # the finder key that lists worktrees
 //	branch_key   = "ctrl-l"    # the finder key that lists branches
+//	pr_key       = "ctrl-m"    # the finder key that lists pull requests
 //	remote_key   = "ctrl-alt-b"  # the finder key that opens the remote
 //
 // Root stays untyped because it takes either form; Roots resolves it.
@@ -29,6 +30,7 @@ type Config struct {
 	LaunchKey   string `toml:"launch_key"`
 	WorktreeKey string `toml:"worktree_key"`
 	BranchKey   string `toml:"branch_key"`
+	PRKey       string `toml:"pr_key"`
 	RemoteKey   string `toml:"remote_key"`
 }
 
