@@ -298,7 +298,7 @@ export function mount(root: HTMLElement) {
 
     const hints =
       st.mode === "worktrees"
-        ? [hintKey("↑↓ ctrl-p/n", "move"), hintKey("enter", "jump"), hintKey("ctrl-w/g/esc", "repos", "back"), hintKey("ctrl-alt-b", "remote", "remote"), hintKey("ctrl-l", "branches"), hintKey("ctrl-m", "prs")]
+        ? [hintKey("↑↓ ctrl-p/n", "move"), hintKey("enter", "jump"), hintKey("ctrl-w/g/esc", "repos", "back"), hintKey("ctrl-alt-b", "remote", "remote"), hintKey("ctrl-l", "branches"), hintKey("ctrl-j", "prs")]
         : [
             hintKey("↑↓ ctrl-p/n", "move"),
             hintKey("enter", "jump"),
@@ -306,7 +306,7 @@ export function mount(root: HTMLElement) {
             hintKey("esc", out, "esc"),
             hintKey("ctrl-alt-b", "remote", "remote"),
             hintKey("ctrl-l", "branches"),
-            hintKey("ctrl-m", "prs"),
+            hintKey("ctrl-j", "prs"),
           ];
     hintsEl.innerHTML = (st.dirtyOnly && st.mode === "repos" ? span("dirty", "dirty only") + sep : "") + hints.join(sep);
   }

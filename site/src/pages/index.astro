@@ -21,7 +21,7 @@ const features = [
   },
   {
     title: "Worktrees are first-class",
-    body: "Ctrl-W swaps the list for the git worktrees of the repository under the cursor, Ctrl-L for its branches and Ctrl-M for its open pull requests: Enter checks one out as a worktree and goes there.",
+    body: "Ctrl-W swaps the list for the git worktrees of the repository under the cursor, Ctrl-L for its branches and Ctrl-J for its open pull requests: Enter checks one out as a worktree and goes there.",
   },
   {
     title: "One config file",
@@ -40,7 +40,7 @@ const keys = [
   ["Enter", "Print the repository path and exit", "Print the worktree path and exit", "Check the branch out as a worktree, print its path and exit", "Check the pull request out as a worktree, print its path and exit"],
   ["Ctrl-W", "Show the worktrees of the selected repository", "Back to the repositories", "Show the worktrees", "Show the worktrees"],
   ["Ctrl-L", "Show the branches of the selected repository", "Show the branches", "Back to the repositories", "Show the branches"],
-  ["Ctrl-M", "Show the open pull requests of the selected repository", "Show the pull requests", "Show the pull requests", "Back to the repositories"],
+  ["Ctrl-J", "Show the open pull requests of the selected repository", "Show the pull requests", "Show the pull requests", "Back to the repositories"],
   ["Ctrl-Alt-B", "Open the remote in a browser", "Open the remote in a browser", "Open the remote in a browser", "Open the remote in a browser"],
   ["Ctrl-G", "—", "Back to the repositories", "Back to the repositories", "Back to the repositories"],
   ["Esc", "Clear the query, then the filter, then quit", "Back to the repositories", "Back to the repositories", "Back to the repositories"],
@@ -56,7 +56,7 @@ const slash = [
   ["/remove", "Remove the selected repository, or worktree, after asking"],
   ["/worktrees", "Same as Ctrl-W"],
   ["/branches", "Same as Ctrl-L"],
-  ["/prs", "Same as Ctrl-M"],
+  ["/prs", "Same as Ctrl-J"],
   ["/remote", "Same as Ctrl-Alt-B"],
 ];
 
@@ -84,8 +84,7 @@ const frecency = [
 ];
 
 const chords = [
-  ["ctrl-<letter>", "Everywhere, except the next row"],
-  ["ctrl-m, ctrl-i", "Only with the Kitty keyboard protocol. Elsewhere they are Enter and Tab"],
+  ["ctrl-<letter>", "Everywhere"],
   ["ctrl-alt-<letter>", "Nearly everywhere: Alt is sent as an ESC prefix"],
   ["ctrl-shift-<letter>", "Only with the Kitty keyboard protocol — Ghostty, kitty, WezTerm, foot, recent Alacritty"],
 ];
@@ -101,7 +100,7 @@ theme        = "tokyonight"
 launch_key   = "ctrl-g"        # the shell key that opens gm
 worktree_key = "ctrl-w"        # the finder key that lists worktrees
 branch_key   = "ctrl-l"        # the finder key that lists branches
-pr_key       = "ctrl-m"        # the finder key that lists pull requests
+pr_key       = "ctrl-j"        # the finder key that lists pull requests
 remote_key   = "ctrl-alt-b"    # the finder key that opens the remote`;
 
 const layout = `~/gm/github.com/jedipunkz/gm/            the repository
@@ -228,10 +227,9 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
           and the highlights as they were. The branch list holds the local branches and the remote ones with no local
           namesake, as the last fetch left them. <kbd>Enter</kbd> on a branch goes to its worktree, making one first when
           there is none — a remote branch becomes a local one that tracks it.
-          <kbd>Ctrl</kbd>+<kbd>M</kbd> lists the open pull requests, drafts marked, through the
+          <kbd>Ctrl</kbd>+<kbd>J</kbd> lists the open pull requests, drafts marked, through the
           <a href="https://cli.github.com/">GitHub CLI</a>; <kbd>Enter</kbd> has <code>gh pr checkout --worktree</code> make
-          the worktree. Without the Kitty keyboard protocol <kbd>Ctrl</kbd>+<kbd>M</kbd> arrives as Enter, so use
-          <code>/prs</code> or set <code>pr_key</code>.
+          the worktree.
         </p>
         <div class="table-wrap">
           <table>

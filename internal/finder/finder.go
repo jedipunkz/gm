@@ -23,13 +23,10 @@ import (
 // DefaultWorktreeKey opens the worktree list, DefaultBranchKey the branch
 // list, DefaultPRKey the pull request list, and DefaultRemoteKey the selected
 // repository's remote, when gm.toml says nothing.
-//
-// Ctrl-M is Enter's own byte on a terminal without the kitty keyboard
-// protocol, so there it reaches gm as Enter; /prs works everywhere.
 const (
 	DefaultWorktreeKey = "ctrl-w"
 	DefaultBranchKey   = "ctrl-l"
-	DefaultPRKey       = "ctrl-m"
+	DefaultPRKey       = "ctrl-j"
 	DefaultRemoteKey   = "ctrl-alt-b"
 )
 

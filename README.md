@@ -19,7 +19,7 @@ and `Ctrl-G` jumps to any of them — or to any of their git worktrees.
   branch and tag decorations — so you can tell two similarly named clones
   apart before jumping.
 - **Worktrees are first-class** — `Ctrl-W` swaps the list for the git worktrees
-  of the repository under the cursor, `Ctrl-L` for its branches and `Ctrl-M`
+  of the repository under the cursor, `Ctrl-L` for its branches and `Ctrl-J`
   for its open pull requests, where `Enter` checks one out as a worktree and
   goes there; ghq only knows about clones.
 - **Settings live in `gm.toml`** — roots, theme, key bindings; ghq configures
@@ -70,7 +70,7 @@ eval "$(gm shell bash)"   # ~/.bashrc
 ## ⌨️ Keys
 
 `Ctrl-W` swaps the repository list for the git worktrees of the repository
-under the cursor, `Ctrl-L` for its branches and `Ctrl-M` for its open pull
+under the cursor, `Ctrl-L` for its branches and `Ctrl-J` for its open pull
 requests; pressing the same key again swaps it back. Filtering and the details
 pane work the same in all four.
 
@@ -82,7 +82,7 @@ pane work the same in all four.
 | `Enter` | Print the repository path and exit | Print the worktree path and exit | Check the branch out as a worktree, print its path and exit | Check the pull request out as a worktree, print its path and exit |
 | `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories | Show the worktrees | Show the worktrees |
 | `Ctrl-L` (`branch_key`) | Show the branches of the selected repository | Show the branches | Back to the repositories | Show the branches |
-| `Ctrl-M` (`pr_key`) | Show the open pull requests of the selected repository | Show the pull requests | Show the pull requests | Back to the repositories |
+| `Ctrl-J` (`pr_key`) | Show the open pull requests of the selected repository | Show the pull requests | Show the pull requests | Back to the repositories |
 | `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser | Open the remote in a browser | Open the remote in a browser |
 | `Ctrl-G` | — | Back to the repositories | Back to the repositories | Back to the repositories |
 | `Esc` | Clear the query, then the filter, then quit | Back to the repositories | Back to the repositories | Back to the repositories |
@@ -105,10 +105,6 @@ checkout` make it first when there is none: `gh` names the branch and, for a
 fork, sets up where it pushes. The worktree is filed under the head branch's
 name, and a fork's under its owner's (`bob/main`), so a fork's `main` does not
 land on the repository's own.
-
-`Ctrl-M` is Enter's own byte on a terminal without the Kitty keyboard protocol,
-so there it arrives as Enter and jumps instead; use `/prs`, or set `pr_key` to
-another chord.
 
 The line under the prompt lists the keys for whichever list is up, naming the
 chords you configured. Going back keeps the query, the cursor and the
@@ -133,7 +129,7 @@ completes it as you go, and `Tab` accepts what it offers.
 | `/remove` | Remove the selected repository, or worktree, after asking |
 | `/worktrees` | Same as `Ctrl-W` |
 | `/branches` | Same as `Ctrl-L` |
-| `/prs` | Same as `Ctrl-M` |
+| `/prs` | Same as `Ctrl-J` |
 | `/remote` | Same as `Ctrl-Alt-B` |
 
 Removing a repository takes its worktrees with it — they are checkouts of a
@@ -219,7 +215,7 @@ theme        = "tokyonight"
 launch_key   = "ctrl-g"        # the shell key that opens gm
 worktree_key = "ctrl-w"        # the finder key that lists worktrees
 branch_key   = "ctrl-l"        # the finder key that lists branches
-pr_key       = "ctrl-m"        # the finder key that lists pull requests
+pr_key       = "ctrl-j"        # the finder key that lists pull requests
 remote_key   = "ctrl-alt-b"    # the finder key that opens the remote
 ```
 
@@ -258,8 +254,7 @@ How far a chord travels depends on the terminal:
 
 | Chord | Reaches `gm` |
 |---|---|
-| `ctrl-<letter>` | Everywhere, except the next row |
-| `ctrl-m`, `ctrl-i` | Only with the Kitty keyboard protocol. Elsewhere they are Enter and Tab |
+| `ctrl-<letter>` | Everywhere |
 | `ctrl-alt-<letter>` | Nearly everywhere: Alt is sent as an ESC prefix |
 | `ctrl-shift-<letter>` | Only with the Kitty keyboard protocol — Ghostty, kitty, WezTerm, foot, recent Alacritty. Elsewhere it arrives as plain `ctrl-<letter>` |
 

@@ -11,7 +11,7 @@ import (
 	"github.com/jedipunkz/gm/internal/repo"
 )
 
-var ctrlM = tea.KeyPressMsg{Code: 'm', Mod: tea.ModCtrl}
+var ctrlJ = tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}
 
 func pullRequest(n int, title, branch string, draft, fork bool, owner string) repo.PullRequest {
 	p := repo.PullRequest{Number: n, Title: title, Branch: branch, Draft: draft, Fork: fork}
@@ -67,12 +67,12 @@ func openPRList(t *testing.T, m model, key tea.KeyPressMsg) model {
 	return next.(model)
 }
 
-// TestPRMode pins the Ctrl-M list: newest at the bottom, drafts marked, a
+// TestPRMode pins the Ctrl-J list: newest at the bottom, drafts marked, a
 // checked-out pull request goes to its worktree, and a fork's main is not
 // mistaken for the repository's own.
 func TestPRMode(t *testing.T) {
 	m, repos := prModel(t)
-	m = openPRList(t, m, ctrlM)
+	m = openPRList(t, m, ctrlJ)
 	if m.mode != modePRs {
 		t.Fatalf("the pull request list did not open: %q", m.note)
 	}
@@ -80,7 +80,7 @@ func TestPRMode(t *testing.T) {
 	if got := strings.Join(rows(m), "|"); got != want {
 		t.Errorf("the list reads %q, want %q", got, want)
 	}
-	if got := stripANSI(m.helpLine(100)); !strings.Contains(got, "enter check out") || !strings.Contains(got, "ctrl-m/g/esc repos") {
+	if got := stripANSI(m.helpLine(100)); !strings.Contains(got, "enter check out") || !strings.Contains(got, "ctrl-j/g/esc repos") {
 		t.Errorf("the hints do not describe the list: %q", got)
 	}
 	pane := stripANSI(strings.Join(m.infoLines(40), "\n"))
@@ -102,9 +102,9 @@ func TestPRMode(t *testing.T) {
 		t.Errorf("Enter on a checked-out pull request yielded %+v", res)
 	}
 
-	back, _ := m.Update(ctrlM)
+	back, _ := m.Update(ctrlJ)
 	if back.(model).mode != modeRepos {
-		t.Error("Ctrl-M did not close the list")
+		t.Error("Ctrl-J did not close the list")
 	}
 	if it, _ := back.(model).current(); it.label != repos[1].Rel {
 		t.Errorf("going back selected %q", it.label)
@@ -128,7 +128,7 @@ func TestPRsCommand(t *testing.T) {
 // the cursor has left must not replace the list.
 func TestPRModeDropsAStaleAnswer(t *testing.T) {
 	m, _ := prModel(t)
-	next, cmd := m.Update(ctrlM)
+	next, cmd := m.Update(ctrlJ)
 	m = next.(model)
 	m.input.SetValue("bravo")
 	m.filter()
@@ -151,7 +151,7 @@ func TestPRModeSaysWhyNot(t *testing.T) {
 	} {
 		m, _ := prModel(t)
 		m.prsOf = func(string) ([]repo.PullRequest, error) { return c.prs, c.err }
-		m = openPRList(t, m, ctrlM)
+		m = openPRList(t, m, ctrlJ)
 		if m.mode != modeRepos || !strings.Contains(m.note, c.note) {
 			t.Errorf("mode=%v note=%q, want the repository list and %q", m.mode, m.note, c.note)
 		}
@@ -176,7 +176,7 @@ func TestPRCheckOut(t *testing.T) {
 	m.prsOf = func(string) ([]repo.PullRequest, error) {
 		return []repo.PullRequest{pullRequest(7, "Add login", "feat/login", false, false, "acme")}, nil
 	}
-	m = openPRList(t, m, ctrlM)
+	m = openPRList(t, m, ctrlJ)
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatalf("Enter did not start the checkout: %q", next.(model).note)
