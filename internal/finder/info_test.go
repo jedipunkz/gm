@@ -135,9 +135,9 @@ func TestCommitLineWraps(t *testing.T) {
 	}
 }
 
-// TestPaneLabelsStandOut pins the field names as the brightest thing in the
-// details pane: the theme's foreground, in bold, not the comment colour the
-// dim text uses.
+// TestPaneLabelsStandOut pins the field names as the quiet half of the
+// details pane: the comment colour in bold, against values that keep the
+// theme's own colours. A label painted like a value reads as one.
 func TestPaneLabelsStandOut(t *testing.T) {
 	root := t.TempDir()
 	repos := []repo.Repo{{Root: root, Rel: "github.com/acme/alpha"}}
@@ -156,15 +156,19 @@ func TestPaneLabelsStandOut(t *testing.T) {
 	}
 
 	th := themes[DefaultTheme]
-	if !strings.Contains(label, ansi("38", th.Fg)) {
-		t.Errorf("the label is not painted in the foreground colour: %q", label)
+	if !strings.Contains(label, ansi("38", th.Comment)) {
+		t.Errorf("the label is not painted in the comment colour: %q", label)
 	}
 	// lipgloss folds bold into the same escape as the colour, as "1;".
 	if !strings.Contains(label, "\x1b[1;") {
 		t.Errorf("the label is not bold: %q", label)
 	}
-	if strings.Contains(label, ansi("38", th.Comment)) {
-		t.Errorf("the label still carries the comment colour: %q", label)
+	// The values are what carry colour; a label wearing one would compete
+	// with them instead of naming them.
+	for _, hex := range []string{th.Fg, th.Green, th.Cyan, th.Magenta} {
+		if strings.Contains(label, ansi("38", hex)) {
+			t.Errorf("the label carries the value colour %s: %q", hex, label)
+		}
 	}
 }
 

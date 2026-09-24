@@ -176,11 +176,13 @@ func (t Theme) Styles() Styles {
 		HitSel:  on(t.Orange),
 		Marker:  on(t.Blue),
 		Divider: fg(t.Border),
-		// The field names carry the pane's structure, so they are the
-		// brightest thing in it: the theme's foreground, in bold. Not a
-		// literal white — in a light theme the foreground is the dark end of
-		// the palette, and white would vanish into the background.
-		Label:  fg(t.Fg).Bold(true),
+		// The field names are the quiet half of the pane: the comment
+		// colour, in bold. The values keep the theme's own colours, so the
+		// pane alternates dim grey and colour down its length and the fields
+		// come apart — a label as bright as its value left both competing and
+		// neither reading as a heading. Bold, because the comment colour on
+		// its own is the dimmest thing the theme has.
+		Label:  fg(t.Comment).Bold(true),
 		Name:   fg(t.Blue).Bold(true),
 		Path:   fg(t.Green),
 		Remote: fg(t.Cyan),
