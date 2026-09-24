@@ -1,9 +1,10 @@
 package finder
 
 import (
+	"cmp"
 	"fmt"
 	"os"
-	"strconv"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,11 +59,14 @@ func (m model) infoLines(w int) []string {
 		}
 		// Only when there are some: the pane is for what is there, and this
 		// is also the only way to tell whether the worktree key is worth
-		// pressing on this row. The count, not the names: a repository with
-		// dozens of worktrees would push everything below it off the pane,
-		// and the list is one ctrl-t away.
-		if n := len(s.Worktrees); n > 0 {
-			field("worktrees", strconv.Itoa(n), m.st.Branch)
+		// pressing on this row. The newest few, not all of them: a repository
+		// with dozens would push everything below it off the pane, and the
+		// whole list is one ctrl-t away.
+		if shown := recentWorktrees(s.Worktrees); len(shown) > 0 {
+			out = append(out, m.st.Label.Render(worktreesLabel(len(shown), len(s.Worktrees))))
+			for _, wt := range shown {
+				out = append(out, m.worktreeLines(wt, w)...)
+			}
 		}
 	}
 
@@ -83,6 +87,45 @@ func (m model) infoLines(w int) []string {
 		out = append(out, m.commitLines(c, w)...)
 	}
 	return out
+}
+
+// shownWorktrees is how many checkouts the pane names. Three is what the
+// commits get, for the same reason: enough to recognise the repository,
+// not enough to become a list.
+const shownWorktrees = 3
+
+// recentWorktrees is the newest few checkouts, by the last commit on their
+// branch. A detached checkout has no branch to date it, so it sorts last,
+// and git's own order breaks ties.
+func recentWorktrees(all []repo.Worktree) []repo.Worktree {
+	out := slices.Clone(all)
+	slices.SortStableFunc(out, func(a, b repo.Worktree) int {
+		return cmp.Compare(b.CommittedAt, a.CommittedAt)
+	})
+	return out[:min(len(out), shownWorktrees)]
+}
+
+// worktreesLabel says how many of how many, because the rows below it are
+// the newest ones and not the whole set.
+func worktreesLabel(shown, total int) string {
+	switch {
+	case total > shown:
+		return fmt.Sprintf("last %d of %d worktrees", shown, total)
+	case total == 1:
+		return "last worktree"
+	default:
+		return fmt.Sprintf("last %d worktrees", total)
+	}
+}
+
+// worktreeLines draws one checkout as its branch and when that branch was
+// last committed to, which is what ranked it into this list.
+func (m model) worktreeLines(wt repo.Worktree, w int) []string {
+	segs := []seg{{wt.Label(), m.st.Branch}}
+	if wt.CommittedAt > 0 {
+		segs = append(segs, seg{"  " + ago(time.Unix(wt.CommittedAt, 0)), m.st.Dim})
+	}
+	return wrapSegs(segs, w, commitIndent)
 }
 
 // commitLines draws one commit the way `git log --oneline --decorate` does:

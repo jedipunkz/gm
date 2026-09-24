@@ -261,10 +261,11 @@ func IsDirty(dir string) (bool, error) {
 // Worktree is one checkout of a repository: the main one, plus whatever
 // `git worktree add` created.
 type Worktree struct {
-	Path   string
-	Branch string // short name, empty when HEAD is detached
-	Head   string // commit hash
-	Bare   bool
+	Path        string
+	Branch      string // short name, empty when HEAD is detached
+	Head        string // commit hash
+	Bare        bool
+	CommittedAt int64 // unix seconds of the branch tip; 0 when unknown
 }
 
 // Label names a worktree in one word: its branch, or a detached HEAD's hash.
@@ -288,7 +289,33 @@ func Worktrees(dir string) ([]Worktree, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseWorktrees(out), nil
+	list := parseWorktrees(out)
+	dates := branchDates(dir)
+	for i := range list {
+		list[i].CommittedAt = dates[list[i].Branch]
+	}
+	return list, nil
+}
+
+// branchDates is when each branch was last committed to. One call for the
+// whole repository, so dating the checkouts costs a process and not one per
+// checkout; a detached HEAD has no branch here and stays undated.
+func branchDates(dir string) map[string]int64 {
+	out, err := GitIn(dir, "for-each-ref", "--format=%(committerdate:unix) %(refname:short)", "refs/heads")
+	if err != nil || out == "" {
+		return nil
+	}
+	dates := map[string]int64{}
+	for _, line := range strings.Split(out, "\n") {
+		ts, name, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok {
+			continue
+		}
+		if n, err := strconv.ParseInt(ts, 10, 64); err == nil {
+			dates[name] = n
+		}
+	}
+	return dates
 }
 
 // parseWorktrees reads `git worktree list --porcelain`: records separated by a
