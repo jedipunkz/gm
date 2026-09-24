@@ -128,7 +128,7 @@ func TestParseChord(t *testing.T) {
 }
 
 func TestKeys(t *testing.T) {
-	write(t, "root = \"/a\"\nlaunch_key = \"ctrl-j\"\nworktree_key = \"ctrl-t\"\n")
+	write(t, "root = \"/a\"\nlaunch_key = \"ctrl-j\"\nworktree_key = \"ctrl-t\"\nbranch_key = \"ctrl-b\"\n")
 	c, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -138,6 +138,9 @@ func TestKeys(t *testing.T) {
 	}
 	if c.WorktreeKey != "ctrl-t" {
 		t.Errorf("WorktreeKey = %q, want ctrl-t", c.WorktreeKey)
+	}
+	if c.BranchKey != "ctrl-b" {
+		t.Errorf("BranchKey = %q, want ctrl-b", c.BranchKey)
 	}
 }
 

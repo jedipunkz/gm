@@ -10,6 +10,7 @@ type mode int
 const (
 	modeRepos mode = iota
 	modeWorktrees
+	modeBranches
 )
 
 // stash is the repository list put aside while the worktree list is up, so
@@ -35,22 +36,43 @@ func (m model) openWorktrees() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.saved = &stash{all: m.all, view: m.view, matched: m.matched, cursor: m.cursor, query: m.input.Value()}
-	m.origin, m.repoAt = it.label, it.path
-	m.mode = modeWorktrees
-
 	// Reversed, so git's first worktree — the main one — lands at the bottom
 	// next to the cursor, the way the best match does in the main list.
 	items := make([]item, 0, len(wts))
 	for i := len(wts) - 1; i >= 0; i-- {
 		items = append(items, item{label: wts[i].Label(), path: wts[i].Path})
 	}
+	m = m.replaceList(modeWorktrees, it, items)
+	return m, m.loadStatus()
+}
+
+// replaceList puts a list that belongs to the repository row it in place of
+// the repository list, which is kept aside for restore.
+func (m model) replaceList(md mode, it item, items []item) model {
+	m.saved = &stash{all: m.all, view: m.view, matched: m.matched, cursor: m.cursor, query: m.input.Value()}
+	m.origin, m.repoAt = it.label, it.path
+	m.mode = md
 	m.all = items
 	m.input.SetValue("")
 	// A different list entirely: the held selection means nothing in it.
 	m.view = nil
 	m.filter()
-	return m, m.loadStatus()
+	return m
+}
+
+// switchTo answers the worktree and branch keys. Each toggles its own list,
+// and goes from the other one straight to its own: both belong to the
+// repository the repository list has selected.
+func (m model) switchTo(md mode) (tea.Model, tea.Cmd) {
+	if m.mode == md {
+		m.restore()
+		return m, m.loadStatus()
+	}
+	m.restore()
+	if md == modeBranches {
+		return m.openBranches()
+	}
+	return m.openWorktrees()
 }
 
 // restore puts the repository list back, query and cursor included.

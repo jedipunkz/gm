@@ -31,6 +31,7 @@ const (
 	changeRemove
 	changeAddWorktree
 	changeRemoveWorktree
+	changeCheckOut // a worktree for a branch in the branch list, then go there
 )
 
 // pending is the change a confirmation is waiting on. Nothing has happened
@@ -39,6 +40,7 @@ type pending struct {
 	kind   change
 	arg    string   // the path to remove, the reference to create, the branch to check out
 	dir    string   // where a worktree will go, or which one goes away
+	from   string   // the remote branch a new branch starts at, "origin/feature"
 	title  string   // "remove", "create worktree"
 	detail []string // what it will do, a line each
 	force  bool     // there is work in it and the user has been told
@@ -92,8 +94,8 @@ func (m model) perform(a pending) tea.Cmd {
 			}
 			return done(r.Path(), r.Rel, nil)
 
-		case changeAddWorktree:
-			if err := repo.AddWorktree(repoAt, a.dir, a.arg); err != nil {
+		case changeAddWorktree, changeCheckOut:
+			if err := repo.AddWorktreeFrom(repoAt, a.dir, a.arg, a.from); err != nil {
 				return done("", "", err)
 			}
 			return done(a.dir, a.arg, nil)

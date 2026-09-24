@@ -19,7 +19,9 @@ and `Ctrl-G` jumps to any of them — or to any of their git worktrees.
   branch and tag decorations — so you can tell two similarly named clones
   apart before jumping.
 - **Worktrees are first-class** — `Ctrl-W` swaps the list for the git worktrees
-  of the repository under the cursor; ghq only knows about clones.
+  of the repository under the cursor, and `Ctrl-L` for its branches, where
+  `Enter` checks one out as a worktree and goes there; ghq only knows about
+  clones.
 - **Settings live in `gm.toml`** — roots, theme, key bindings; ghq configures
   itself only through `git config`. `$GHQ_ROOT` and `ghq.root` are still
   honored, so an existing ghq tree needs no migration.
@@ -68,20 +70,29 @@ eval "$(gm shell bash)"   # ~/.bashrc
 ## ⌨️ Keys
 
 `Ctrl-W` swaps the repository list for the git worktrees of the repository
-under the cursor, and swaps it back. Filtering, the details pane and `Enter`
-work the same in both.
+under the cursor, and `Ctrl-L` for its branches; pressing the same key again
+swaps it back. Filtering and the details pane work the same in all three.
 
-| Key | Repository list | Worktree list |
-|---|---|---|
-| any character | Filter | Filter |
-| `↑` / `Ctrl-P` | Move up | Move up |
-| `↓` / `Ctrl-N` | Move down | Move down |
-| `Enter` | Print the repository path and exit | Print the worktree path and exit |
-| `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories |
-| `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser |
-| `Ctrl-G` | — | Back to the repositories |
-| `Esc` | Clear the query, then the filter, then quit | Back to the repositories |
-| `Ctrl-C` | Quit without printing | Quit without printing |
+| Key | Repository list | Worktree list | Branch list |
+|---|---|---|---|
+| any character | Filter | Filter | Filter |
+| `↑` / `Ctrl-P` | Move up | Move up | Move up |
+| `↓` / `Ctrl-N` | Move down | Move down | Move down |
+| `Enter` | Print the repository path and exit | Print the worktree path and exit | Check the branch out as a worktree, print its path and exit |
+| `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories | Show the worktrees |
+| `Ctrl-L` (`branch_key`) | Show the branches of the selected repository | Show the branches | Back to the repositories |
+| `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser | Open the remote in a browser |
+| `Ctrl-G` | — | Back to the repositories | Back to the repositories |
+| `Esc` | Clear the query, then the filter, then quit | Back to the repositories | Back to the repositories |
+| `Ctrl-C` | Quit without printing | Quit without printing | Quit without printing |
+
+The branch list holds the local branches and the remote ones with no local
+branch of the same name, such as `origin/feat/login`, newest commit at the
+bottom. What a remote holds is what the last `git fetch` left; `gm` does not
+fetch. `Enter` on a branch that is already checked out goes to that worktree.
+On one that is not, it makes the worktree where `gm` keeps them — a remote
+branch becomes a local branch that tracks it — and goes there, without asking
+first.
 
 The line under the prompt lists the keys for whichever list is up, naming the
 chords you configured. Going back keeps the query, the cursor and the
@@ -105,6 +116,7 @@ completes it as you go, and `Tab` accepts what it offers.
 | `/get <repo>` | Same as `gm get`, then go to the clone |
 | `/remove` | Remove the selected repository, or worktree, after asking |
 | `/worktrees` | Same as `Ctrl-W` |
+| `/branches` | Same as `Ctrl-L` |
 | `/remote` | Same as `Ctrl-Alt-B` |
 
 Removing a repository takes its worktrees with it — they are checkouts of a
@@ -189,6 +201,7 @@ root         = "~/ghq"       # or ["~/ghq", "~/src"], searched in order
 theme        = "tokyonight"
 launch_key   = "ctrl-g"        # the shell key that opens gm
 worktree_key = "ctrl-w"        # the finder key that lists worktrees
+branch_key   = "ctrl-l"        # the finder key that lists branches
 remote_key   = "ctrl-alt-b"    # the finder key that opens the remote
 ```
 
@@ -210,18 +223,18 @@ the valid ones.
 
 ### Key bindings
 
-`launch_key` is the chord `gm shell` binds; `worktree_key` and `remote_key` are
-the finder's own. Ctrl is written `ctrl-`, `ctrl+`, `c-` or `^`, and the
-finder's two also take `alt` and `shift` after it, in any order —
+`launch_key` is the chord `gm shell` binds; `worktree_key`, `branch_key` and
+`remote_key` are the finder's own. Ctrl is written `ctrl-`, `ctrl+`, `c-` or
+`^`, and the finder's three also take `alt` and `shift` after it, in any order —
 `ctrl-alt-b`, `c-a-b`, `ctrl-shift-b`, `ctrl-alt-shift-b`. Anything else is an
 error rather than a binding that quietly does nothing.
 
 After changing `launch_key`, re-run `gm shell <shell>` (or restart the shell,
 if you source it from your rc file). Some chords are already taken: `ctrl-r` is
 reverse history search, and `ctrl-c`, `ctrl-d` and `ctrl-z` are terminal
-signals. `worktree_key` and `remote_key` cannot be `ctrl-c`, `ctrl-n` or
-`ctrl-p`, which the finder uses to quit and to move, and cannot both be the
-same chord, and `launch_key` must be a plain Ctrl chord.
+signals. `worktree_key`, `branch_key` and `remote_key` cannot be `ctrl-c`,
+`ctrl-n` or `ctrl-p`, which the finder uses to quit and to move, and no two of
+them can be the same chord, and `launch_key` must be a plain Ctrl chord.
 
 How far a chord travels depends on the terminal:
 

@@ -43,7 +43,7 @@ var commands = []command{
 		return m, nil
 	}},
 	{"/create", "<repo>|<branch>", "create a repository, or a worktree", func(m model, arg string) (model, tea.Cmd) {
-		if m.mode == modeWorktrees {
+		if m.mode != modeRepos {
 			return m.confirmWorktree(arg)
 		}
 		u, err := repo.NormalizeURL(arg, false)
@@ -63,6 +63,10 @@ var commands = []command{
 		return m.leaveWith(ActionGet, arg)
 	}},
 	{"/remove", "", "remove the selected repository or worktree", func(m model, _ string) (model, tea.Cmd) {
+		if m.mode == modeBranches {
+			m.note = "/remove applies to repositories and worktrees"
+			return m, nil
+		}
 		it, ok := m.current()
 		if !ok {
 			m.note = "nothing is selected"
@@ -116,7 +120,17 @@ var commands = []command{
 		}), nil
 	}},
 	{"/worktrees", "", "list the worktrees of the selected repository", func(m model, _ string) (model, tea.Cmd) {
-		next, cmd := m.openWorktrees()
+		if m.mode == modeWorktrees {
+			return m, nil
+		}
+		next, cmd := m.switchTo(modeWorktrees)
+		return next.(model), cmd
+	}},
+	{"/branches", "", "list the branches of the selected repository", func(m model, _ string) (model, tea.Cmd) {
+		if m.mode == modeBranches {
+			return m, nil
+		}
+		next, cmd := m.switchTo(modeBranches)
 		return next.(model), cmd
 	}},
 	{"/remote", "", "open the selected repository's remote in a browser", func(m model, _ string) (model, tea.Cmd) {
