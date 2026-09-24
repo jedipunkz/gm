@@ -28,7 +28,7 @@ func TestInfoPaneStacksAndWraps(t *testing.T) {
 	}
 	joined := strings.Join(plain, "\n")
 
-	for _, label := range []string{"path", "remote", "branch", "status", "visits", "last commit"} {
+	for _, label := range []string{"repository", "path", "remote", "branch", "status", "visits", "last commit"} {
 		if !strings.Contains(joined, "\n"+label+"\n") && !strings.HasPrefix(joined, label+"\n") {
 			t.Errorf("%q is not on a line of its own:\n%s", label, joined)
 		}
@@ -45,6 +45,11 @@ func TestInfoPaneStacksAndWraps(t *testing.T) {
 	// A commit folds too, with its continuations indented.
 	if !strings.Contains(joined, "abc1234") || !strings.Contains(joined, "\n"+commitIndent) {
 		t.Errorf("the commit line did not fold:\n%s", joined)
+	}
+	// Nothing is spaced apart: the labels carry the structure, and a blank
+	// line costs a row of the commits the pane is clipped from the bottom.
+	if strings.Contains(joined, "\n\n") {
+		t.Errorf("the pane has a blank line in it:\n%s", joined)
 	}
 }
 
