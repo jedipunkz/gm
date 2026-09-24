@@ -512,6 +512,13 @@ func BranchExists(dir, branch string) bool {
 // AddWorktree checks branch out at dir, starting the branch from HEAD when it
 // does not exist yet.
 func AddWorktree(repoDir, dir, branch string) error {
+	return AddWorktreeFrom(repoDir, dir, branch, "")
+}
+
+// AddWorktreeFrom is AddWorktree for a branch that may live only on a remote:
+// a new branch starts at start, "origin/feature", and tracks it. An empty
+// start is HEAD.
+func AddWorktreeFrom(repoDir, dir, branch, start string) error {
 	if !ValidBranch(branch) {
 		return fmt.Errorf("%q is not a branch name", branch)
 	}
@@ -519,12 +526,79 @@ func AddWorktree(repoDir, dir, branch string) error {
 		return err
 	}
 	args := []string{"-C", repoDir, "worktree", "add"}
-	if BranchExists(repoDir, branch) {
+	switch {
+	case BranchExists(repoDir, branch):
 		args = append(args, dir, branch)
-	} else {
+	case start != "":
+		args = append(args, "--track", "-b", branch, dir, start)
+	default:
 		args = append(args, "-b", branch, dir)
 	}
 	return gitQuiet(args...)
+}
+
+// Branch is one branch a worktree can be made from. Remote is set when only a
+// remote has it, "origin/feature", and is where the local branch will start.
+type Branch struct {
+	Name   string
+	Remote string
+}
+
+// Label is how the branch reads in a list: by where it lives when that is
+// only a remote.
+func (b Branch) Label() string {
+	if b.Remote != "" {
+		return b.Remote
+	}
+	return b.Name
+}
+
+// Branches lists the local branches, and the remote ones with no local branch
+// of the same name, newest commit first. The remote ones are what the last
+// fetch left: opening a list is not the moment to go to the network.
+func Branches(dir string) ([]Branch, error) {
+	names, _ := remotes(dir)
+	out, err := GitIn(dir, "for-each-ref", "--sort=-committerdate",
+		"--format=%(refname)", "refs/heads", "refs/remotes")
+	if err != nil {
+		return nil, err
+	}
+	return parseBranches(out, names), nil
+}
+
+// parseBranches reads full ref names. The remote names come from the caller,
+// for the reason commits needs them: "origin/main" is a remote's branch only
+// because origin is a remote.
+func parseBranches(out string, remotes []string) []Branch {
+	lines := strings.Split(out, "\n")
+	local := map[string]bool{}
+	for _, l := range lines {
+		if name, ok := strings.CutPrefix(l, "refs/heads/"); ok {
+			local[name] = true
+		}
+	}
+	var list []Branch
+	seen := map[string]bool{}
+	for _, l := range lines {
+		if name, ok := strings.CutPrefix(l, "refs/heads/"); ok {
+			list = append(list, Branch{Name: name})
+			continue
+		}
+		short, ok := strings.CutPrefix(l, "refs/remotes/")
+		if !ok {
+			continue
+		}
+		for _, r := range remotes {
+			name, ok := strings.CutPrefix(short, r+"/")
+			// HEAD is a pointer at the remote's default branch, not a branch.
+			if !ok || name == "HEAD" || local[name] || seen[name] {
+				continue
+			}
+			seen[name] = true
+			list = append(list, Branch{Name: name, Remote: short})
+		}
+	}
+	return list
 }
 
 // RemoveWorktree takes a checkout away. force is what the caller has already

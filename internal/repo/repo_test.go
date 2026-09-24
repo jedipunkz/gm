@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -773,5 +774,65 @@ func TestParseStatus(t *testing.T) {
 	}
 	if !(State{Ahead: 1, Upstream: true}).Unfinished() {
 		t.Error("an unpushed commit did not count as unfinished work")
+	}
+}
+
+// TestParseBranches keeps one row per branch: a local branch hides its remote
+// namesake, and a remote's HEAD is not a branch at all.
+func TestParseBranches(t *testing.T) {
+	out := strings.Join([]string{
+		"refs/heads/main",
+		"refs/remotes/origin/HEAD",
+		"refs/remotes/origin/main",
+		"refs/remotes/origin/feat/login",
+		"refs/heads/release/main",
+		"refs/remotes/upstream/feat/login",
+		"refs/remotes/upstream/fix",
+	}, "\n")
+	got := parseBranches(out, []string{"origin", "upstream"})
+	want := []Branch{
+		{Name: "main"},
+		{Name: "feat/login", Remote: "origin/feat/login"},
+		{Name: "release/main"},
+		{Name: "fix", Remote: "upstream/fix"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("parseBranches = %+v, want %+v", got, want)
+	}
+}
+
+// TestAddWorktreeFromARemoteBranch checks a branch only a remote has out as a
+// local branch that tracks it.
+func TestAddWorktreeFromARemoteBranch(t *testing.T) {
+	upstream := filepath.Join(t.TempDir(), "upstream")
+	gitRepo(t, upstream)
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		out, err := GitIn(dir, args...)
+		if err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+		return out
+	}
+	git(upstream, "branch", "feat/login")
+
+	clone := filepath.Join(t.TempDir(), "clone")
+	if err := gitQuiet("clone", "-q", upstream, clone); err != nil {
+		t.Fatal(err)
+	}
+	bs, err := Branches(clone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(bs, Branch{Name: "feat/login", Remote: "origin/feat/login"}) {
+		t.Fatalf("Branches = %+v, want origin/feat/login among them", bs)
+	}
+
+	dir := filepath.Join(t.TempDir(), "wt")
+	if err := AddWorktreeFrom(clone, dir, "feat/login", "origin/feat/login"); err != nil {
+		t.Fatal(err)
+	}
+	if got := git(dir, "rev-parse", "--abbrev-ref", "feat/login@{upstream}"); got != "origin/feat/login" {
+		t.Errorf("the new branch tracks %q", got)
 	}
 }
