@@ -1,25 +1,28 @@
 BIN := gm
 
-.PHONY: all build install test vet fmt check clean
+.PHONY: all build install test lint fmt check clean
 
 all: build
 
 build:
-	go build -o $(BIN) .
+	cargo build --release
+	cp target/release/$(BIN) $(BIN)
 
 install:
-	go install .
+	cargo install --locked --path .
 
 test:
-	go test ./...
+	cargo test
 
-vet:
-	go vet ./...
+lint:
+	cargo clippy --all-targets -- -D warnings
 
 fmt:
-	gofmt -w .
+	cargo fmt
 
-check: vet test
+check: lint test
+	cargo fmt --check
 
 clean:
+	cargo clean
 	$(RM) $(BIN)

@@ -3,20 +3,24 @@
 # their platform and unpacks it.
 version: 2
 
-before:
-  hooks:
-    - go mod tidy
-
 builds:
   - id: gm
-    main: .
+    # cargo-zigbuild cross-compiles every target from one Linux runner; the
+    # release workflow installs it, zig and the Rust targets.
+    builder: rust
     binary: gm
+    # musl, so the Linux binaries are static, as the Go ones were.
+    targets:
+      - x86_64-unknown-linux-musl
+      - aarch64-unknown-linux-musl
+      - x86_64-apple-darwin
+      - aarch64-apple-darwin
     env:
-      - CGO_ENABLED=0
-    goos: [darwin, linux]
-    goarch: [amd64, arm64]
-    ldflags:
-      - -s -w -X main.version={{.Version}}
+      # Read by option_env! in src/main.rs; `gm version` prints it.
+      - GM_VERSION={{ .Version }}
+    flags:
+      - --release
+      - --locked
 
 archives:
   - id: gm

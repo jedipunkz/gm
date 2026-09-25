@@ -1,10 +1,10 @@
-# Keep the module and the workflow actions current without turning the
+# Keep the crates and the workflow actions current without turning the
 # repository into a stream of one-line pull requests: everything that is not a
 # major version arrives grouped, once a week.
 version: 2
 
 updates:
-  - package-ecosystem: gomod
+  - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
@@ -13,7 +13,7 @@ updates:
     commit-message:
       prefix: chore
     groups:
-      go-minor-and-patch:
+      cargo-minor-and-patch:
         update-types: [minor, patch]
 
   - package-ecosystem: github-actions
