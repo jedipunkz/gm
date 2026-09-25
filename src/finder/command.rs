@@ -23,6 +23,21 @@ pub struct Command {
     run: fn(&mut Model, &str) -> Vec<Cmd>,
 }
 
+#[derive(Clone, Copy)]
+enum RepoFilter {
+    Dirty,
+    Unpushed,
+}
+
+impl RepoFilter {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Dirty => "/dirty",
+            Self::Unpushed => "/unpushed",
+        }
+    }
+}
+
 impl Command {
     /// label is how the command is written in the help popup.
     pub fn label(&self) -> String {
@@ -187,28 +202,13 @@ pub const COMMANDS: &[Command] = &[
         name: "/dirty",
         arg: "",
         what: "show only repositories with uncommitted work",
-        run: |m, _| {
-            if m.mode != Mode::Repos {
-                m.note = "/dirty applies to the repository list".into();
-                return vec![];
-            }
-            if m.dirty_only {
-                m.dirty_only = false;
-                m.filter();
-                m.cursor = m.view.len().saturating_sub(1);
-                return vec![];
-            }
-            m.dirty_only = true;
-            if m.dirty.is_none() {
-                // The answer needs a git call per repository, so it is asked for
-                // the first time someone wants it, not at startup.
-                let busy = m.start_busy("checking every repository for uncommitted work…");
-                return vec![busy, m.scan_dirty()];
-            }
-            m.filter();
-            m.cursor = m.view.len().saturating_sub(1);
-            vec![]
-        },
+        run: |m, _| m.toggle_repo_filter(RepoFilter::Dirty),
+    },
+    Command {
+        name: "/unpushed",
+        arg: "",
+        what: "show only repositories with unpushed commits",
+        run: |m, _| m.toggle_repo_filter(RepoFilter::Unpushed),
     },
 ];
 
@@ -248,6 +248,38 @@ pub fn completions(s: &str) -> Vec<String> {
 }
 
 impl Model {
+    fn toggle_repo_filter(&mut self, filter: RepoFilter) -> Vec<Cmd> {
+        if self.mode != Mode::Repos {
+            self.note = format!("{} applies to the repository list", filter.name());
+            return vec![];
+        }
+
+        let enabled = match filter {
+            RepoFilter::Dirty => {
+                self.dirty_only = !self.dirty_only;
+                self.dirty_only
+            }
+            RepoFilter::Unpushed => {
+                self.unpushed_only = !self.unpushed_only;
+                self.unpushed_only
+            }
+        };
+
+        if enabled && self.repo_states.is_none() && !self.scanning_states {
+            self.scanning_states = true;
+            let busy = self.start_busy("checking repository status…");
+            return vec![busy, self.scan_repo_states()];
+        }
+
+        if enabled && self.repo_states.is_none() {
+            return vec![]; // the other filter already started the shared scan
+        }
+
+        self.filter();
+        self.cursor = self.view.len().saturating_sub(1);
+        vec![]
+    }
+
     /// leave_with closes the finder and hands the work to gm, which runs it on
     /// the terminal the user can see: a clone's progress, a password prompt and
     /// a confirmation all belong there, not inside an alternate screen.

@@ -162,7 +162,8 @@ fn line_painted(l: &Line, hex: &str) -> bool {
 }
 
 /// dirty_model is a finder over three repositories, two of which have
-/// uncommitted work, with the scan stubbed so no git runs.
+/// uncommitted work and two of which have unpushed commits, with the scan
+/// stubbed so no git runs.
 fn dirty_model(root: &TempDir) -> (Model, Vec<Repo>) {
     let rs = repos(
         &root.path(),
@@ -175,11 +176,30 @@ fn dirty_model(root: &TempDir) -> (Model, Vec<Repo>) {
     let mut m = new_model(&rs, "");
     (m.w, m.h) = (90, 14);
     let paths: Vec<String> = rs.iter().map(Repo::path).collect();
-    m.dirty_of = Arc::new(move |_| {
+    m.state_scan_of = Arc::new(move |_| {
         [
-            (paths[0].clone(), true),
-            (paths[1].clone(), false),
-            (paths[2].clone(), true),
+            (
+                paths[0].clone(),
+                repo::State {
+                    dirty: 1,
+                    ..Default::default()
+                },
+            ),
+            (
+                paths[1].clone(),
+                repo::State {
+                    ahead: 1,
+                    ..Default::default()
+                },
+            ),
+            (
+                paths[2].clone(),
+                repo::State {
+                    dirty: 1,
+                    ahead: 1,
+                    ..Default::default()
+                },
+            ),
         ]
         .into_iter()
         .collect()
@@ -733,6 +753,42 @@ fn find_then_act_on_it() {
     assert!(is_quit(&new_model(&rs, "").update(key("esc"))));
 }
 
+#[test]
+fn unpushed_filter_starts_a_repository_scan() {
+    let root = TempDir::new();
+    let (mut m, _) = dirty_model(&root);
+    let cmds = run_slash(&mut m, "/unpushed");
+    assert!(!cmds.is_empty(), "/unpushed started no scan");
+    assert!(line_text(&m.help_line(90)).contains("checking"));
+    assert_eq!(m.view.len(), 3, "rows disappeared before the scan finished");
+    feed(&mut m, cmds);
+    assert_eq!(
+        rows(&m),
+        vec!["github.com/acme/bravo", "github.com/acme/charlie"]
+    );
+    assert!(line_text(&m.help_line(90)).contains("unpushed only"));
+}
+
+#[test]
+fn unpushed_scan_filters_the_saved_repository_list_when_it_finishes_elsewhere() {
+    let root = TempDir::new();
+    let (mut m, _) = dirty_model(&root);
+    let cmds = run_slash(&mut m, "/unpushed");
+    only_main(&mut m);
+    m.open_worktrees();
+
+    feed(&mut m, cmds);
+    assert_eq!(m.mode, Mode::Worktrees);
+    assert_eq!(rows(&m), vec!["main"]);
+
+    m.update(key("esc"));
+    assert_eq!(
+        rows(&m),
+        vec!["github.com/acme/bravo", "github.com/acme/charlie"]
+    );
+    assert!(line_text(&m.help_line(90)).contains("unpushed only"));
+}
+
 // /dirty end to end: the scan runs off the UI thread, the list keeps every
 // row until the answer lands, and running it again shows everything.
 #[test]
@@ -783,6 +839,44 @@ fn dirty_filter_is_for_repositories() {
     m.open_worktrees();
     let cmds = run_slash(&mut m, "/dirty");
     assert!(cmds.is_empty() && !m.dirty_only);
+    assert!(m.note.contains("repository list"), "{:?}", m.note);
+}
+
+#[test]
+fn dirty_and_unpushed_filters_combine_and_escape_clears_them() {
+    let root = TempDir::new();
+    let (mut m, rs) = dirty_model(&root);
+    let cmds = run_slash(&mut m, "/dirty");
+    assert!(!cmds.is_empty());
+    assert!(run_slash(&mut m, "/unpushed").is_empty());
+    feed(&mut m, cmds);
+    assert_eq!(rows(&m), vec!["github.com/acme/charlie"]);
+    assert!(line_text(&m.help_line(90)).contains("dirty + unpushed"));
+
+    assert!(run_slash(&mut m, "/dirty").is_empty());
+    assert_eq!(
+        rows(&m),
+        vec!["github.com/acme/bravo", "github.com/acme/charlie"]
+    );
+    assert!(line_text(&m.help_line(90)).contains("unpushed only"));
+
+    m.update(key("esc"));
+    assert_eq!(
+        rows(&m),
+        rs.iter().map(|r| r.rel.as_str()).collect::<Vec<_>>()
+    );
+    assert!(!m.dirty_only && !m.unpushed_only);
+    assert!(!line_text(&m.help_line(90)).contains("only"));
+}
+
+#[test]
+fn unpushed_filter_is_for_repositories() {
+    let root = TempDir::new();
+    let (mut m, _) = dirty_model(&root);
+    only_main(&mut m);
+    m.open_worktrees();
+    let cmds = run_slash(&mut m, "/unpushed");
+    assert!(cmds.is_empty() && !m.unpushed_only);
     assert!(m.note.contains("repository list"), "{:?}", m.note);
 }
 

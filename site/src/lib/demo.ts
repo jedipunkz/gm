@@ -21,6 +21,7 @@ export interface DemoRepo {
   remote: string;
   branch: string;
   dirty: number;
+  unpushed?: number;
   visits: number;
   last: string; // how long ago, already phrased
   frecency: number; // Visit.Score(now); decides the order of an empty query
@@ -98,6 +99,7 @@ export const repos: DemoRepo[] = [
     remote: "git@github.com:acme/api-server.git",
     branch: "feat/rate-limit",
     dirty: 3,
+    unpushed: 2,
     visits: 17,
     last: "2h ago",
     frecency: 34,
@@ -132,6 +134,7 @@ export const repos: DemoRepo[] = [
     remote: "https://github.com/ratatui/ratatui",
     branch: "main",
     dirty: 0,
+    unpushed: 2,
     visits: 6,
     last: "3d ago",
     frecency: 3,

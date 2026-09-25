@@ -26,6 +26,10 @@ pub struct Stash {
 }
 
 impl Stash {
+    pub(super) fn mark_stale(&mut self) {
+        self.stale = true;
+    }
+
     pub(super) fn update(&mut self, change: impl FnOnce(&mut Vec<Item>) -> bool) {
         if change(&mut self.all) {
             self.stale = true;

@@ -17,6 +17,7 @@ interface Item {
   repo: DemoRepo;
   branch: string;
   dirty: number;
+  unpushed: number;
   commits: DemoCommit[];
 }
 
@@ -96,6 +97,7 @@ const COMMANDS: { name: string; arg: string; what: string }[] = [
   { name: "/prs", arg: "", what: "list the open pull requests of the repository" },
   { name: "/remote", arg: "", what: "open the selected repository's remote in a browser" },
   { name: "/dirty", arg: "", what: "show only repositories with uncommitted work" },
+  { name: "/unpushed", arg: "", what: "show only repositories with unpushed commits" },
 ];
 
 // A command is the whole input, or follows the query after ";": "gm;/remote".
@@ -142,6 +144,7 @@ export function mount(root: HTMLElement) {
       repo: r,
       branch: r.branch,
       dirty: r.dirty,
+      unpushed: r.unpushed ?? 0,
       commits: r.commits,
     }))
     .sort((a, b) => a.score - b.score || a.label.localeCompare(b.label));
@@ -156,6 +159,7 @@ export function mount(root: HTMLElement) {
     origin: "",
     saved: null as null | { view: number[]; matched: Map<number, number[]>; cursor: number; query: string },
     dirtyOnly: false,
+    unpushedOnly: false,
     help: false,
     note: "",
     noteCls: "dirty",
@@ -187,7 +191,13 @@ export function mount(root: HTMLElement) {
       // breaks ties between equally good matches.
       view.sort((a, b) => score.get(a)! - score.get(b)! || st.all[a].score - st.all[b].score);
     }
-    if (st.dirtyOnly && st.mode === "repos") view = view.filter((i) => st.all[i].dirty > 0);
+    if (st.mode === "repos") {
+      view = view.filter(
+        (i) =>
+          (!st.dirtyOnly || st.all[i].dirty > 0) &&
+          (!st.unpushedOnly || st.all[i].unpushed > 0),
+      );
+    }
     st.view = view;
 
     const at = held >= 0 ? view.indexOf(held) : -1;
@@ -294,7 +304,7 @@ export function mount(root: HTMLElement) {
     }
     let out = "quit";
     if (input.value !== "") out = "clear";
-    else if (st.dirtyOnly) out = "show all";
+    else if (st.dirtyOnly || st.unpushedOnly) out = "show all";
 
     const hints =
       st.mode === "worktrees"
@@ -308,7 +318,16 @@ export function mount(root: HTMLElement) {
             hintKey("ctrl-l", "branches"),
             hintKey("ctrl-j", "prs"),
           ];
-    hintsEl.innerHTML = (st.dirtyOnly && st.mode === "repos" ? span("dirty", "dirty only") + sep : "") + hints.join(sep);
+    const filterLabel =
+      st.dirtyOnly && st.unpushedOnly
+        ? "dirty + unpushed"
+        : st.dirtyOnly
+          ? "dirty only"
+          : st.unpushedOnly
+            ? "unpushed only"
+            : "";
+    hintsEl.innerHTML =
+      (filterLabel && st.mode === "repos" ? span("dirty", filterLabel) + sep : "") + hints.join(sep);
   }
 
   function drawOverlay() {
@@ -355,9 +374,19 @@ export function mount(root: HTMLElement) {
         repo: r,
         branch: w.branch,
         dirty: w.dirty,
+        unpushed: 0,
         commits: w.commits,
       })),
-      { label: r.branch, path: it.path, score: 0, repo: r, branch: r.branch, dirty: r.dirty, commits: r.commits },
+      {
+        label: r.branch,
+        path: it.path,
+        score: 0,
+        repo: r,
+        branch: r.branch,
+        dirty: r.dirty,
+        unpushed: it.unpushed,
+        commits: r.commits,
+      },
     ];
     st.saved = { view: st.view, matched: st.matched, cursor: st.cursor, query: input.value };
     st.origin = it.label;
@@ -392,8 +421,9 @@ export function mount(root: HTMLElement) {
     else if (input.value !== "") {
       input.value = "";
       filter();
-    } else if (st.dirtyOnly) {
+    } else if (st.dirtyOnly || st.unpushedOnly) {
       st.dirtyOnly = false;
+      st.unpushedOnly = false;
       filter();
     } else say("gm would quit here, printing nothing", "dim");
   }
@@ -409,7 +439,12 @@ export function mount(root: HTMLElement) {
         break;
       case "/dirty":
         if (st.mode !== "repos") return say("/dirty works on the repository list");
-        st.dirtyOnly = true;
+        st.dirtyOnly = !st.dirtyOnly;
+        filter();
+        break;
+      case "/unpushed":
+        if (st.mode !== "repos") return say("/unpushed works on the repository list");
+        st.unpushedOnly = !st.unpushedOnly;
         filter();
         break;
       case "/worktrees":

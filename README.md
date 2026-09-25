@@ -94,9 +94,9 @@ Other keys are ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U`, …), except
 - Going back to a list keeps its query, cursor and highlights.
 - `Esc` undoes one layer at a time (worktree list → query → filter) and quits
   only when nothing is left. The hint line says what it will do next.
-- While `gm` waits on git or GitHub (loading pull requests, checking out, the
-  `/dirty` scan), the hint line shows a spinner, what it waits on and the
-  elapsed seconds. The finder stays usable meanwhile.
+- While `gm` waits on git or GitHub (loading pull requests, checking out, a
+  `/dirty` or `/unpushed` scan), the hint line shows a spinner, what it waits
+  on and the elapsed seconds. The finder stays usable meanwhile.
 
 ### Branch list
 
@@ -133,7 +133,8 @@ completes it as you type; `Tab` accepts the completion.
 | Command | What it does |
 |---|---|
 | `/help` | Show the command list; `q` or `Esc` closes it |
-| `/dirty` | Show only repositories with uncommitted work; `Esc` shows all |
+| `/dirty` | Show only repositories with uncommitted work |
+| `/unpushed` | Show only repositories with unpushed commits |
 | `/create <repo>` | Create a repository, after asking; adds it to the list |
 | `/create <branch>` | In the worktree list: check that branch out as a worktree |
 | `/get <repo>` | Same as `gm get`, then go to the clone |
@@ -161,9 +162,10 @@ completes it as you type; `Tab` accepts the completion.
 - `/get` closes the finder and clones in the visible terminal, since cloning
   may need a progress bar or a passphrase. It then prints the clone's path, so
   the shell binding `cd`s there.
-- `/dirty` asks git about every repository on first use, in parallel and in the
-  background. The hint line shows `dirty only` while the filter is on, and a
-  query narrows it further.
+- `/dirty` and `/unpushed` share one Git status scan on first use, in parallel
+  and in the background. The hint line shows the active filter; using both
+  keeps repositories that satisfy both. `Esc` clears the query first, then all
+  active status filters.
 
 ### Worktree location
 
@@ -189,7 +191,7 @@ You type only the branch name; `gm` picks the path:
 | `gm` | Open the fuzzy finder; print the selected path |
 | `gm get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...` | Clone into the tree; `-u` updates an existing clone |
 | `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
-| `gm status [--dirty] [--unpushed] [-a] [-p]` | List every repository and worktree with uncommitted or unpushed work; never fetches, so it is fast and works offline |
+| `gm status [--dirty] [--unpushed] [-a] [-p]` | List unfinished work across repositories and worktrees (uncommitted changes or unpushed commits); never fetches, so it is fast and works offline |
 | `gm remove [--dry-run] [-y] <repo>...` | Remove a repository and its worktrees after confirming, pruning empty parents (`gm rm` also works) |
 | `gm create [-p] <repo>` | Create and `git init` a repository with `origin` already set |
 | `gm wt <create\|remove> [-y] <repo> <branch>` | Add or remove a worktree from a script; the finder is better for doing it by hand |
