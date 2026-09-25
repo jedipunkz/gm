@@ -22,6 +22,15 @@ pub struct Stash {
     matched: HashMap<usize, Vec<usize>>,
     cursor: usize,
     query: String,
+    stale: bool,
+}
+
+impl Stash {
+    pub(super) fn update(&mut self, change: impl FnOnce(&mut Vec<Item>) -> bool) {
+        if change(&mut self.all) {
+            self.stale = true;
+        }
+    }
 }
 
 impl Model {
@@ -57,6 +66,7 @@ impl Model {
             matched: std::mem::take(&mut self.matched),
             cursor: self.cursor,
             query: self.input.value(),
+            stale: false,
         });
         self.origin = it.label.clone();
         self.repo_at = it.path.clone();
@@ -86,10 +96,17 @@ impl Model {
     /// restore puts the repository list back, query and cursor included.
     pub(super) fn restore(&mut self) {
         let Some(s) = self.saved.take() else { return };
+        let stale = s.stale;
         (self.all, self.view, self.matched, self.cursor) = (s.all, s.view, s.matched, s.cursor);
         self.input.set_value(&s.query);
         self.mode = Mode::Repos;
         self.origin.clear();
         self.repo_at.clear();
+        if stale {
+            let note = std::mem::take(&mut self.note);
+            self.view_stale = true;
+            self.filter();
+            self.note = note;
+        }
     }
 }

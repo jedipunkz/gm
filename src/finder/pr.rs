@@ -119,6 +119,8 @@ impl Model {
             busy,
             self.perform(Pending {
                 kind: Change::CheckOutPr,
+                mode: self.mode,
+                repo_at: self.repo_at.clone(),
                 arg: it.pr.number.to_string(),
                 dir,
                 ..Default::default()

@@ -2,6 +2,7 @@ use ratatui::text::{Line, Span};
 
 use super::command::COMMANDS;
 use super::info::{Seg, tildify, wrap_segs};
+use super::worktree::Mode;
 use super::{Cmd, Done, Key, Model, Msg};
 use crate::repo::{self, Branch};
 use crate::{Error, err};
@@ -34,19 +35,21 @@ pub enum Change {
 #[derive(Debug, Clone, Default)]
 pub struct Pending {
     pub kind: Change,
-    pub arg: String, // the path to remove, the reference to create, the branch to check out
-    pub dir: String, // where a worktree will go, or which one goes away
-    pub from: String, // the remote branch a new branch starts at, "origin/feature"
-    pub fetch: bool, // from has to be fetched first: only the remote has it
-    pub title: String, // "remove", "create worktree"
+    pub mode: Mode,          // the list the change belongs to
+    pub repo_at: String,     // the repository that list belongs to
+    pub arg: String,         // the path to remove, the reference to create, the branch to check out
+    pub dir: String,         // where a worktree will go, or which one goes away
+    pub from: String,        // the remote branch a new branch starts at, "origin/feature"
+    pub fetch: bool,         // from has to be fetched first: only the remote has it
+    pub title: String,       // "remove", "create worktree"
     pub detail: Vec<String>, // what it will do, a line each
-    pub force: bool, // there is work in it and the user has been told
+    pub force: bool,         // there is work in it and the user has been told
 }
 
 impl Model {
     /// perform carries out a confirmed change, off the UI thread.
     pub(super) fn perform(&self, a: Pending) -> Cmd {
-        let (tree, repo_at, gh) = (self.tree.clone(), self.repo_at.clone(), self.gh.clone());
+        let (tree, gh) = (self.tree.clone(), self.gh.clone());
         Cmd::Task(Box::new(move || {
             let kind = a.kind;
             let done = |res: Result<(String, String), Error>| {
@@ -56,6 +59,8 @@ impl Model {
                 };
                 Some(Msg::Done(Done {
                     kind,
+                    mode: a.mode,
+                    repo_at: a.repo_at.clone(),
                     label,
                     path,
                     err,
@@ -74,9 +79,9 @@ impl Model {
                             remote: a.from.clone(),
                             unfetched: true,
                         };
-                        repo::fetch_branch(&repo_at, &b)?;
+                        repo::fetch_branch(&a.repo_at, &b)?;
                     }
-                    repo::add_worktree_from(&repo_at, &a.dir, &a.arg, &a.from)?;
+                    repo::add_worktree_from(&a.repo_at, &a.dir, &a.arg, &a.from)?;
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
                 Change::CheckOutPr => done((|| {
@@ -84,11 +89,11 @@ impl Model {
                         .arg
                         .parse()
                         .map_err(|_| err!("{:?} is not a pull request", a.arg))?;
-                    repo::check_out_pull_request(&gh, &repo_at, &a.dir, n)?;
+                    repo::check_out_pull_request(&gh, &a.repo_at, &a.dir, n)?;
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
                 Change::RemoveWorktree => done(
-                    repo::remove_worktree(&repo_at, &a.dir, a.force)
+                    repo::remove_worktree(&a.repo_at, &a.dir, a.force)
                         .map(|_| (a.dir.clone(), String::new())),
                 ),
                 Change::None => None,
@@ -98,7 +103,9 @@ impl Model {
 
     /// confirm puts the question on screen. Nothing happens until it is
     /// answered.
-    pub(super) fn confirm(&mut self, p: Pending) -> Vec<Cmd> {
+    pub(super) fn confirm(&mut self, mut p: Pending) -> Vec<Cmd> {
+        p.mode = self.mode;
+        p.repo_at = self.repo_at.clone();
         self.over = Overlay::Confirm;
         self.ask = p;
         self.note.clear();
@@ -205,7 +212,23 @@ impl Model {
             Overlay::Confirm if matches!(name, "y" | "Y") => {
                 let a = std::mem::take(&mut self.ask);
                 self.over = Overlay::None;
-                return vec![self.perform(a)];
+                let busy = match a.kind {
+                    Change::Create => Some(format!("creating {}…", a.arg)),
+                    Change::Remove => Some(format!("removing {}…", tildify(&a.arg))),
+                    Change::AddWorktree => {
+                        Some(format!("creating worktree at {}…", tildify(&a.dir)))
+                    }
+                    Change::RemoveWorktree => {
+                        Some(format!("removing worktree at {}…", tildify(&a.dir)))
+                    }
+                    _ => None,
+                };
+                let mut cmds = Vec::new();
+                if let Some(what) = busy {
+                    cmds.push(self.start_busy(&what));
+                }
+                cmds.push(self.perform(a));
+                return cmds;
             }
             Overlay::Confirm if matches!(name, "n" | "N" | "q" | "esc" | "ctrl+c") => {
                 self.over = Overlay::None;

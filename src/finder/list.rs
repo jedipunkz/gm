@@ -80,36 +80,6 @@ impl Model {
         self.cursor = self.view.len().saturating_sub(1);
     }
 
-    /// drop_path takes a removed repository out of the list, so the screen
-    /// matches the disk without walking the tree again.
-    pub(super) fn drop_path(&mut self, path: &str) {
-        self.all.retain(|it| it.path != path);
-        self.status.remove(path);
-        self.probing.remove(path);
-        self.view_stale = true;
-        self.filter();
-    }
-
-    /// add puts a new repository at the bottom of the list and selects it: it
-    /// is the one thing the user is certain to want next.
-    pub(super) fn add(&mut self, rel: &str, path: &str) {
-        self.all.push(Item {
-            label: rel.into(),
-            path: path.into(),
-            ..Default::default()
-        });
-        self.view_stale = true;
-        self.input.set_value("");
-        self.filter();
-        if let Some(i) = self
-            .view
-            .iter()
-            .rposition(|&idx| self.all[idx].path == path)
-        {
-            self.cursor = i;
-        }
-    }
-
     /// keep_dirty drops the rows that have no uncommitted work, when the
     /// filter is on. It applies to repositories only: the worktree list is a
     /// different question, and a scan that has not finished yet hides nothing.
