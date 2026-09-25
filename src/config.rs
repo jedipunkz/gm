@@ -115,7 +115,7 @@ impl Config {
                 .collect::<Result<Vec<_>>>()?,
             Some(_) => return Err(wrong()),
         };
-        if roots.is_empty() {
+        if roots.is_empty() || roots.iter().any(String::is_empty) {
             return Err(err!("{path}: root is empty"));
         }
         Ok(Some(roots))
