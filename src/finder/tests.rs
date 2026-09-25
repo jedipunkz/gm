@@ -943,13 +943,8 @@ fn confirm_remove() {
     }
     let mut m = new_model(&rs, "");
     (m.w, m.h) = (90, 16);
-    m.status.insert(
-        rs[1].path(),
-        Status {
-            dirty: 3,
-            ..Default::default()
-        },
-    );
+    let bravo = rs[1].path();
+    m.changed_of = Arc::new(move |p| if p == bravo { 3 } else { 0 });
 
     run_slash(&mut m, "/remove"); // bravo, the bottom row
     assert_eq!(m.over, Overlay::Confirm);
@@ -1046,6 +1041,87 @@ fn remove_says_the_worktrees_go_too() {
         assert!(view.contains(want), "{want:?}:\n{view}");
     }
     assert!(!view.contains("3 worktrees"));
+}
+
+// The worktrees go with --force, so the work in each is named before anyone
+// says yes.
+#[test]
+fn remove_names_the_work_in_the_worktrees() {
+    let root = TempDir::new();
+    let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
+    (m.w, m.h) = (90, 18);
+    m.worktrees_of = Arc::new(|dir| {
+        let w = |p: &str, b: &str| Worktree {
+            path: p.into(),
+            branch: b.into(),
+            ..Default::default()
+        };
+        Ok(vec![
+            w(dir, "main"),
+            w("/tmp/wt/login", "feat/login"),
+            w("/tmp/wt/timeout", "fix/timeout"),
+        ])
+    });
+    m.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 2 } else { 0 });
+    run_slash(&mut m, "/remove");
+    let view = view_text(&m);
+    assert!(view.contains("feat/login (2 changed)"), "{view}");
+    assert!(!view.contains("fix/timeout ("), "{view}");
+    // The repository itself is clean here, so nothing claims otherwise.
+    assert!(!view.contains("uncommitted"), "{view}");
+}
+
+// "gm;/remove" finds a repository and removes it in one keystroke, long
+// before the details pane has asked git about it, and a cached answer is as
+// old as the moment it was taken. Neither may hide work that would be lost.
+#[test]
+fn remove_asks_git_rather_than_the_cache() {
+    let root = TempDir::new();
+    let rs = repos(&root.path(), &["github.com/acme/alpha"]);
+    let mut m = new_model(&rs, "");
+    (m.w, m.h) = (90, 16);
+    only_main(&mut m);
+    m.changed_of = Arc::new(|_| 4);
+
+    // Not loaded yet.
+    let mut fresh = m.clone();
+    run_slash(&mut fresh, "/remove");
+    assert!(fresh.status.is_empty());
+    assert!(view_text(&fresh).contains("4 uncommitted changes"));
+
+    // Loaded, but from before the files were changed.
+    m.status.insert(rs[0].path(), Status::default());
+    run_slash(&mut m, "/remove");
+    assert!(view_text(&m).contains("4 uncommitted changes"));
+}
+
+// In the worktree list the answer also decides --force: without it git
+// refuses, and the question the user answered was the wrong one.
+#[test]
+fn remove_worktree_forces_what_it_warned_about() {
+    let root = TempDir::new();
+    let rs = repos(&root.path(), &["github.com/acme/alpha"]);
+    let mut m = new_model(&rs, "");
+    m.worktrees_of = Arc::new(|dir| {
+        let w = |p: &str, b: &str| Worktree {
+            path: p.into(),
+            branch: b.into(),
+            ..Default::default()
+        };
+        Ok(vec![w(dir, "main"), w("/tmp/wt/login", "feat/login")])
+    });
+    m.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 1 } else { 0 });
+    m.update(key("ctrl+w"));
+    assert_eq!(m.mode, Mode::Worktrees);
+    m.cursor = m
+        .view
+        .iter()
+        .position(|&i| m.all[i].path == "/tmp/wt/login")
+        .unwrap();
+    run_slash(&mut m, "/remove");
+    assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
+    assert!(m.ask.force);
+    assert!(view_text(&m).contains("1 uncommitted changes"));
 }
 
 #[test]

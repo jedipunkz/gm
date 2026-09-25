@@ -304,6 +304,27 @@ pub fn is_dirty(dir: &str) -> Result<bool> {
     Ok(!git_in(dir, &["status", "--porcelain"])?.is_empty())
 }
 
+/// changed_files counts what a removal of dir would lose: the files git status
+/// reports. It asks git now, never a cache, because it is only asked right
+/// before something is deleted. A checkout git cannot answer for counts as
+/// none.
+pub fn changed_files(dir: &str) -> usize {
+    status_of(dir).dirty
+}
+
+/// worktree_labels names checkouts for a warning, each with the work that
+/// would go with it: "feat/login (3 changed), fix/timeout". changed is
+/// changed_files, or what a test puts in its place.
+pub fn worktree_labels(wts: &[Worktree], changed: impl Fn(&str) -> usize) -> String {
+    wts.iter()
+        .map(|w| match changed(&w.path) {
+            0 => w.label(),
+            n => format!("{} ({n} changed)", w.label()),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Worktree is one checkout of a repository: the main one, plus whatever
 /// `git worktree add` created.
 #[derive(Debug, Clone, Default, PartialEq)]
