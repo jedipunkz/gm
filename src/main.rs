@@ -17,6 +17,13 @@ const VERSION: &str = match option_env!("GM_VERSION") {
 };
 
 fn main() {
+    // `gm list | head` closes the pipe early. Go let SIGPIPE end the process
+    // quietly; Rust ignores it and every write fails with "Broken pipe"
+    // instead, which gm would report as an error.
+    // SAFETY: called before any thread exists, and SIG_DFL is always valid.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     if let Err(err) = cli::run(std::env::args().skip(1).collect()) {
         // A usage error has already shown the usage; nothing more to say.
         if let Some(code) = cli::exit_code(&err) {
