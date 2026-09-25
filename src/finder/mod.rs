@@ -889,9 +889,13 @@ mod terminal {
                     EnterAlternateScreen,
                     EnableBracketedPaste,
                     cursor::Hide,
-                    PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+                    PushKeyboardEnhancementFlags(
+                        KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    )
                 )?;
-                Ok(Term { term: ratatui::Terminal::new(CrosstermBackend::new(out))? })
+                Ok(Term {
+                    term: ratatui::Terminal::new(CrosstermBackend::new(out))?,
+                })
             })();
             opened.map_err(|e| {
                 restore(&mut tty());

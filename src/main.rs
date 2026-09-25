@@ -26,7 +26,10 @@ fn main() {
     }
     // Arguments are read lossily: a name that is not UTF-8 reaches the command
     // mangled rather than stopping gm before it starts.
-    let args = std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
+    let args = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     if let Err(err) = cli::run(args) {
         // A usage error has already shown the usage; nothing more to say.
         if let Some(code) = cli::exit_code(&err) {
