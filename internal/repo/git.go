@@ -542,6 +542,9 @@ func AddWorktreeFrom(repoDir, dir, branch, start string) error {
 type Branch struct {
 	Name   string
 	Remote string
+	// Unfetched is a branch the remote has that the last fetch did not
+	// bring: it is known by name only, and has to be fetched to be used.
+	Unfetched bool
 }
 
 // Label is how the branch reads in a list: by where it lives when that is

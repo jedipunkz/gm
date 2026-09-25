@@ -906,3 +906,76 @@ func TestCheckOutPullRequest(t *testing.T) {
 		t.Errorf("err = %v, want gh's message", err)
 	}
 }
+
+// TestRemoteBranches finds what a remote has that the last fetch did not
+// bring, and fetches one of them into a worktree that tracks it.
+func TestRemoteBranches(t *testing.T) {
+	upstream := filepath.Join(t.TempDir(), "upstream")
+	gitRepo(t, upstream)
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		out, err := GitIn(dir, args...)
+		if err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+		return out
+	}
+	git(upstream, "branch", "old")
+	clone := filepath.Join(t.TempDir(), "clone")
+	if err := gitQuiet("clone", "-q", upstream, clone); err != nil {
+		t.Fatal(err)
+	}
+	// Pushed after the clone: only the remote knows about it.
+	git(upstream, "branch", "feat/new")
+
+	bs, err := RemoteBranches(clone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Branch{{Name: "feat/new", Remote: "origin/feat/new", Unfetched: true}}
+	if !slices.Equal(bs, want) {
+		t.Fatalf("RemoteBranches = %+v, want %+v", bs, want)
+	}
+
+	if err := FetchBranch(clone, bs[0]); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "wt")
+	if err := AddWorktreeFrom(clone, dir, "feat/new", "origin/feat/new"); err != nil {
+		t.Fatal(err)
+	}
+	if got := git(dir, "rev-parse", "--abbrev-ref", "feat/new@{upstream}"); got != "origin/feat/new" {
+		t.Errorf("the new branch tracks %q", got)
+	}
+
+	// A refspec is never built out of a name git would not take.
+	if err := FetchBranch(clone, Branch{Name: "a:b", Remote: "origin/a:b"}); err == nil {
+		t.Error("FetchBranch accepted a name with a colon in it")
+	}
+}
+
+// TestRemoteBranchesUnreachable reports the remote it could not reach and
+// asks for nothing on the way.
+func TestRemoteBranchesUnreachable(t *testing.T) {
+	clone := filepath.Join(t.TempDir(), "clone")
+	gitRepo(t, clone)
+	if _, err := GitIn(clone, "remote", "add", "origin", filepath.Join(t.TempDir(), "gone")); err != nil {
+		t.Fatal(err)
+	}
+	bs, err := RemoteBranches(clone)
+	if err == nil || !strings.HasPrefix(err.Error(), "origin: ") || len(bs) != 0 {
+		t.Errorf("RemoteBranches = %+v, %v; want an error naming origin", bs, err)
+	}
+}
+
+func TestParseLsRemote(t *testing.T) {
+	out := "abc\trefs/heads/main\nabd\trefs/heads/feat/x\nabe\trefs/tags/v1\ngarbage\n"
+	got := parseLsRemote(out, "up")
+	want := []Branch{
+		{Name: "main", Remote: "up/main", Unfetched: true},
+		{Name: "feat/x", Remote: "up/feat/x", Unfetched: true},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("parseLsRemote = %+v, want %+v", got, want)
+	}
+}
