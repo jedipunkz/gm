@@ -109,7 +109,7 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
 
 <Base
   title="gm — jump to any repository"
-  description="A ghq-style repository manager with a built-in fuzzy finder, frecency ranking and first-class git worktrees."
+  description="A ghq-style repository manager written in Rust, with a built-in fuzzy finder, frecency ranking and first-class git worktrees."
 >
   <header class="nav">
     <div class="container nav-inner">
@@ -131,7 +131,7 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
   <main id="top">
     <section class="hero">
       <div class="container">
-        <p class="eyebrow">ghq-style repository manager · built-in fuzzy finder</p>
+        <p class="eyebrow">ghq-style repository manager · built-in fuzzy finder · written in Rust</p>
         <h1>Jump to any repository.<br /><span class="grad">Or any of its worktrees.</span></h1>
         <p class="lead hero-lead">
           <code>gm</code> clones into one predictable <code>host/user/repo</code> tree, and <kbd>Ctrl</kbd>+<kbd>G</kbd>{" "}
@@ -187,10 +187,10 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
         <ol class="steps">
           <li>
             <div class="step-head"><span class="step-n">1</span><h3>Install the binary</h3></div>
-            <p class="step-text">Homebrew on macOS or Linux downloads a prebuilt binary; no Go needed.</p>
+            <p class="step-text">Homebrew on macOS or Linux downloads a prebuilt binary; no Rust needed.</p>
             <Code code="brew install jedipunkz/gm/gm" />
-            <p class="step-text">Or build from source with Go 1.27 or newer:</p>
-            <Code code="go install github.com/jedipunkz/gm@latest" />
+            <p class="step-text">Or build from source with Rust 1.95 or newer:</p>
+            <Code code="cargo install --locked --git https://github.com/jedipunkz/gm" />
           </li>
           <li>
             <div class="step-head"><span class="step-n">2</span><h3>Bind it to your shell</h3></div>

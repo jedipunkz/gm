@@ -61,10 +61,19 @@ jobs:
           git tag -a "$TAG" -m "$TAG"
           git push origin "$TAG"
 
-      - uses: actions/setup-go@v7
+      # goreleaser builds every target with cargo-zigbuild, which needs zig
+      # and the Rust standard library for each target.
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          go-version-file: go.mod
-          cache: true
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,x86_64-apple-darwin,aarch64-apple-darwin
+
+      # Both pinned, so a release builds with the tools the last one did.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1
+
+      - name: Install cargo-zigbuild
+        run: cargo install --locked cargo-zigbuild@0.23.4
 
       - uses: goreleaser/goreleaser-action@v7
         with:

@@ -1,19 +1,18 @@
-# Gate on the three things that can break the build: the tests, the linters,
+# Gate on the three things that can break the build: the tests, the linter,
 # and the formatting. One job, because a small repository spends more time
 # setting a runner up than it does running these.
 name: CI
 
 on:
   pull_request:
-    paths: &go
-      - "**.go"
-      - go.mod
-      - go.sum
-      - .golangci.yml
+    paths: &rust
+      - "src/**"
+      - Cargo.toml
+      - Cargo.lock
       - .github/workflows/pr.yaml
   push:
     branches: [main]
-    paths: *go
+    paths: *rust
 
 permissions:
   contents: read
@@ -29,27 +28,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v7
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          go-version-file: go.mod
-          # Caches the module downloads and the build cache, keyed on go.sum.
-          cache: true
+          components: clippy, rustfmt
 
-      - name: gofmt
-        run: |
-          unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "not gofmt'd:"
-            echo "$unformatted"
-            exit 1
-          fi
+      # Caches the registry and the build, keyed on Cargo.lock.
+      - uses: Swatinem/rust-cache@v2
 
-      - name: go vet
-        run: go vet ./...
+      - name: cargo fmt
+        run: cargo fmt --check
 
-      - name: go test
-        run: go test ./...
+      - name: cargo clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
 
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.13.2
+      - name: cargo test
+        run: cargo test --locked

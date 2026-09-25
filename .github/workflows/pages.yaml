@@ -1,5 +1,5 @@
 # Builds the Astro site in site/ and publishes it to GitHub Pages. The site
-# reads the finder's themes from internal/finder/theme.go at build time, so a
+# reads the finder's themes from src/finder/theme.rs at build time, so a
 # change there redeploys it too.
 name: Pages
 
@@ -8,12 +8,12 @@ on:
     branches: [main]
     paths:
       - site/**
-      - internal/finder/theme.go
+      - src/finder/theme.rs
       - .github/workflows/pages.yaml
   pull_request:
     paths:
       - site/**
-      - internal/finder/theme.go
+      - src/finder/theme.rs
       - .github/workflows/pages.yaml
   workflow_dispatch:
 
