@@ -93,8 +93,11 @@ impl Model {
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
                 Change::RemoveWorktree => done(
-                    repo::remove_worktree(&a.repo_at, &a.dir, a.force)
-                        .map(|_| (a.dir.clone(), String::new())),
+                    match tree.at(&a.repo_at) {
+                        None => Err(err!("{} is not under any root", a.repo_at)),
+                        Some(r) => repo::remove_worktree_and_prune(&r, &a.dir, a.force),
+                    }
+                    .map(|_| (a.dir.clone(), String::new())),
                 ),
                 Change::None => None,
             }
