@@ -87,10 +87,11 @@ impl Model {
                     repo::check_out_pull_request(&gh, &repo_at, &a.dir, n)?;
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
-                Change::RemoveWorktree => done(
-                    repo::remove_worktree(&repo_at, &a.dir, a.force)
+                Change::RemoveWorktree => done(match tree.at(&repo_at) {
+                    None => Err(err!("{repo_at} is not under any root")),
+                    Some(r) => repo::remove_worktree_and_prune(&r, &a.dir, a.force)
                         .map(|_| (a.dir.clone(), String::new())),
-                ),
+                }),
                 Change::None => None,
             }
         }))

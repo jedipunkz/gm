@@ -304,6 +304,14 @@ pub fn prune_empty_parents(root: &str, mut dir: String) {
     }
 }
 
+/// remove_worktree_and_prune takes a checkout away, then removes any empty
+/// directories it leaves under the root's worktree directory.
+pub fn remove_worktree_and_prune(r: &Repo, dir: &str, force: bool) -> Result<()> {
+    remove_worktree(&r.path(), dir, force)?;
+    prune_empty_parents(&paths::join(&r.root, WORKTREE_ROOT), paths::dir(dir));
+    Ok(())
+}
+
 /// remove_all is os.RemoveAll: what is not there is already removed.
 fn remove_all(p: &str) -> Result<()> {
     match std::fs::remove_dir_all(p) {

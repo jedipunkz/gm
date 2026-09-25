@@ -1125,6 +1125,31 @@ fn remove_worktree_forces_what_it_warned_about() {
 }
 
 #[test]
+fn removing_worktree_prunes_empty_host_directory() {
+    let root = TempDir::new();
+    let rs = repos(&root.path(), &["github.com/acme/alpha"]);
+    let r = &rs[0];
+    git_repo(&r.path());
+    let tree = Tree {
+        roots: vec![root.path()],
+    };
+    let dir = tree.worktree_dir(r, "feat/login");
+    repo::add_worktree(&r.path(), &dir, "feat/login").unwrap();
+
+    let mut m = new_model(&rs, "");
+    m.repo_at = r.path();
+    let msg = answer(vec![m.perform(Pending {
+        kind: Change::RemoveWorktree,
+        dir,
+        ..Default::default()
+    })])
+    .unwrap();
+
+    assert!(matches!(msg, Msg::Done(Done { err: None, .. })));
+    assert!(!exists(&root.join(".worktrees/github.com")));
+}
+
+#[test]
 fn remove_says_nothing_without_worktrees() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");

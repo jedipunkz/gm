@@ -700,7 +700,7 @@ impl App<'_> {
             writeln!(self.err, "skipped")?;
             return Ok(());
         }
-        repo::remove_worktree(&r.path(), &dir, dirty)?;
+        repo::remove_worktree_and_prune(&r, &dir, dirty)?;
         writeln!(self.err, "removed  {dir}")?;
         Ok(())
     }
@@ -1593,6 +1593,7 @@ mod tests {
         });
         gone.res.unwrap();
         assert!(!exists(&dir));
+        assert!(!exists(&root.join(".worktrees/github.com")));
     }
 
     // gm rm takes the worktrees along with --force, so the work in each has
