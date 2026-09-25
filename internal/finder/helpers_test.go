@@ -158,8 +158,8 @@ func realRepo(t *testing.T, dir string) {
 }
 
 // answer runs a command the way bubbletea would and returns the message that
-// carries the work's result: a batch is opened, and the spinner's ticks, which
-// only redraw, are skipped.
+// carries the work's result: a batch is opened, and the spinner's ticks and
+// the details pane's probes, which only redraw, are skipped.
 func answer(cmd tea.Cmd) tea.Msg {
 	if cmd == nil {
 		return nil
@@ -172,7 +172,7 @@ func answer(cmd tea.Cmd) tea.Msg {
 			}
 		}
 		return nil
-	case spinner.TickMsg:
+	case spinner.TickMsg, probeMsg:
 		return nil
 	default:
 		return msg

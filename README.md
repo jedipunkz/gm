@@ -102,10 +102,15 @@ Other keys are ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U`, …), except
 
 - Shows local branches, plus remote branches with no local branch of the same
   name (e.g. `origin/feat/login`). Newest commit at the bottom.
-- Remote branches are as of the last `git fetch`. `gm` does not fetch.
+- Branches a remote has that the last `git fetch` did not bring are added at
+  the top once the remotes answer (`git ls-remote`, in the background). Nothing
+  is fetched until you pick one. No `gh` is needed: git uses its own
+  credentials (ssh agent, credential helper). `gm` never prompts for a
+  password; a remote that needs one is skipped and named on the hint line.
 - `Enter` on a branch that is already checked out goes to its worktree.
 - `Enter` on any other branch creates the worktree without asking, then goes
-  there. A remote branch becomes a local branch that tracks it.
+  there. A remote branch becomes a local branch that tracks it; an unfetched
+  one is fetched first (that branch only).
 
 ### Pull request list
 

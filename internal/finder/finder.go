@@ -166,8 +166,10 @@ type model struct {
 	// repo.DirtyMap in every real run.
 	worktreesOf func(dir string) ([]repo.Worktree, error)
 	branchesOf  func(dir string) ([]repo.Branch, error)
-	prsOf       func(dir string) ([]repo.PullRequest, error)
-	dirtyOf     func(paths []string) map[string]bool
+	// remoteBranchesOf is repo.RemoteBranches, the other seam for the branch list.
+	remoteBranchesOf func(dir string) ([]repo.Branch, error)
+	prsOf            func(dir string) ([]repo.PullRequest, error)
+	dirtyOf          func(paths []string) map[string]bool
 }
 
 func newModel(tree *repo.Tree, repos []repo.Repo, hist *repo.History, theme Theme, keys Keys) model {
@@ -204,20 +206,21 @@ func newModel(tree *repo.Tree, repos []repo.Repo, hist *repo.History, theme Them
 	in.SetStyles(ts)
 
 	m := model{
-		all:         items,
-		input:       in,
-		status:      map[string]repo.Status{},
-		probing:     map[string]bool{},
-		spin:        spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(st.HelpKey)),
-		st:          st,
-		w:           80,
-		h:           24,
-		keys:        keys,
-		tree:        tree,
-		worktreesOf: repo.Worktrees,
-		branchesOf:  repo.Branches,
-		prsOf:       repo.PullRequests,
-		dirtyOf:     repo.DirtyMap,
+		all:              items,
+		input:            in,
+		status:           map[string]repo.Status{},
+		probing:          map[string]bool{},
+		spin:             spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(st.HelpKey)),
+		st:               st,
+		w:                80,
+		h:                24,
+		keys:             keys,
+		tree:             tree,
+		worktreesOf:      repo.Worktrees,
+		branchesOf:       repo.Branches,
+		remoteBranchesOf: repo.RemoteBranches,
+		prsOf:            repo.PullRequests,
+		dirtyOf:          repo.DirtyMap,
 	}
 	m.filter()
 	return m
@@ -308,6 +311,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		return m, m.loadStatus()
+
+	case remoteBranchesMsg:
+		return m.addRemoteBranches(msg)
 
 	case prsMsg:
 		return m.showPRs(msg)

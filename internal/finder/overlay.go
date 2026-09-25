@@ -41,6 +41,7 @@ type pending struct {
 	arg    string   // the path to remove, the reference to create, the branch to check out
 	dir    string   // where a worktree will go, or which one goes away
 	from   string   // the remote branch a new branch starts at, "origin/feature"
+	fetch  bool     // from has to be fetched first: only the remote has it
 	title  string   // "remove", "create worktree"
 	detail []string // what it will do, a line each
 	force  bool     // there is work in it and the user has been told
@@ -95,6 +96,11 @@ func (m model) perform(a pending) tea.Cmd {
 			return done(r.Path(), r.Rel, nil)
 
 		case changeAddWorktree, changeCheckOut:
+			if a.fetch {
+				if err := repo.FetchBranch(repoAt, repo.Branch{Name: a.arg, Remote: a.from}); err != nil {
+					return done("", "", err)
+				}
+			}
 			if err := repo.AddWorktreeFrom(repoAt, a.dir, a.arg, a.from); err != nil {
 				return done("", "", err)
 			}

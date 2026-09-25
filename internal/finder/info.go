@@ -39,6 +39,10 @@ func (m model) infoLines(w int) []string {
 	case modeBranches:
 		field("branch", it.label, m.st.Name)
 		field("repository", m.origin, m.st.Dim)
+		if it.branch.Unfetched {
+			field("worktree", "not fetched yet; enter fetches it and makes one", m.st.Dim)
+			return out
+		}
 		if it.path == "" {
 			field("worktree", "none yet; enter makes one", m.st.Dim)
 			return out
