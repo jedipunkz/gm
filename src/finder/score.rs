@@ -73,8 +73,25 @@ pub fn match_score(text: &str, idx: &[usize]) -> f64 {
 /// occurs literally. A typed substring is what the user meant, so it wins over
 /// any subsequence the fuzzy matcher would piece together from elsewhere.
 pub fn substring_match(text: &str, lower_query: &str) -> Option<Vec<usize>> {
-    let at = text.to_lowercase().find(lower_query)?;
-    Some(lower_query.char_indices().map(|(i, _)| at + i).collect())
+    if text.is_ascii() {
+        let at = text.to_lowercase().find(lower_query)?;
+        return Some(lower_query.char_indices().map(|(i, _)| at + i).collect());
+    }
+
+    let query: Vec<char> = lower_query.chars().collect();
+    if query.is_empty() {
+        return Some(Vec::new());
+    }
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    chars
+        .windows(query.len())
+        .find(|window| {
+            window
+                .iter()
+                .zip(&query)
+                .all(|((_, candidate), query)| equal_fold(*candidate, *query))
+        })
+        .map(|window| window.iter().map(|&(offset, _)| offset).collect())
 }
 
 /// Match is one candidate the fuzzy matcher kept.
@@ -198,6 +215,24 @@ mod tests {
             run_score > scattered_score,
             "{run_score} <= {scattered_score}"
         );
+    }
+
+    #[test]
+    fn substring_match_returns_original_offsets_after_unicode_case_mapping() {
+        for (text, expected) in [
+            ("İmatch", vec![2, 3, 4, 5, 6]),
+            ("Kmatch", vec![3, 4, 5, 6, 7]),
+        ] {
+            let positions = substring_match(text, "match").unwrap();
+
+            assert_eq!(positions, expected);
+            assert!(
+                positions
+                    .iter()
+                    .all(|&position| text.is_char_boundary(position))
+            );
+            let _ = match_score(text, &positions);
+        }
     }
 
     #[test]
