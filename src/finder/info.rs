@@ -231,11 +231,12 @@ pub fn wrap_segs(segs: &[Seg], w: usize, indent: &str) -> Vec<Line<'static>> {
     }
     // Flattening to chars keeps the two concerns apart: where the line breaks
     // falls out of the text, and which style each char carries is remembered
-    // alongside it.
-    let (mut chars, mut owner) = (Vec::new(), Vec::new());
+    // alongside it. Widths are terminal cells, not Unicode scalar counts.
+    let (mut chars, mut widths, mut owner) = (Vec::new(), Vec::new(), Vec::new());
     for (i, s) in segs.iter().enumerate() {
         for c in s.text.chars() {
             chars.push(c);
+            widths.push(Span::raw(c.to_string()).width());
             owner.push(i);
         }
     }
@@ -262,15 +263,30 @@ pub fn wrap_segs(segs: &[Seg], w: usize, indent: &str) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let (mut start, mut pad) = (0, "");
     while start < chars.len() {
-        let avail = w.saturating_sub(pad.chars().count()).max(1);
-        if chars.len() - start <= avail {
+        let avail = w.saturating_sub(Span::raw(pad).width()).max(1);
+        let mut end = start;
+        let mut used = 0;
+        while end < chars.len() {
+            let char_width = widths[end];
+            if end > start && used + char_width > avail {
+                break;
+            }
+            // A wide character cannot fit in the remaining cells on an
+            // otherwise empty line, so keep it whole on its own line.
+            if end == start && char_width > avail {
+                end += 1;
+                break;
+            }
+            used += char_width;
+            end += 1;
+        }
+        if end == chars.len() {
             lines.push(render(pad, start, chars.len()));
             break;
         }
         // Break at the last space that fits; failing that, mid-word.
-        let mut end = start + avail;
         let mut next = end;
-        if let Some(brk) = (start + 1..=end).rev().find(|&i| chars[i] == ' ') {
+        if let Some(brk) = (start + 1..end).rev().find(|&i| chars[i] == ' ') {
             (end, next) = (brk, brk + 1);
         }
         lines.push(render(pad, start, end));
