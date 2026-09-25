@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::process::Command;
 
 use super::git::{exit_error, git_message};
@@ -38,11 +39,22 @@ impl PullRequest {
 /// PR_LIMIT is how many open pull requests gh is asked for, newest first.
 const PR_LIMIT: &str = "100";
 
+fn gh_command(program: &OsStr) -> Command {
+    let command = Command::new(program);
+    #[cfg(test)]
+    let command = {
+        let mut command = command;
+        super::git::isolate_git_config(&mut command);
+        command
+    };
+    command
+}
+
 /// pull_requests asks gh for the repository's open pull requests. gh talks to
 /// GitHub, so this is slow next to git and fails without a network, gh or a
 /// login; the error says which.
 pub fn pull_requests(dir: &str) -> Result<Vec<PullRequest>> {
-    let out = Command::new("gh")
+    let out = gh_command(OsStr::new("gh"))
         .args([
             "pr", "list", "--state", "open", "--limit", PR_LIMIT, "--json",
         ])
@@ -91,7 +103,7 @@ pub fn parse_pull_requests(out: &[u8]) -> Result<Vec<PullRequest>> {
 pub fn check_out_pull_request(gh: &str, repo_dir: &str, dir: &str, number: u64) -> Result<()> {
     std::fs::create_dir_all(paths::dir(dir))?;
     // Everything gh prints stays off the terminal: the finder is drawn there.
-    let out = Command::new(gh)
+    let out = gh_command(OsStr::new(gh))
         .args(["pr", "checkout", &number.to_string(), "--worktree", dir])
         .current_dir(repo_dir)
         .env("GH_PROMPT_DISABLED", "1")
