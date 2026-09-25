@@ -745,17 +745,53 @@ impl App<'_> {
                 }
                 Plan::Move(dst) => dst,
             };
+            // Each checkout's .git file names the repository's path, so they
+            // have to be asked about before it moves and pointed at the new
+            // place after. One whose directory is already gone has nothing
+            // to point.
+            let wts: Vec<repo::Worktree> = repo::other_worktrees_of(&src)
+                .into_iter()
+                .filter(|w| paths::exists(&w.path))
+                .collect();
+            let along = |wts: &[repo::Worktree]| {
+                let labels: Vec<String> = wts.iter().map(repo::Worktree::label).collect();
+                format!(
+                    "{}: {}",
+                    plural(wts.len(), "worktree", "worktrees"),
+                    labels.join(", ")
+                )
+            };
             if p.on("dry-run") {
                 writeln!(self.err, "would move {src} -> {dst}")?;
+                if !wts.is_empty() {
+                    writeln!(self.err, "  and repair its {}", along(&wts))?;
+                }
                 continue;
+            }
+            if !wts.is_empty() {
+                writeln!(self.err, "its {} will be repaired", along(&wts))?;
             }
             if !p.on("y") && !self.confirm(&format!("move {src} -> {dst}?")) {
                 writeln!(self.err, "skipped")?;
                 continue;
             }
+            // Worked out before the move: src has to exist to be resolved.
+            let dirs: Vec<String> = wts
+                .iter()
+                .map(|w| moved_along(&w.path, &src, &dst))
+                .collect();
             move_dir(&src, &dst)?;
             self.bump(&dst);
             writeln!(self.err, "moved    {src} -> {dst}")?;
+            if let Err(e) = repo::repair_worktrees(&dst, &dirs) {
+                return Err(err!(
+                    "moved {src} -> {dst}, but its worktrees still point at the old place ({e}); \
+                     run `git -C {dst} worktree repair <worktree>...`"
+                ));
+            }
+            if !wts.is_empty() {
+                writeln!(self.err, "repaired {}", along(&wts))?;
+            }
             writeln!(self.out, "{dst}")?;
         }
         Ok(())
@@ -959,6 +995,21 @@ fn look_in(dir: &str) -> Result<()> {
         return Err(repo::exit_error(&status));
     }
     Ok(())
+}
+
+/// moved_along is where a checkout will be once its repository has moved from
+/// src to dst: one kept inside the repository's directory goes with it. git
+/// reports the resolved path, so src is compared resolved as well, which is
+/// why this has to run before the move.
+fn moved_along(path: &str, src: &str, dst: &str) -> String {
+    let resolved = std::fs::canonicalize(src)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    [src, resolved.as_str()]
+        .iter()
+        .filter(|s| !s.is_empty())
+        .find_map(|s| path.strip_prefix(&format!("{}/", s.trim_end_matches('/'))))
+        .map_or_else(|| path.to_string(), |rest| paths::join(dst, rest))
 }
 
 /// move_dir renames src to dst, falling back to mv across filesystems.
@@ -1358,6 +1409,52 @@ mod tests {
         assert!(!r.err.contains("already"), "{}", r.err);
         // --dry-run moves nothing.
         assert!(exists(&good));
+    }
+
+    // A worktree's .git file names the repository's path, so moving the
+    // repository alone leaves every checkout answering "not a git repository".
+    // Both kinds are repaired: one elsewhere, and one kept inside the
+    // repository's directory, which moves with it.
+    #[test]
+    fn migrate_repairs_the_worktrees() {
+        let base = TempDir::new();
+        let root = base.join("tree");
+        mkdir(&root);
+        let src = base.join("src/alpha");
+        git_repo(&src);
+        git(
+            &src,
+            &["remote", "add", "origin", "https://github.com/acme/alpha"],
+        );
+        let outside = base.join("wt/login");
+        repo::add_worktree(&src, &outside, "feat/login").unwrap();
+        repo::add_worktree(&src, &paths::join(&src, "inner"), "fix/inner").unwrap();
+
+        // --dry-run says so, and touches nothing.
+        let dry = run_in(&tree(&root), "", Config::default(), |a| {
+            a.migrate(&args(&["--dry-run", &src]))
+        });
+        dry.res.unwrap();
+        // In git's order, which is not the order they were made in.
+        for want in ["and repair its 2 worktrees: ", "feat/login", "fix/inner"] {
+            assert!(dry.err.contains(want), "{want:?}:\n{}", dry.err);
+        }
+        assert!(exists(&src));
+
+        let r = run_in(&tree(&root), "", Config::default(), |a| {
+            a.migrate(&args(&["-y", &src]))
+        });
+        r.res.unwrap();
+        let dst = paths::join(&root, "github.com/acme/alpha");
+        assert_eq!(r.out.trim(), dst);
+        assert!(r.err.contains("repaired 2 worktrees"), "{}", r.err);
+        for wt in [outside, paths::join(&dst, "inner")] {
+            assert!(
+                repo::git_in(&wt, &["status", "--porcelain"]).is_ok(),
+                "{wt} is still broken"
+            );
+        }
+        assert_eq!(repo::other_worktrees_of(&dst).len(), 2);
     }
 
     // Naming a directory is a claim that it should move, so a problem with it
