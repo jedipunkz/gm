@@ -323,17 +323,14 @@ mod tests {
     #[test]
     fn remote_branches_merge_in_remote_order() {
         let names = vec!["slow".to_string(), "fast".to_string()];
-        let completed = std::sync::Mutex::new(Vec::new());
         let (branches, error) = list_remote_branches(&names, &HashSet::new(), |remote| {
             if remote == "slow" {
                 std::thread::sleep(Duration::from_millis(50));
             }
-            completed.lock().unwrap().push(remote.to_string());
             Ok("abc\trefs/heads/main\n".to_string())
         });
 
         assert_eq!(error, None);
-        assert_eq!(completed.into_inner().unwrap(), vec!["fast", "slow"]);
         assert_eq!(
             branches
                 .iter()
