@@ -225,8 +225,10 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
           <kbd>Ctrl</kbd>+<kbd>W</kbd> swaps the repository list for the git worktrees of the repository under the cursor, and
           <kbd>Ctrl</kbd>+<kbd>L</kbd> for its branches; the same key swaps it back. Going back keeps the query, the cursor
           and the highlights as they were. The branch list holds the local branches and the remote ones with no local
-          namesake, as the last fetch left them. <kbd>Enter</kbd> on a branch goes to its worktree, making one first when
-          there is none — a remote branch becomes a local one that tracks it.
+          namesake; branches a remote has that the last fetch did not bring join the top once <code>git ls-remote</code>
+          answers in the background, with git's own credentials and no <code>gh</code>. <kbd>Enter</kbd> on a branch goes to
+          its worktree, making one first when there is none — a remote branch becomes a local one that tracks it, fetched
+          first if it has not been.
           <kbd>Ctrl</kbd>+<kbd>J</kbd> lists the open pull requests, drafts marked, through the
           <a href="https://cli.github.com/">GitHub CLI</a>; <kbd>Enter</kbd> has <code>gh pr checkout --worktree</code> make
           the worktree. While gm waits on git or GitHub, the line under the prompt shows a spinner, what it is waiting on
