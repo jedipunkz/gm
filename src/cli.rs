@@ -1278,6 +1278,30 @@ mod tests {
         );
     }
 
+    // A reference with ".." in it is refused before anything is made, so no
+    // directory appears outside the root.
+    #[test]
+    fn get_and_create_refuse_to_leave_the_root() {
+        let base = TempDir::new();
+        let root = base.join("root");
+        mkdir(&root);
+        for cmd in ["get", "create"] {
+            let r = run_in(&tree(&root), "", Config::default(), |a| {
+                let reference = args(&["example.com/../../evil"]);
+                if cmd == "get" {
+                    a.get(&reference)
+                } else {
+                    a.create(&reference)
+                }
+            });
+            assert!(r.res.is_err(), "gm {cmd} accepted it");
+            assert!(
+                !exists(&base.join("evil")),
+                "gm {cmd} made a directory outside the root"
+            );
+        }
+    }
+
     fn init_repo(dir: &str, origin: &str) -> String {
         mkdir(dir);
         git(dir, &["init", "-q"]);
@@ -1301,6 +1325,8 @@ mod tests {
             "git@github.com:acme/also.git",
         );
         let no_remote = init_repo(&base.join("src/noremote"), "");
+        // An origin that would put it outside the root is not a place to go.
+        let escaping = init_repo(&base.join("src/escaping"), "https://github.com/../../evil");
         init_repo(
             &paths::join(&root, "github.com/acme/already"),
             "https://github.com/acme/already",
@@ -1318,6 +1344,7 @@ mod tests {
             format!("{good} -> {}", paths::join(&root, "github.com/acme/good")),
             format!("{also} -> {}", paths::join(&root, "github.com/acme/also")),
             format!("{no_remote}: has no origin remote"),
+            format!("{escaping}: has an origin gm cannot read"),
             format!("{linked}: is a worktree or submodule"),
         ] {
             assert!(

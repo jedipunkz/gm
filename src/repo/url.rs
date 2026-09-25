@@ -94,6 +94,14 @@ pub fn normalize_url(reference: &str, ssh: bool) -> Result<Url> {
     if u.hostname().is_empty() || u.path.trim_matches('/').is_empty() {
         return Err(err!("cannot make a repository URL out of {r:?}"));
     }
+    // The host and the path become directories under the root, and a "." or
+    // ".." among them would put the clone somewhere else, outside the root
+    // included. Every command that turns a reference into a place comes
+    // through here, so this is the one check they need.
+    let segments = std::iter::once(u.hostname()).chain(u.path.split('/'));
+    if segments.into_iter().any(|seg| seg == "." || seg == "..") {
+        return Err(err!("{reference:?} has a \".\" or \"..\" in its path"));
+    }
     if ssh && u.scheme == "https" {
         u.scheme = "ssh".into();
         u.user = "git".into();
@@ -264,6 +272,32 @@ mod tests {
         for bad in ["", "   ", "https://github.com"] {
             assert!(normalize_url(bad, false).is_err(), "{bad:?}");
         }
+    }
+
+    // A "." or ".." in the host or the path would put the repository
+    // somewhere other than host/user/repo under the root, or outside the root
+    // altogether, once the path is joined onto it.
+    #[test]
+    fn normalize_url_refuses_dot_segments() {
+        for bad in [
+            "github.com/../../evil",
+            "example.com/u/../../../evil",
+            "u/..",
+            "..",
+            "https://github.com/u/./r",
+            "https://../u/r",
+            "git@github.com:../../evil.git",
+            "ssh://git@github.com/u/../../evil",
+        ] {
+            assert!(normalize_url(bad, false).is_err(), "{bad:?} was accepted");
+        }
+        // Dots inside a name are only a name.
+        let u = normalize_url("u/foo..bar", false).unwrap();
+        assert_eq!(rel_path_of(&u), "github.com/u/foo..bar");
+        assert_eq!(
+            rel_path_of(&normalize_url("u/.dotfiles", false).unwrap()),
+            "github.com/u/.dotfiles"
+        );
     }
 
     #[test]
