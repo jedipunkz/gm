@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
@@ -121,23 +122,51 @@ fn git_config(dir: &str, key: &str) -> String {
 /// beside what the others said.
 pub fn remote_branches(dir: &str) -> (Vec<Branch>, Option<Error>) {
     let (names, _) = remotes(dir);
-    let fetched: Vec<String> = git_in(
+    let fetched: HashSet<String> = git_in(
         dir,
         &["for-each-ref", "--format=%(refname:short)", "refs/remotes"],
     )
-    .map(|out| out.split('\n').map(str::to_string).collect())
+    .map(|out| out.lines().map(str::to_string).collect())
     .unwrap_or_default();
+
+    list_remote_branches(&names, &fetched, |remote| {
+        git_remote(LIST_TIMEOUT, dir, &["ls-remote", "--heads", remote])
+    })
+}
+
+/// list_remote_branches asks each remote independently, then joins and merges
+/// the answers in configuration order so both branches and errors are stable.
+fn list_remote_branches<F>(
+    names: &[String],
+    fetched: &HashSet<String>,
+    query: F,
+) -> (Vec<Branch>, Option<Error>)
+where
+    F: Fn(&str) -> Result<String> + Sync,
+{
+    let results = std::thread::scope(|scope| {
+        let query = &query;
+        let handles: Vec<_> = names
+            .iter()
+            .map(|remote| scope.spawn(move || query(remote)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("remote query thread panicked"))
+            .collect::<Vec<_>>()
+    });
+
     let mut list = Vec::new();
     let mut first = None;
-    for r in &names {
-        match git_remote(LIST_TIMEOUT, dir, &["ls-remote", "--heads", r]) {
+    for (remote, result) in names.iter().zip(results) {
+        match result {
             Ok(out) => list.extend(
-                parse_ls_remote(&out, r)
+                parse_ls_remote(&out, remote)
                     .into_iter()
                     .filter(|b| !fetched.contains(&b.remote)),
             ),
             Err(e) => {
-                first.get_or_insert(err!("{r}: {e}"));
+                first.get_or_insert(err!("{remote}: {e}"));
             }
         }
     }
@@ -289,5 +318,67 @@ mod tests {
             bs.is_empty() && e.as_ref().is_some_and(|e| e.0.starts_with("origin: ")),
             "{bs:?} {e:?}"
         );
+    }
+
+    #[test]
+    fn remote_branches_merge_in_remote_order() {
+        let names = vec!["slow".to_string(), "fast".to_string()];
+        let (branches, error) = list_remote_branches(&names, &HashSet::new(), |remote| {
+            if remote == "slow" {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Ok("abc\trefs/heads/main\n".to_string())
+        });
+
+        assert_eq!(error, None);
+        assert_eq!(
+            branches
+                .iter()
+                .map(|branch| branch.remote.as_str())
+                .collect::<Vec<_>>(),
+            vec!["slow/main", "fast/main"]
+        );
+    }
+
+    #[test]
+    fn remote_branches_filter_fetched_names() {
+        let names = vec!["origin".to_string(), "upstream".to_string()];
+        let fetched = HashSet::from(["origin/already".to_string(), "upstream/already".to_string()]);
+        let (branches, error) = list_remote_branches(&names, &fetched, |_| {
+            Ok("abc\trefs/heads/already\ndef\trefs/heads/new\n".to_string())
+        });
+
+        assert_eq!(error, None);
+        assert_eq!(
+            branches
+                .iter()
+                .map(|branch| branch.remote.as_str())
+                .collect::<Vec<_>>(),
+            vec!["origin/new", "upstream/new"]
+        );
+    }
+
+    #[test]
+    fn remote_branches_keep_successes_and_name_first_unreachable_remote() {
+        let names = vec![
+            "first".to_string(),
+            "working".to_string(),
+            "last".to_string(),
+        ];
+        let (branches, error) =
+            list_remote_branches(&names, &HashSet::new(), |remote| match remote {
+                "first" | "last" => Err(Error("unreachable".into())),
+                "working" => Ok("abc\trefs/heads/feature\n".to_string()),
+                _ => unreachable!(),
+            });
+
+        assert_eq!(
+            branches
+                .iter()
+                .map(|branch| branch.remote.as_str())
+                .collect::<Vec<_>>(),
+            vec!["working/feature"]
+        );
+        assert_eq!(error.unwrap().0, "first: unreachable");
     }
 }
