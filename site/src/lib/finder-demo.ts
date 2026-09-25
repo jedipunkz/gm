@@ -1,5 +1,5 @@
-// The browser half of the finder demo. It follows internal/finder closely
-// enough to show how gm behaves — the ranking is a port of score.go and the
+// The browser half of the finder demo. It follows src/finder closely
+// enough to show how gm behaves — the ranking is a port of score.rs and the
 // list hangs from the prompt the same way — but it only ever moves between
 // rows of sample data: nothing is cloned, created, removed or opened.
 import type { DemoCommit, DemoRepo } from "./demo";
@@ -20,7 +20,7 @@ interface Item {
   commits: DemoCommit[];
 }
 
-// ---- score.go ----------------------------------------------------------
+// ---- score.rs ----------------------------------------------------------
 
 const bonusBoundary = 8;
 const bonusConsecutive = 6;
@@ -84,7 +84,7 @@ function subsequence(text: string, lowerQuery: string): number[] | null {
   return out;
 }
 
-// ---- command.go ---------------------------------------------------------
+// ---- command.rs ---------------------------------------------------------
 
 const COMMANDS: { name: string; arg: string; what: string }[] = [
   { name: "/help", arg: "", what: "show this list" },

@@ -35,14 +35,14 @@ Deliberately not implemented:
 ## 📋 Requirements
 
 - `git` on `$PATH`
-- Go 1.27 or newer, only to build it yourself
+- Rust 1.95 or newer, only to build it yourself
 - A true-color terminal, for the finder's themes to look as intended
 
 ## 📦 Install
 
 ```sh
-brew install jedipunkz/gm/gm                # macOS / Linux, prebuilt binary, no Go needed
-go install github.com/jedipunkz/gm@latest   # from source, needs Go
+brew install jedipunkz/gm/gm                                  # macOS / Linux, prebuilt binary, no Rust needed
+cargo install --locked --git https://github.com/jedipunkz/gm  # from source, needs Rust
 ```
 
 - The Homebrew formula comes from the [tap](https://github.com/jedipunkz/homebrew-gm).

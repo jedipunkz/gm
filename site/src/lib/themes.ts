@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// The finder's palettes are read from the Go source at build time, so the
+// The finder's palettes are read from the Rust source at build time, so the
 // theme picker on the site can never drift from what `gm` actually ships.
 // The build runs from site/, one level below the repository root.
-const SOURCE = resolve(process.cwd(), "../internal/finder/theme.go");
+const SOURCE = resolve(process.cwd(), "../src/finder/theme.rs");
 
 export interface Theme {
   name: string;
@@ -20,7 +20,7 @@ export interface Theme {
   Orange: string;
   Red: string;
   Light: boolean;
-  // Not part of theme.go: gm paints on the terminal's own background. These
+  // Not part of theme.rs: gm paints on the terminal's own background. These
   // are the backgrounds each palette's terminal scheme is designed for.
   Bg: string;
 }
@@ -38,25 +38,27 @@ const BACKGROUNDS: Record<string, string> = {
   dracula: "#282a36",
 };
 
+// Each colour as the site names it, and the field theme.rs keeps it in.
 const COLOR_KEYS = [
-  "BgHi", "Border", "Comment", "Fg", "Blue", "Cyan",
-  "Magenta", "Green", "Yellow", "Orange", "Red",
+  ["BgHi", "bg_hi"], ["Border", "border"], ["Comment", "comment"], ["Fg", "fg"],
+  ["Blue", "blue"], ["Cyan", "cyan"], ["Magenta", "magenta"], ["Green", "green"],
+  ["Yellow", "yellow"], ["Orange", "orange"], ["Red", "red"],
 ] as const;
 
 export const DEFAULT_THEME = "tokyonight";
 
 export function loadThemes(): Theme[] {
   const src = readFileSync(SOURCE, "utf8");
-  const block = src.match(/var themes = map\[string\]Theme\{([\s\S]*?)\n\}/);
-  if (!block) throw new Error(`no themes map in ${SOURCE}`);
+  const block = src.match(/pub const THEMES: &\[\(&str, Theme\)\] = &\[([\s\S]*?)\n\];/);
+  if (!block) throw new Error(`no THEMES table in ${SOURCE}`);
 
   const themes: Theme[] = [];
-  for (const m of block[1].matchAll(/"([\w-]+)":\s*\{([\s\S]*?)\n\t\}/g)) {
+  for (const m of block[1].matchAll(/\("([\w-]+)",\s*Theme\s*\{([\s\S]*?)\}\)/g)) {
     const [, name, body] = m;
-    const t: Record<string, string | boolean> = { name, Light: /Light:\s*true/.test(body) };
-    for (const key of COLOR_KEYS) {
-      const c = body.match(new RegExp(`\\b${key}:\\s*"(#[0-9a-fA-F]{6})"`));
-      if (!c) throw new Error(`theme ${name}: missing ${key} in ${SOURCE}`);
+    const t: Record<string, string | boolean> = { name, Light: /\blight:\s*LIGHT\b/.test(body) };
+    for (const [key, field] of COLOR_KEYS) {
+      const c = body.match(new RegExp(`\\b${field}:\\s*"(#[0-9a-fA-F]{6})"`));
+      if (!c) throw new Error(`theme ${name}: missing ${field} in ${SOURCE}`);
       t[key] = c[1];
     }
     t.Bg = BACKGROUNDS[name] ?? (t.Light ? "#fafafa" : "#16161e");
@@ -69,7 +71,7 @@ export function loadThemes(): Theme[] {
   );
 }
 
-// blend mirrors theme.go: mixes two #rrggbb colours, t running from a to b.
+// blend mirrors theme.rs: mixes two #rrggbb colours, t running from a to b.
 export function blend(a: string, b: string, t: number): string {
   const p = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   const [x, y] = [p(a), p(b)];
