@@ -89,6 +89,14 @@ impl Tree {
         paths::join(self.primary(), rel)
     }
 
+    /// existing_path finds a repository at rel under the first matching root.
+    pub fn existing_path(&self, rel: &str) -> Option<String> {
+        self.roots
+            .iter()
+            .map(|root| paths::join(root, rel))
+            .find(|path| is_repo(path))
+    }
+
     /// list walks every root and returns the repositories found.
     pub fn list(&self) -> Vec<Repo> {
         let mut repos = Vec::new();
