@@ -1,10 +1,42 @@
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::process::{Command, Output, Stdio};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::{Repo, Tree};
 use crate::{Error, Result, err, paths};
+
+/// git_command makes a Git command with a predictable configuration in tests.
+/// The environment belongs to this child only: tests run in parallel without
+/// changing the process environment they share.
+pub(crate) fn git_command() -> Command {
+    git_command_with(OsStr::new("git"))
+}
+
+/// git_command_with is git_command for a caller that supplies the executable.
+pub(crate) fn git_command_with(program: &OsStr) -> Command {
+    let command = Command::new(program);
+    #[cfg(test)]
+    let command = {
+        let mut command = command;
+        isolate_git_config(&mut command);
+        command
+    };
+    command
+}
+
+#[cfg(test)]
+pub(super) fn isolate_git_config(command: &mut Command) {
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("GIT_CONFIG_") {
+            command.env_remove(key);
+        }
+    }
+    command
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+}
 
 /// exit_error words a process that ran and failed the way Go's ExitError did.
 pub(crate) fn exit_error(out: &std::process::ExitStatus) -> Error {
@@ -17,7 +49,7 @@ pub(crate) fn exit_error(out: &std::process::ExitStatus) -> Error {
 /// git runs git with its output on the terminal, for the commands whose
 /// progress the user wants to watch.
 pub fn git(args: &[&str]) -> Result<()> {
-    let status = Command::new("git")
+    let status = git_command()
         .args(args)
         .stdout(Stdio::from(std::io::stderr()))
         .stderr(Stdio::from(std::io::stderr()))
@@ -32,10 +64,7 @@ pub fn git(args: &[&str]) -> Result<()> {
 /// the screen, and a stray "Preparing worktree" line would land on top of it.
 /// Whatever git printed comes back in the error instead of being shown.
 pub fn git_quiet(args: &[&str]) -> Result<()> {
-    let out = Command::new("git")
-        .args(args)
-        .stdin(Stdio::null())
-        .output()?;
+    let out = git_command().args(args).stdin(Stdio::null()).output()?;
     quiet_result(out)
 }
 
@@ -83,7 +112,7 @@ pub fn valid_branch(name: &str) -> bool {
     if name.is_empty() || name.starts_with('-') || name.contains("..") {
         return false;
     }
-    Command::new("git")
+    git_command()
         .args(["check-ref-format", "--branch", name])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -93,7 +122,7 @@ pub fn valid_branch(name: &str) -> bool {
 
 /// git_in runs git inside dir and returns its trimmed output.
 pub fn git_in(dir: &str, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
+    let out = git_command()
         .args(args)
         .current_dir(dir)
         .stdin(Stdio::null())
@@ -107,7 +136,7 @@ pub fn git_in(dir: &str, args: &[&str]) -> Result<String> {
 /// git_out is git_in for a caller that takes whatever git printed, failed or
 /// not: a repository with no commits still names its branch.
 fn git_out(dir: &str, args: &[&str]) -> String {
-    Command::new("git")
+    git_command()
         .args(args)
         .current_dir(dir)
         .stdin(Stdio::null())
@@ -118,7 +147,7 @@ fn git_out(dir: &str, args: &[&str]) -> String {
 
 /// git_config_all reads every value of a git config key, empty when unset.
 pub fn git_config_all(key: &str) -> Vec<String> {
-    let Ok(out) = Command::new("git")
+    let Ok(out) = git_command()
         .args(["config", "--path", "--get-all", key])
         .output()
     else {
@@ -567,7 +596,7 @@ impl Tree {
 /// branch_exists reports whether the repository already has this branch,
 /// which decides whether a worktree starts one or checks one out.
 pub fn branch_exists(dir: &str, branch: &str) -> bool {
-    Command::new("git")
+    git_command()
         .args([
             "-C",
             dir,
@@ -937,6 +966,99 @@ detached
         let bare = tmp.join("bare");
         git_repo(&bare);
         assert_eq!(remotes(&bare), (Vec::new(), String::new()));
+    }
+
+    #[test]
+    fn inherited_git_configuration_does_not_rewrite_remote_urls() {
+        const CHILD: &str = "GM_TEST_GIT_CONFIG_ISOLATION_CHILD";
+        const REPO: &str = "GM_TEST_GIT_CONFIG_ISOLATION_REPO";
+        const GH: &str = "GM_TEST_GIT_CONFIG_ISOLATION_GH";
+        const OUTPUT: &str = "GM_TEST_GIT_CONFIG_ISOLATION_OUTPUT";
+        if std::env::var_os(CHILD).is_some() {
+            let repo = std::env::var(REPO).unwrap();
+            assert_eq!(remotes(&repo).1, "git@github.com:acme/alpha.git");
+            let gh = std::env::var(GH).unwrap();
+            crate::repo::check_out_pull_request(&gh, &repo, &repo, 1).unwrap();
+            let output = std::fs::read_to_string(std::env::var(OUTPUT).unwrap()).unwrap();
+            assert_eq!(output.lines().count(), 2);
+            assert!(
+                output
+                    .lines()
+                    .all(|line| line.contains("git@github.com:acme/alpha.git"))
+            );
+            return;
+        }
+
+        let tmp = TempDir::new();
+        let repo = tmp.join("repo");
+        git_repo(&repo);
+        crate::testutil::git(
+            &repo,
+            &["remote", "add", "origin", "git@github.com:acme/alpha.git"],
+        );
+        let hostile = tmp.join("hostile.gitconfig");
+        write(
+            &hostile,
+            "[url \"https://rewritten.example/\"]\n\tinsteadOf = git@github.com:\n",
+        );
+        let gh = tmp.join("gh");
+        write(
+            &gh,
+            "#!/bin/sh\ngit -C \"$GM_TEST_GIT_CONFIG_ISOLATION_REPO\" remote -v > \"$GM_TEST_GIT_CONFIG_ISOLATION_OUTPUT\"\n",
+        );
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let output = tmp.join("remote-output");
+
+        let executable = std::env::current_exe().unwrap();
+        for mode in ["global", "system", "count"] {
+            let mut child = Command::new(&executable);
+            child
+                .args([
+                    "--exact",
+                    "repo::git::tests::inherited_git_configuration_does_not_rewrite_remote_urls",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env(REPO, &repo)
+                .env(GH, &gh)
+                .env(OUTPUT, &output);
+            for (key, _) in std::env::vars_os() {
+                if key.to_string_lossy().starts_with("GIT_CONFIG_") {
+                    child.env_remove(key);
+                }
+            }
+            child.env("GIT_CONFIG_NOSYSTEM", "1");
+            match mode {
+                "global" => {
+                    child.env("GIT_CONFIG_GLOBAL", &hostile);
+                }
+                "system" => {
+                    child
+                        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                        .env("GIT_CONFIG_SYSTEM", &hostile)
+                        .env("GIT_CONFIG_NOSYSTEM", "0");
+                }
+                "count" => {
+                    child
+                        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                        .env("GIT_CONFIG_COUNT", "1")
+                        .env(
+                            "GIT_CONFIG_KEY_0",
+                            "url.https://rewritten.example/.insteadOf",
+                        )
+                        .env("GIT_CONFIG_VALUE_0", "git@github.com:");
+                }
+                _ => unreachable!(),
+            }
+            let out = child.output().unwrap();
+            assert!(
+                out.status.success(),
+                "{mode} configuration changed Git behavior:\n{}\n{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
     }
 
     #[test]

@@ -192,7 +192,6 @@ pub mod testutil {
     //! What the tests share: temporary directories and real repositories.
 
     use std::path::PathBuf;
-    use std::process::Command;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// TempDir is a directory removed when the test is done with it.
@@ -235,7 +234,7 @@ pub mod testutil {
 
     /// git runs one git command in dir and fails the test if it does not work.
     pub fn git(dir: &str, args: &[&str]) -> String {
-        let out = Command::new("git")
+        let out = crate::repo::git_command()
             .args(["-c", "user.email=t@e.x", "-c", "user.name=t"])
             .args(args)
             .current_dir(dir)

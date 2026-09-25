@@ -167,7 +167,7 @@ fn is_host(s: &str) -> bool {
 
 /// self_name is the GitHub account used for one-word refs like "gm create foo".
 fn self_name() -> Result<String> {
-    if let Ok(out) = std::process::Command::new("git")
+    if let Ok(out) = crate::repo::git_command()
         .args(["config", "--get", "github.user"])
         .output()
     {

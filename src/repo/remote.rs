@@ -1,10 +1,12 @@
 use std::ffi::OsStr;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use super::git::{Branch, exit_error, git_in, git_message, remotes, valid_branch};
+use super::git::{
+    Branch, exit_error, git_command_with, git_in, git_message, remotes, valid_branch,
+};
 use crate::{Error, Result, err};
 
 /// Timeouts for the calls that go to a remote. Listing moves only ref names;
@@ -21,7 +23,7 @@ fn git_remote(timeout: Duration, dir: &str, args: &[&str]) -> Result<String> {
 }
 
 fn git_remote_with(program: &OsStr, timeout: Duration, dir: &str, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new(program);
+    let mut cmd = git_command_with(program);
     cmd.arg("-C")
         .arg(dir)
         .args(args)

@@ -8,6 +8,7 @@ mod pr;
 mod remote;
 mod url;
 
+pub(crate) use git::git_command;
 pub use git::*;
 pub use history::*;
 pub use pr::*;
