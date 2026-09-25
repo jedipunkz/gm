@@ -875,20 +875,28 @@ mod terminal {
     impl Term {
         pub fn open() -> Result<Term> {
             terminal::enable_raw_mode()?;
-            let mut out = tty();
-            // The Kitty keyboard protocol is what lets Ctrl-Shift chords
-            // through. It is asked for without asking whether the terminal
-            // speaks it: the question is answered on stdout, which belongs to
-            // the shell binding, and a terminal that does not ignores it.
-            execute!(
-                out,
-                EnterAlternateScreen,
-                EnableBracketedPaste,
-                cursor::Hide,
-                PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
-            )?;
-            let term = ratatui::Terminal::new(CrosstermBackend::new(out))?;
-            Ok(Term { term })
+            // Until a Term exists nothing will put the terminal back, so a
+            // failure on the way there has to do it here.
+            let opened = (|| -> std::io::Result<Term> {
+                let mut out = tty();
+                // The Kitty keyboard protocol is what lets Ctrl-Shift chords
+                // through. It is asked for without asking whether the
+                // terminal speaks it: the question is answered on stdout,
+                // which belongs to the shell binding, and a terminal that
+                // does not ignores it.
+                execute!(
+                    out,
+                    EnterAlternateScreen,
+                    EnableBracketedPaste,
+                    cursor::Hide,
+                    PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+                )?;
+                Ok(Term { term: ratatui::Terminal::new(CrosstermBackend::new(out))? })
+            })();
+            opened.map_err(|e| {
+                restore(&mut tty());
+                e.into()
+            })
         }
 
         pub fn size(&self) -> Result<(u16, u16)> {
@@ -922,16 +930,20 @@ mod terminal {
 
     impl Drop for Term {
         fn drop(&mut self) {
-            let out = self.term.backend_mut();
-            let _ = execute!(
-                out,
-                PopKeyboardEnhancementFlags,
-                DisableBracketedPaste,
-                LeaveAlternateScreen,
-                cursor::Show
-            );
-            let _ = terminal::disable_raw_mode();
+            restore(self.term.backend_mut());
         }
+    }
+
+    /// restore undoes what open did, whichever part of it happened.
+    fn restore(out: &mut impl Write) {
+        let _ = execute!(
+            out,
+            PopKeyboardEnhancementFlags,
+            DisableBracketedPaste,
+            LeaveAlternateScreen,
+            cursor::Show
+        );
+        let _ = terminal::disable_raw_mode();
     }
 
     /// key_of spells a key press the way Bubble Tea did, modifiers in the
