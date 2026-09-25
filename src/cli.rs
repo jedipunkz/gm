@@ -257,13 +257,7 @@ fn parse(a: &mut App, cmd: &str, flags: &[Flag], args: &[String]) -> Result<Pars
         };
         let v = match (f.value, inline) {
             (None, None) => "true".to_string(),
-            (None, Some(v)) if matches!(v.as_str(), "true" | "1" | "t" | "false" | "0" | "f") => {
-                if matches!(v.as_str(), "true" | "1" | "t") {
-                    "true".into()
-                } else {
-                    "false".into()
-                }
-            }
+            (None, Some(v)) if parse_bool(&v).is_some() => parse_bool(&v).unwrap().to_string(),
             (Some(_), Some(v)) => v,
             (Some(_), None) if i < args.len() => {
                 i += 1;
@@ -284,6 +278,15 @@ fn parse(a: &mut App, cmd: &str, flags: &[Flag], args: &[String]) -> Result<Pars
         set,
         args: args[i..].to_vec(),
     })
+}
+
+/// parse_bool reads a switch's value the way Go's strconv.ParseBool did.
+fn parse_bool(v: &str) -> Option<bool> {
+    match v {
+        "1" | "t" | "T" | "TRUE" | "true" | "True" => Some(true),
+        "0" | "f" | "F" | "FALSE" | "false" | "False" => Some(false),
+        _ => None,
+    }
 }
 
 fn flag_usage(cmd: &str, flags: &[Flag]) -> String {
@@ -1121,6 +1124,8 @@ mod tests {
             got(&["--update=false", "-b=y", "--", "-u"]).unwrap(),
             (false, "y".into(), args(&["-u"]))
         );
+        assert!(got(&["-u=TRUE"]).unwrap().0 && !got(&["-u=F"]).unwrap().0);
+        assert_eq!(exit_code(&got(&["-u=yes"]).unwrap_err()), Some(2));
         assert_eq!(exit_code(&got(&["-x"]).unwrap_err()), Some(2));
         assert_eq!(exit_code(&got(&["-b"]).unwrap_err()), Some(2));
         assert_eq!(exit_code(&got(&["-h"]).unwrap_err()), Some(0));
