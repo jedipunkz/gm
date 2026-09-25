@@ -689,6 +689,19 @@ pub fn parse_branches(out: &str, remotes: &[String]) -> Vec<Branch> {
     list
 }
 
+/// repair_worktrees links the checkouts at dirs back to the repository at
+/// repo_dir after the repository has moved: each checkout's .git file holds
+/// the repository's old path, and git answers "not a git repository" in it
+/// until this runs.
+pub fn repair_worktrees(repo_dir: &str, dirs: &[String]) -> Result<()> {
+    if dirs.is_empty() {
+        return Ok(());
+    }
+    let mut args = vec!["-C", repo_dir, "worktree", "repair"];
+    args.extend(dirs.iter().map(String::as_str));
+    git_quiet(&args)
+}
+
 /// remove_worktree takes a checkout away. force is what the caller has already
 /// confirmed: git refuses on its own when there is work in it.
 pub fn remove_worktree(repo_dir: &str, dir: &str, force: bool) -> Result<()> {
