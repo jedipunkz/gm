@@ -347,10 +347,12 @@ impl App<'_> {
         let mut last = String::new();
         for reference in &p.args {
             let u = repo::normalize_url(reference, p.on("p"))?;
-            let dst = self.tree.path_for(&repo::rel_path_of(&u));
+            let rel = repo::rel_path_of(&u);
+            let existing = self.tree.existing_path(&rel);
+            let dst = existing.clone().unwrap_or_else(|| self.tree.path_for(&rel));
             last = dst.clone();
 
-            if repo::is_repo(&dst) {
+            if existing.is_some() {
                 if !p.on("u") {
                     writeln!(self.err, "exists   {dst}")?;
                     self.bump(&dst);
@@ -914,7 +916,11 @@ impl App<'_> {
             Action::Get => {
                 self.get(std::slice::from_ref(&res.arg))?;
                 let u = repo::normalize_url(&res.arg, false)?;
-                let dst = self.tree.path_for(&repo::rel_path_of(&u));
+                let rel = repo::rel_path_of(&u);
+                let dst = self
+                    .tree
+                    .existing_path(&rel)
+                    .unwrap_or_else(|| self.tree.path_for(&rel));
                 writeln!(self.out, "{dst}")?;
                 Ok(())
             }
@@ -1331,6 +1337,63 @@ mod tests {
             1,
             "a visit written while the finder was open was discarded"
         );
+    }
+
+    // get searches every configured root before cloning into the primary one,
+    // and the finder returns the root where the repository was found.
+    #[test]
+    fn get_finds_repository_under_a_secondary_root() {
+        let base = TempDir::new();
+        let blocked = base.join("blocked");
+        write(&blocked, "not a directory");
+        let primary = paths::join(&blocked, "root");
+        let secondary = base.join("secondary");
+        let dst = paths::join(&secondary, "example.com/acme/alpha");
+        git_repo(&dst);
+        let t = Tree {
+            roots: vec![primary.clone(), secondary],
+        };
+        let state = base.join("state/frecency.json");
+
+        let already_present = run_in(&t, &state, Config::default(), |a| {
+            a.get(&args(&["example.com/acme/alpha"]))
+        });
+        already_present.res.unwrap();
+        assert!(
+            already_present.err.contains(&format!("exists   {dst}")),
+            "{}",
+            already_present.err
+        );
+        assert!(!exists(&paths::join(&primary, "example.com/acme/alpha")));
+        assert_eq!(History::open(&state).visit(&dst).count, 1);
+
+        let update = run_in(&t, &state, Config::default(), |a| {
+            a.get(&args(&["-u", "example.com/acme/alpha"]))
+        });
+        update.res.unwrap();
+        assert!(
+            update.err.contains(&format!("update   {dst}")),
+            "{}",
+            update.err
+        );
+        assert!(!exists(&paths::join(&primary, "example.com/acme/alpha")));
+        assert_eq!(History::open(&state).visit(&dst).count, 2);
+
+        let mut hist = History::open(&state);
+        let finder_get = run_in(&t, &state, Config::default(), |a| {
+            a.act(
+                finder::Outcome {
+                    action: Action::Get,
+                    arg: "example.com/acme/alpha".into(),
+                },
+                &mut hist,
+            )
+        });
+        finder_get.res.unwrap();
+        assert_eq!(finder_get.out.trim(), dst);
+        assert!(finder_get.err.contains(&format!("exists   {dst}")));
+        assert!(!exists(&paths::join(&primary, "example.com/acme/alpha")));
+        assert_eq!(History::open(&state).visit(&dst).count, 3);
     }
 
     // A reference with ".." in it is refused before anything is made, so no
