@@ -381,7 +381,10 @@ impl App<'_> {
             clone.extend([url.as_str(), dst.as_str()]);
 
             writeln!(self.err, "clone    {url} -> {dst}")?;
-            repo::git(&clone)?;
+            if let Err(e) = repo::git(&clone) {
+                repo::prune_empty_parents(self.tree.primary(), paths::dir(&dst));
+                return Err(e);
+            }
             self.bump(&dst);
         }
 
@@ -1352,6 +1355,24 @@ mod tests {
                 "gm {cmd} made a directory outside the root"
             );
         }
+    }
+
+    #[test]
+    fn get_prunes_host_after_failed_clone() {
+        let base = TempDir::new();
+        let root = base.join("root");
+        mkdir(&root);
+        let source = base.join("missing-repository");
+        let reference = format!("file://localhost{source}");
+
+        let r = run_in(&tree(&root), "", Config::default(), |a| {
+            a.get(&args(&[&reference]))
+        });
+
+        let host = paths::join(&root, "localhost");
+        let err = r.res.expect_err("gm get succeeded for a missing source");
+        assert!(!exists(&host), "failed clone left host path {host}");
+        assert_eq!(err.0, "exit status 128", "gm get changed the clone error");
     }
 
     fn init_repo(dir: &str, origin: &str) -> String {
