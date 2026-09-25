@@ -25,8 +25,9 @@ fn git_remote(timeout: Duration, dir: &str, args: &[&str]) -> Result<String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     // ssh prompts on the controlling terminal, not on stdin; batch mode makes
-    // it fail instead. A user's own ssh command is left alone.
-    if std::env::var_os("GIT_SSH_COMMAND").is_none()
+    // it fail instead. A user's own ssh command is left alone; an empty one
+    // is no command, as it is to git.
+    if std::env::var_os("GIT_SSH_COMMAND").is_none_or(|v| v.is_empty())
         && git_config(dir, "core.sshCommand").is_empty()
     {
         cmd.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
