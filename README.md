@@ -229,6 +229,11 @@ The root is resolved in this order, so an existing ghq tree works untouched:
 5. `git config --get-all ghq.root`
 6. `~/ghq`
 
+Each root must be absolute; `~` and `~/...` expand to your home directory.
+Relative roots are rejected instead of being resolved from the current working
+directory. Empty entries in `$GM_ROOT` and `$GHQ_ROOT` colon-separated lists
+are ignored.
+
 ### Themes
 
 `tokyonight` (default), `solarized-dark`, `solarized-light`, `kanagawa-wave`,

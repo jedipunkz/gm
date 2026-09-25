@@ -54,7 +54,12 @@ impl Tree {
     /// hand it one.
     pub fn open_with(cfg: &Config, env: impl Fn(&str) -> Option<String>) -> Result<Tree> {
         let set = |k: &str| env(k).filter(|v| !v.is_empty());
-        let split = |v: String| v.split(':').map(str::to_string).collect::<Vec<_>>();
+        let split = |v: String| {
+            v.split(':')
+                .filter(|root| !root.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
 
         let roots = if let Some(v) = set("GM_ROOT") {
             split(v)
@@ -183,10 +188,16 @@ fn expand_all(roots: &[String]) -> Result<Vec<String>> {
     let home = paths::home()?;
     let mut out: Vec<String> = Vec::new();
     for p in roots {
+        if p.is_empty() {
+            return Err("repository root is empty".into());
+        }
         let p = match p.strip_prefix('~') {
             Some(rest) if rest.is_empty() || rest.starts_with('/') => paths::join(&home, rest),
             _ => paths::clean(p),
         };
+        if !p.starts_with('/') {
+            return Err(err!("repository root must be absolute: {p:?}"));
+        }
         if !out.contains(&p) {
             out.push(p);
         }
@@ -418,6 +429,29 @@ mod tests {
 
         // A broken config stops gm.
         assert!(Tree::open_with(&cfg("root = 42"), none).is_err());
+    }
+
+    #[test]
+    fn roots_skip_empty_environment_entries_and_reject_invalid_config_roots() {
+        let cfg = |body: &str| crate::config::parse(body).unwrap();
+        for (key, roots) in [
+            ("GM_ROOT", "/a:"),
+            ("GM_ROOT", ":/a"),
+            ("GHQ_ROOT", "/a:"),
+            ("GHQ_ROOT", ":/a"),
+        ] {
+            let env = |k: &str| (k == key).then(|| roots.to_string());
+            assert_eq!(
+                Tree::open_with(&Config::default(), env).unwrap().roots,
+                vec!["/a"]
+            );
+        }
+
+        let empty = Tree::open_with(&cfg("root = \"\""), |_| None).unwrap_err();
+        assert!(empty.0.contains("gm.toml"), "{empty}");
+        let empty_entry = Tree::open_with(&cfg("root = [\"~/ghq\", \"\"]"), |_| None).unwrap_err();
+        assert!(empty_entry.0.contains("gm.toml"), "{empty_entry}");
+        assert!(Tree::open_with(&cfg("root = \"src\""), |_| None).is_err());
     }
 
     // A real directory tree: repositories are found, nested ones are not
