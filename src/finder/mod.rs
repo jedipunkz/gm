@@ -148,6 +148,8 @@ impl Key {
 #[derive(Debug, Clone)]
 pub struct Done {
     kind: Change,
+    mode: Mode,
+    repo_at: String,
     label: String, // how the new row reads, if one was made
     path: String,
     err: Option<Error>,
@@ -404,14 +406,84 @@ impl Model {
             self.note = e.0;
             return vec![];
         }
-        match d.kind {
-            Change::Remove | Change::RemoveWorktree => {
-                self.drop_path(&d.path);
-                self.note = format!("removed {}", info::tildify(&d.path));
+        let status_path = if d.repo_at.is_empty() {
+            match d.kind {
+                Change::Create | Change::Remove => d.path.as_str(),
+                _ => "",
             }
-            Change::Create | Change::AddWorktree => {
-                self.add(&d.label, &d.path);
-                self.note = format!("created {}", info::tildify(&d.path));
+        } else {
+            d.repo_at.as_str()
+        };
+        if !status_path.is_empty() {
+            self.status.remove(status_path);
+            self.probing.remove(status_path);
+        }
+
+        match d.kind {
+            Change::Remove | Change::RemoveWorktree | Change::Create | Change::AddWorktree => {
+                let changed = |all: &mut Vec<Item>| match d.kind {
+                    Change::Remove | Change::RemoveWorktree => {
+                        let before = all.len();
+                        all.retain(|it| it.path != d.path);
+                        all.len() != before
+                    }
+                    Change::Create => {
+                        all.push(Item {
+                            label: d.label.clone(),
+                            path: d.path.clone(),
+                            ..Default::default()
+                        });
+                        true
+                    }
+                    Change::AddWorktree => {
+                        let existing = match d.mode {
+                            Mode::Branches => all.iter_mut().find(|it| {
+                                it.branch.name == d.label || it.branch.label() == d.label
+                            }),
+                            Mode::Prs => all
+                                .iter_mut()
+                                .find(|it| it.pr.checkout() == d.label || it.pr.branch == d.label),
+                            _ => all.iter_mut().find(|it| it.label == d.label),
+                        };
+                        if let Some(it) = existing {
+                            it.path = d.path.clone();
+                        } else {
+                            all.push(Item {
+                                label: d.label.clone(),
+                                path: d.path.clone(),
+                                branch: crate::repo::Branch {
+                                    name: d.label.clone(),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            });
+                        }
+                        true
+                    }
+                    _ => false,
+                };
+                let active =
+                    self.mode == d.mode && (d.mode == Mode::Repos || self.repo_at == d.repo_at);
+                if active {
+                    if changed(&mut self.all) {
+                        self.view_stale = true;
+                        self.filter();
+                    }
+                } else if d.mode == Mode::Repos
+                    && self.mode != Mode::Repos
+                    && let Some(saved) = self.saved.as_mut()
+                {
+                    saved.update(changed);
+                }
+                self.note = match d.kind {
+                    Change::Remove | Change::RemoveWorktree => {
+                        format!("removed {}", info::tildify(&d.path))
+                    }
+                    Change::Create | Change::AddWorktree => {
+                        format!("created {}", info::tildify(&d.path))
+                    }
+                    _ => unreachable!(),
+                };
             }
             Change::CheckOut | Change::CheckOutPr => {
                 self.result = Outcome {

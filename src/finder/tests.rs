@@ -964,6 +964,8 @@ fn confirm_remove() {
 
     let cmds = m.update(ch('y'));
     assert!(!cmds.is_empty() && m.over == Overlay::None);
+    assert!(m.busy.contains("remov"), "{:?}", m.busy);
+    assert!(line_text(&m.help_line(90)).contains("remov"));
     let after = feed(&mut m, cmds);
     assert!(!is_quit(&after) && m.result.action == Action::None);
     assert!(!exists(&rs[1].path()));
@@ -1004,6 +1006,8 @@ fn confirm_create() {
     }
 
     let cmds = m.update(ch('y'));
+    assert!(m.busy.contains("creat"), "{:?}", m.busy);
+    assert!(line_text(&m.help_line(90)).contains("creat"));
     feed(&mut m, cmds);
     let dst = root.join("github.com/acme/bravo");
     assert!(exists(&paths::join(&dst, ".git")));
@@ -1680,6 +1684,91 @@ fn branch_check_out() {
             arg: dir
         }
     );
+}
+
+// A confirmed worktree made from a branch row updates that row, not the list
+// with a second item that has lost its branch identity. Its repository details
+// are stale once the worktree operation succeeds.
+#[test]
+fn add_worktree_updates_branch_row_and_invalidates_status() {
+    let root = TempDir::new();
+    let (mut m, r) = branch_model(&root);
+    git_repo(&r.path());
+    git(&r.path(), &["branch", "fix/timeout"]);
+    m.status.insert(
+        r.path(),
+        Status {
+            branch: "main".into(),
+            ..Default::default()
+        },
+    );
+    m.update(key("ctrl+l"));
+    m.busy.clear(); // this test does not run the remote-branch task
+    set_query(&mut m, "timeout");
+    assert_eq!(label(&m), "fix/timeout");
+
+    run_slash(&mut m, "/create fix/timeout");
+    assert_eq!(m.ask.mode, Mode::Branches);
+    assert_eq!(m.ask.repo_at, r.path());
+    let cmds = m.update(ch('y'));
+    assert!(m.busy.contains("creat"), "{:?}", m.busy);
+    let msg = answer(cmds).expect("confirmed worktree did not run");
+    m.update(msg);
+
+    let matches: Vec<_> = m
+        .all
+        .iter()
+        .filter(|it| it.branch.name == "fix/timeout")
+        .collect();
+    assert_eq!(matches.len(), 1, "{:?}", rows(&m));
+    assert!(!matches[0].path.is_empty());
+    assert!(!m.status.contains_key(&r.path()));
+}
+
+// The same in-place update applies to a pull-request row, identified by the
+// branch the PR checks out.
+#[test]
+fn add_worktree_updates_pull_request_row() {
+    let root = TempDir::new();
+    let (mut m, rs) = pr_model(&root);
+    git_repo(&rs[1].path());
+    open_pr_list(&mut m);
+    set_query(&mut m, "parser");
+    assert!(label(&m).contains("Try a new parser"));
+
+    run_slash(&mut m, "/create exp/parser");
+    let msg = answer(m.update(ch('y'))).expect("confirmed worktree did not run");
+    m.update(msg);
+
+    let matches: Vec<_> = m.all.iter().filter(|it| it.pr.number == 8).collect();
+    assert_eq!(matches.len(), 1, "{:?}", rows(&m));
+    assert!(!matches[0].path.is_empty());
+}
+
+// If a confirmed repository creation finishes after opening a secondary list,
+// it updates the saved repository list and leaves the visible list alone.
+#[test]
+fn create_updates_saved_repository_list_only() {
+    let root = TempDir::new();
+    let rs = repos(&root.path(), &["github.com/acme/alpha"]);
+    let mut m = new_model(&rs, "");
+    only_main(&mut m);
+    run_slash(&mut m, "/create acme/bravo");
+    let cmds = m.update(ch('y'));
+    assert!(m.busy.contains("creat"), "{:?}", m.busy);
+
+    m.open_worktrees();
+    let visible = rows(&m);
+    let msg = answer(cmds).expect("confirmed repository creation did not run");
+    m.update(msg);
+    assert_eq!(rows(&m), visible);
+
+    m.restore();
+    assert_eq!(
+        rows(&m),
+        vec!["github.com/acme/alpha", "github.com/acme/bravo"]
+    );
+    assert!(m.note.contains("created"), "{:?}", m.note);
 }
 
 // What only the remote has goes at the top of the list, once, without moving

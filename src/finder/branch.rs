@@ -154,6 +154,8 @@ impl Model {
             busy,
             self.perform(Pending {
                 kind: Change::CheckOut,
+                mode: self.mode,
+                repo_at: self.repo_at.clone(),
                 arg: b.name,
                 from: b.remote,
                 fetch: b.unfetched,
