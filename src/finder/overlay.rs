@@ -1,11 +1,11 @@
 use ratatui::text::{Line, Span};
 
 use super::command::COMMANDS;
-use super::info::{Seg, tildify, wrap_segs};
+use super::info::{tildify, wrap_segs, Seg};
 use super::worktree::Mode;
 use super::{Cmd, Done, Key, Model, Msg};
 use crate::repo::{self, Branch};
-use crate::{Error, err};
+use crate::{err, Error};
 
 /// Overlay says which panel is drawn over the list.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -93,8 +93,11 @@ impl Model {
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
                 Change::RemoveWorktree => done(
-                    repo::remove_worktree(&a.repo_at, &a.dir, a.force)
-                        .map(|_| (a.dir.clone(), String::new())),
+                    match tree.at(&a.repo_at) {
+                        None => Err(err!("{} is not under any root", a.repo_at)),
+                        Some(r) => repo::remove_worktree_and_prune(&r, &a.dir, a.force),
+                    }
+                    .map(|_| (a.dir.clone(), String::new())),
                 ),
                 Change::None => None,
             }
