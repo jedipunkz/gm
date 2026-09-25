@@ -71,7 +71,7 @@ impl Model {
             scored.into_iter().map(|(i, _)| i).collect()
         };
         self.query = q;
-        self.view = self.keep_dirty(view);
+        self.view = self.keep_repo_filters(view);
 
         if let Some(i) = held.and_then(|h| self.view.iter().position(|&x| x == h)) {
             self.cursor = i;
@@ -80,24 +80,31 @@ impl Model {
         self.cursor = self.view.len().saturating_sub(1);
     }
 
-    /// keep_dirty drops the rows that have no uncommitted work, when the
-    /// filter is on. It applies to repositories only: the worktree list is a
-    /// different question, and a scan that has not finished yet hides nothing.
-    fn keep_dirty(&self, view: Vec<usize>) -> Vec<usize> {
-        match &self.dirty {
-            Some(dirty) if self.dirty_only && self.mode == Mode::Repos => view
-                .into_iter()
-                .filter(|&i| dirty.get(&self.all[i].path).copied().unwrap_or(false))
-                .collect(),
-            _ => view,
+    /// keep_repo_filters applies status filters to the repository list only.
+    /// While the shared scan is in flight, every row stays visible.
+    fn keep_repo_filters(&self, view: Vec<usize>) -> Vec<usize> {
+        if self.mode != Mode::Repos || !(self.dirty_only || self.unpushed_only) {
+            return view;
         }
+        let Some(states) = &self.repo_states else {
+            return view;
+        };
+        view.into_iter()
+            .filter(|&i| {
+                states.get(&self.all[i].path).is_some_and(|state| {
+                    (!self.dirty_only || state.dirty > 0)
+                        && (!self.unpushed_only || state.ahead > 0)
+                })
+            })
+            .collect()
     }
 
-    /// scan_dirty asks git about every repository at once, off the UI thread.
-    pub(super) fn scan_dirty(&self) -> Cmd {
+    /// scan_repo_states asks git about every repository at once, off the UI
+    /// thread. The result serves both the dirty and unpushed filters.
+    pub(super) fn scan_repo_states(&self) -> Cmd {
         let paths: Vec<String> = self.all.iter().map(|it| it.path.clone()).collect();
-        let scan = self.dirty_of.clone();
-        Cmd::Task(Box::new(move || Some(Msg::Dirty(scan(&paths)))))
+        let scan = self.state_scan_of.clone();
+        Cmd::Task(Box::new(move || Some(Msg::RepoStates(scan(&paths)))))
     }
 
     /// render_row draws one row, highlighting the characters the query

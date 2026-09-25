@@ -455,23 +455,6 @@ pub fn parse_worktrees(out: &str) -> Vec<Worktree> {
     list
 }
 
-/// DIRTY_WORKERS bounds the git processes a scan runs at once. Each one is a
-/// short-lived process doing a little disk work, so a handful keeps the disk
-/// busy without forking hundreds of them on a large tree.
-///
-/// ponytail: a fixed number, tune it if a big tree on a slow disk says so.
-const DIRTY_WORKERS: usize = 8;
-
-/// dirty_map reports which of these working copies have uncommitted changes.
-/// A repository git cannot answer for counts as clean: the point is to find
-/// work in progress, not to report on git's health.
-pub fn dirty_map(paths: &[String]) -> HashMap<String, bool> {
-    status_map(paths)
-        .into_iter()
-        .map(|(p, s)| (p, s.dirty > 0))
-        .collect()
-}
-
 /// State is what a repository holds that nothing else does: work not
 /// committed, and commits not pushed. It comes out of one `git status
 /// --porcelain -b`, which reads the refs already on disk and never fetches, so
@@ -494,6 +477,10 @@ impl State {
     }
 }
 
+/// STATUS_WORKERS bounds the Git processes in a bulk status scan. More
+/// workers than this do not help once they compete for the same disk.
+const STATUS_WORKERS: usize = 8;
+
 /// status_of reads one repository's state.
 pub fn status_of(dir: &str) -> State {
     git_in(dir, &["status", "--porcelain", "-b"])
@@ -507,7 +494,7 @@ pub fn status_map(paths: &[String]) -> HashMap<String, State> {
     let out = Mutex::new(HashMap::with_capacity(paths.len()));
     let next = AtomicUsize::new(0);
     std::thread::scope(|s| {
-        for _ in 0..DIRTY_WORKERS.min(paths.len()) {
+        for _ in 0..STATUS_WORKERS.min(paths.len()) {
             s.spawn(|| {
                 while let Some(p) = paths.get(next.fetch_add(1, Ordering::Relaxed)) {
                     let st = status_of(p);
@@ -917,7 +904,7 @@ detached
     }
 
     #[test]
-    fn dirty_map_counts_untracked_files() {
+    fn status_map_counts_untracked_files() {
         let dir = TempDir::new();
         let clean = dir.join("clean");
         let dirty = dir.join("dirty");
@@ -930,11 +917,12 @@ detached
         let plain = dir.join("plain");
         mkdir(&plain);
 
-        let got = dirty_map(&[clean.clone(), dirty.clone(), plain.clone()]);
+        let got = status_map(&[clean.clone(), dirty.clone(), plain.clone()]);
         assert_eq!(got.len(), 3, "{got:?}");
-        assert!(got[&dirty]);
-        assert!(!got[&clean] && !got[&plain]);
-        assert!(dirty_map(&[]).is_empty());
+        assert!(got[&dirty].dirty > 0);
+        assert_eq!(got[&clean].dirty, 0);
+        assert_eq!(got[&plain].dirty, 0);
+        assert!(status_map(&[]).is_empty());
     }
 
     #[test]

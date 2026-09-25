@@ -165,12 +165,12 @@ pub enum Msg {
     /// dropped if the selection moved on in the meantime, which is what keeps
     /// a held arrow key from asking git about every row it swept past.
     Probe(String),
-    Status(String, Status),         // one repository's git status
-    Spin(u64),                      // the spinner's next frame, with its tag
-    Done(Done),                     // a confirmed change has been carried out
-    RemoteBranches(RemoteBranches), // what the remotes have that was not fetched
-    Prs(Prs),                       // gh's answer about one repository
-    Dirty(HashMap<String, bool>),   // the result of a scan for uncommitted work
+    Status(String, Status),                   // one repository's git status
+    Spin(u64),                                // the spinner's next frame, with its tag
+    Done(Done),                               // a confirmed change has been carried out
+    RemoteBranches(RemoteBranches),           // what the remotes have that was not fetched
+    Prs(Prs),                                 // gh's answer about one repository
+    RepoStates(HashMap<String, repo::State>), // the result of a bulk repository status scan
 }
 
 /// RemoteBranches carries what the remotes of one repository have that the
@@ -205,7 +205,7 @@ const STATUS_DELAY: Duration = Duration::from_millis(100);
 /// Seam is a git or GitHub call the model makes through a field, so the tests
 /// can replace it; every real run uses the repo function of the same name.
 type Seam<T> = Arc<dyn Fn(&str) -> T + Send + Sync>;
-type DirtyScan = Arc<dyn Fn(&[String]) -> HashMap<String, bool> + Send + Sync>;
+type StateScan = Arc<dyn Fn(&[String]) -> HashMap<String, repo::State> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Model {
@@ -231,10 +231,12 @@ pub struct Model {
     query: String, // the query the view was built from; a command is not one
     over: Overlay, // the panel drawn over the list, if any
     ask: Pending,  // what a confirmation is waiting on
-    /// dirty holds the answer for every repository once a scan has run; None
-    /// until one has. dirty_only is the filter itself.
-    dirty: Option<HashMap<String, bool>>,
+    /// repo_states holds the bulk status scan once one of the repository
+    /// filters needs it. Both filters share the same result.
+    repo_states: Option<HashMap<String, repo::State>>,
+    scanning_states: bool,
     dirty_only: bool,
+    unpushed_only: bool,
     note: String, // a one-line answer under the prompt, cleared on the next keystroke
     /// busy says what gm is waiting on — git or GitHub, off the UI thread —
     /// and stays under the prompt, with a spinner and the time taken so far,
@@ -247,7 +249,7 @@ pub struct Model {
     branches_of: Seam<Result<Vec<Branch>>>,
     remote_branches_of: Seam<(Vec<Branch>, Option<Error>)>,
     prs_of: Seam<Result<Vec<PullRequest>>>,
-    dirty_of: DirtyScan,
+    state_scan_of: StateScan,
     changed_of: Seam<usize>,
     open_url: Arc<dyn Fn(&str) + Send + Sync>,
     gh: String, // the program that checks pull requests out
@@ -302,8 +304,10 @@ impl Model {
             query: String::new(),
             over: Overlay::None,
             ask: Pending::default(),
-            dirty: None,
+            repo_states: None,
+            scanning_states: false,
             dirty_only: false,
+            unpushed_only: false,
             note: String::new(),
             busy: String::new(),
             busy_since: Instant::now(),
@@ -312,7 +316,7 @@ impl Model {
             branches_of: Arc::new(repo::branches),
             remote_branches_of: Arc::new(repo::remote_branches),
             prs_of: Arc::new(repo::pull_requests),
-            dirty_of: Arc::new(repo::dirty_map),
+            state_scan_of: Arc::new(repo::status_map),
             changed_of: Arc::new(repo::changed_files),
             open_url: Arc::new(|u| {
                 let _ = browse::open_url(u);
@@ -381,13 +385,22 @@ impl Model {
             Msg::Done(d) => self.done(d),
             Msg::RemoteBranches(r) => self.add_remote_branches(r),
             Msg::Prs(p) => self.show_prs(p),
-            Msg::Dirty(d) => {
-                self.dirty = Some(d);
+            Msg::RepoStates(states) => {
+                self.repo_states = Some(states);
+                self.scanning_states = false;
                 self.note.clear();
                 self.busy.clear();
-                self.filter();
-                self.cursor = self.view.len().saturating_sub(1);
-                self.load_status().into_iter().collect()
+                if self.dirty_only || self.unpushed_only {
+                    if self.mode == Mode::Repos {
+                        self.filter();
+                        self.cursor = self.view.len().saturating_sub(1);
+                        return self.load_status().into_iter().collect();
+                    }
+                    if let Some(saved) = self.saved.as_mut() {
+                        saved.mark_stale();
+                    }
+                }
+                vec![]
             }
             Msg::Paste(text) => {
                 if self.over != Overlay::None {
@@ -538,8 +551,9 @@ impl Model {
                     self.filter();
                     return self.load_status().into_iter().collect();
                 }
-                if self.dirty_only {
+                if self.dirty_only || self.unpushed_only {
                     self.dirty_only = false;
+                    self.unpushed_only = false;
                     self.filter();
                     self.cursor = self.view.len().saturating_sub(1);
                     return self.load_status().into_iter().collect();
@@ -666,13 +680,18 @@ impl Model {
                 Span::styled(" lists them", st.help),
             ]);
         }
-        if self.dirty_only {
+        if self.dirty_only || self.unpushed_only {
             // The filter has to be visible, or an empty list reads as a bug.
-            const LABEL: &str = "dirty only";
+            let label = match (self.dirty_only, self.unpushed_only) {
+                (true, true) => "dirty + unpushed",
+                (true, false) => "dirty only",
+                (false, true) => "unpushed only",
+                (false, false) => unreachable!(),
+            };
             const SEP: &str = "  ·  ";
-            let mut spans = vec![Span::styled(LABEL, st.dirty), Span::styled(SEP, st.help)];
+            let mut spans = vec![Span::styled(label, st.dirty), Span::styled(SEP, st.help)];
             spans.extend(
-                self.hints(width.saturating_sub(LABEL.len() + SEP.len()))
+                self.hints(width.saturating_sub(label.len() + SEP.len()))
                     .spans,
             );
             return Line::from(spans);
@@ -690,7 +709,7 @@ impl Model {
         // Esc undoes one layer of narrowing at a time, so it has to say which.
         let esc = if !self.input.value().is_empty() {
             "clear"
-        } else if self.dirty_only {
+        } else if self.dirty_only || self.unpushed_only {
             "show all"
         } else {
             "quit"
