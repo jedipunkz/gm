@@ -88,9 +88,12 @@ pub const COMMANDS: &[Command] = &[
                 m.note = "nothing is selected".into();
                 return vec![];
             };
-            // The status of the selected row is already loaded, so the warning
-            // costs nothing and is the one thing worth knowing before saying yes.
-            let dirty = m.status.get(&it.path).map_or(0, |s| s.dirty);
+            // git is asked now rather than the details pane's cache: the cache
+            // fills only once the cursor has rested, which "gm;/remove" never
+            // gives it, and it is as old as the moment it was filled. One git
+            // status is cheap next to deleting work nobody was told about.
+            let changed = m.changed_of.clone();
+            let dirty = changed(&it.path);
             let mut detail = vec![tildify(&it.path)];
             if dirty > 0 {
                 detail.push(format!("{dirty} uncommitted changes will be lost"));
@@ -115,16 +118,17 @@ pub const COMMANDS: &[Command] = &[
                 // The main worktree is the repository itself. git prints the
                 // resolved path, so a mismatch here is one entry too many rather
                 // than a wrong answer.
-                let labels: Vec<String> = wts
-                    .iter()
+                let others: Vec<repo::Worktree> = wts
+                    .into_iter()
                     .filter(|w| !repo::same_path(&w.path, &it.path))
-                    .map(|w| w.label())
                     .collect();
-                if !labels.is_empty() {
+                // They go with --force, so the work in each is named here or
+                // nowhere.
+                if !others.is_empty() {
                     detail.push(format!(
                         "{} will go too: {}",
-                        plural(labels.len(), "worktree", "worktrees"),
-                        labels.join(", ")
+                        plural(others.len(), "worktree", "worktrees"),
+                        repo::worktree_labels(&others, |p| changed(p))
                     ));
                 }
             }

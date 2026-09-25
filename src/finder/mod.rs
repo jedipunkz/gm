@@ -245,6 +245,7 @@ pub struct Model {
     remote_branches_of: Seam<(Vec<Branch>, Option<Error>)>,
     prs_of: Seam<Result<Vec<PullRequest>>>,
     dirty_of: DirtyScan,
+    changed_of: Seam<usize>,
     open_url: Arc<dyn Fn(&str) + Send + Sync>,
     gh: String, // the program that checks pull requests out
 }
@@ -309,6 +310,7 @@ impl Model {
             remote_branches_of: Arc::new(repo::remote_branches),
             prs_of: Arc::new(repo::pull_requests),
             dirty_of: Arc::new(repo::dirty_map),
+            changed_of: Arc::new(repo::changed_files),
             open_url: Arc::new(|u| {
                 let _ = browse::open_url(u);
             }),

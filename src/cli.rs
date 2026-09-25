@@ -906,9 +906,10 @@ enum Plan {
 
 const WT_USAGE: &str = "usage: gm wt <create|remove> [-y] <repo> <branch>";
 
-/// worktree_warning names what will be taken along with a repository.
+/// worktree_warning names what will be taken along with a repository, and the
+/// work in each of them: they are removed with --force, so git will not stop
+/// for it.
 fn worktree_warning(wts: &[repo::Worktree]) -> String {
-    let labels: Vec<String> = wts.iter().map(repo::Worktree::label).collect();
     let what = if wts.len() == 1 {
         "worktree"
     } else {
@@ -917,7 +918,7 @@ fn worktree_warning(wts: &[repo::Worktree]) -> String {
     format!(
         "{} {what} will be removed too: {}",
         wts.len(),
-        labels.join(", ")
+        repo::worktree_labels(wts, repo::changed_files)
     )
 }
 
@@ -1495,6 +1496,38 @@ mod tests {
         });
         gone.res.unwrap();
         assert!(!exists(&dir));
+    }
+
+    // gm rm takes the worktrees along with --force, so the work in each has
+    // to be named before the question, not only the repository's own.
+    #[test]
+    fn remove_names_the_work_in_the_worktrees() {
+        let root = TempDir::new();
+        let r = Repo {
+            root: root.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&r.path());
+        let t = tree(&root.path());
+        let login = t.worktree_dir(&r, "feat/login");
+        let timeout = t.worktree_dir(&r, "fix/timeout");
+        repo::add_worktree(&r.path(), &login, "feat/login").unwrap();
+        repo::add_worktree(&r.path(), &timeout, "fix/timeout").unwrap();
+        write(&paths::join(&login, "wip.txt"), "wip\n");
+
+        let res = run_in(&t, "", Config::default(), |a| {
+            a.remove(&args(&["-y", "acme/alpha"]))
+        });
+        res.res.unwrap();
+        assert!(
+            res.err
+                .contains("2 worktrees will be removed too: feat/login (1 changed), fix/timeout"),
+            "{}",
+            res.err
+        );
+        // The repository itself is clean, so it is not called dirty.
+        assert!(!res.err.contains("alpha has uncommitted"), "{}", res.err);
+        assert!(!exists(&r.path()) && !exists(&login));
     }
 
     // The main worktree is the repository itself, and not in the list this
