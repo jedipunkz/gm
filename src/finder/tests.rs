@@ -563,6 +563,35 @@ fn probe_waits_for_the_cursor_to_settle() {
 
 // ---- the list -----------------------------------------------------------
 
+#[test]
+fn wraps_full_width_text_by_display_cells() {
+    let lines = wrap_segs(
+        &[Seg::new("漢字仮名", ratatui::style::Style::default())],
+        4,
+        "",
+    );
+
+    assert_eq!(lines.len(), 2);
+    assert!(lines.iter().all(|line| line.width() <= 4));
+    assert_eq!(
+        lines
+            .iter()
+            .flat_map(|line| line.spans.iter().map(|span| span.content.as_ref()))
+            .collect::<String>(),
+        "漢字仮名"
+    );
+}
+
+#[test]
+fn full_width_list_row_occupies_requested_width() {
+    let root = TempDir::new();
+    let m = new_model(&repos(&root.path(), &["漢字仮名交"]), "");
+
+    let row = m.render_row(0, false, 8);
+
+    assert_eq!(row.width(), 8);
+}
+
 // The core contract: the cursor rests on the most-used repository, and it is
 // the last row drawn.
 #[test]

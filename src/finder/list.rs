@@ -132,7 +132,7 @@ impl Model {
 }
 
 /// char_indexes converts byte offsets into char positions, which is what
-/// rendering counts in.
+/// matching and rendering use to track highlights.
 fn char_indexes(s: &str, byte_idx: &[usize]) -> Vec<usize> {
     s.char_indices()
         .enumerate()
@@ -141,19 +141,29 @@ fn char_indexes(s: &str, byte_idx: &[usize]) -> Vec<usize> {
         .collect()
 }
 
-/// highlight renders s truncated to width, with the chars at hits in their
-/// own style. The tail is kept: the repository name matters more than the
-/// host.
+/// highlight renders s truncated to width display cells, with the chars at
+/// hits in their own style. The tail is kept: the repository name matters more
+/// than the host.
 fn highlight(s: &str, hits: &[usize], width: usize, base: Style, hit: Style) -> Vec<Span<'static>> {
     if width <= 1 {
         return Vec::new();
     }
-    let mut chars: Vec<char> = s.chars().collect();
+    let chars: Vec<char> = s.chars().collect();
     let mut spans = Vec::new();
     let mut off = 0;
-    if chars.len() > width {
-        off = chars.len() - width + 1;
-        chars.drain(..off);
+    let text_width: usize = chars.iter().map(|c| Span::raw(c.to_string()).width()).sum();
+    if text_width > width {
+        let suffix_width = width - 1;
+        let mut kept_width = 0;
+        off = chars.len();
+        while off > 0 {
+            let char_width = Span::raw(chars[off - 1].to_string()).width();
+            if kept_width + char_width > suffix_width {
+                break;
+            }
+            kept_width += char_width;
+            off -= 1;
+        }
         spans.push(Span::styled("…", base));
     }
     let is_hit: HashMap<usize, bool> = hits
@@ -163,14 +173,14 @@ fn highlight(s: &str, hits: &[usize], width: usize, base: Style, hit: Style) -> 
         .collect();
     // Runs of same-styled chars, so one span covers many cells.
     let mut i = 0;
-    while i < chars.len() {
+    while i < chars.len() - off {
         let on = is_hit.contains_key(&i);
         let mut j = i;
-        while j < chars.len() && is_hit.contains_key(&j) == on {
+        while j < chars.len() - off && is_hit.contains_key(&j) == on {
             j += 1;
         }
         spans.push(Span::styled(
-            chars[i..j].iter().collect::<String>(),
+            chars[off + i..off + j].iter().collect::<String>(),
             if on { hit } else { base },
         ));
         i = j;
