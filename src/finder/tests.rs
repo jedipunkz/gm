@@ -1144,6 +1144,8 @@ fn removing_worktree_prunes_empty_host_directory() {
     m.repo_at = r.path();
     let msg = answer(vec![m.perform(Pending {
         kind: Change::RemoveWorktree,
+        mode: Mode::Worktrees,
+        repo_at: r.path(),
         dir,
         ..Default::default()
     })])

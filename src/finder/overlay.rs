@@ -1,11 +1,11 @@
 use ratatui::text::{Line, Span};
 
 use super::command::COMMANDS;
-use super::info::{tildify, wrap_segs, Seg};
+use super::info::{Seg, tildify, wrap_segs};
 use super::worktree::Mode;
 use super::{Cmd, Done, Key, Model, Msg};
 use crate::repo::{self, Branch};
-use crate::{err, Error};
+use crate::{Error, err};
 
 /// Overlay says which panel is drawn over the list.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
