@@ -128,8 +128,8 @@ export const repos: DemoRepo[] = [
     ],
   },
   {
-    rel: "github.com/charmbracelet/bubbletea",
-    remote: "https://github.com/charmbracelet/bubbletea",
+    rel: "github.com/ratatui/ratatui",
+    remote: "https://github.com/ratatui/ratatui",
     branch: "main",
     dirty: 0,
     visits: 6,
@@ -143,14 +143,14 @@ export const repos: DemoRepo[] = [
     ],
   },
   {
-    rel: "github.com/charmbracelet/lipgloss",
-    remote: "https://github.com/charmbracelet/lipgloss",
+    rel: "github.com/crossterm-rs/crossterm",
+    remote: "https://github.com/crossterm-rs/crossterm",
     branch: "main",
     dirty: 0,
     visits: 4,
     last: "5d ago",
     frecency: 2,
-    commits: [c("2a7f0e3", "feat: layer compositing", [{ name: "HEAD", kind: "head" }, { name: "main", kind: "local" }])],
+    commits: [c("2a7f0e3", "feat: add keyboard enhancement flags", [{ name: "HEAD", kind: "head" }, { name: "main", kind: "local" }])],
   },
   {
     rel: "gitlab.com/acme/infra",
