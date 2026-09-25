@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
@@ -16,7 +17,11 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// be drawn over it and wait for input that never comes. What does not need
 /// typing — an ssh agent, a credential helper — still works.
 fn git_remote(timeout: Duration, dir: &str, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new("git");
+    git_remote_with(OsStr::new("git"), timeout, dir, args)
+}
+
+fn git_remote_with(program: &OsStr, timeout: Duration, dir: &str, args: &[&str]) -> Result<String> {
+    let mut cmd = Command::new(program);
     cmd.arg("-C")
         .arg(dir)
         .args(args)
@@ -71,7 +76,10 @@ fn git_remote(timeout: Duration, dir: &str, args: &[&str]) -> Result<String> {
             break status;
         }
         if Instant::now() >= deadline {
-            let _ = child.kill();
+            let pgid = child.id() as libc::pid_t;
+            if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 {
+                let _ = child.kill();
+            }
             let _ = child.wait();
             return Err(err!("git {} took longer than {}", args[0], human(timeout)));
         }
@@ -168,6 +176,7 @@ mod tests {
     use super::*;
     use crate::repo::git::{add_worktree_from, git_quiet};
     use crate::testutil::{TempDir, git_repo};
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn parse_ls_remote_keeps_the_heads() {
@@ -180,6 +189,48 @@ mod tests {
         assert_eq!(
             parse_ls_remote(out, "up"),
             vec![b("main", "up/main"), b("feat/x", "up/feat/x")]
+        );
+    }
+
+    #[test]
+    fn timeout_kills_git_process_group() {
+        let tmp = TempDir::new();
+        let repo = tmp.join("repo");
+        git_repo(&repo);
+
+        let marker = tmp.join("grandchild-survived");
+        let pid_file = tmp.join("grandchild.pid");
+        let stand_in = tmp.join("stand-in-git");
+        std::fs::write(
+            &stand_in,
+            format!("#!/bin/sh\n(sleep 3; touch '{marker}') &\necho $! > '{pid_file}'\nwait\n"),
+        )
+        .unwrap();
+        std::fs::set_permissions(&stand_in, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let error = git_remote_with(
+            std::ffi::OsStr::new(&stand_in),
+            Duration::from_secs(1),
+            &repo,
+            &["ls-remote"],
+        )
+        .unwrap_err();
+        assert!(
+            error.0.contains("git ls-remote took longer than 1s"),
+            "{error}"
+        );
+        assert!(
+            std::path::Path::new(&pid_file).exists(),
+            "grandchild did not start"
+        );
+
+        // The child would create this after three seconds if it survived the
+        // timeout. Waiting for that deadline avoids relying on process-table
+        // details such as whether a killed orphan is briefly a zombie.
+        std::thread::sleep(Duration::from_millis(3_100));
+        assert!(
+            !std::path::Path::new(&marker).exists(),
+            "grandchild outlived the timed-out git process"
         );
     }
 
