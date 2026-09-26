@@ -179,7 +179,10 @@ impl Tree {
         }
         std::fs::create_dir_all(&dst)?;
         // Quietly: this runs under the finder as well as from the command line.
-        git_quiet(&["-C", &dst, "init", "--quiet"])?;
+        if let Err(e) = git_quiet(&["-C", &dst, "init", "--quiet"]) {
+            prune_empty_parents(self.primary(), paths::dir(&dst));
+            return Err(e);
+        }
         git_quiet(&["-C", &dst, "remote", "add", "origin", &u.to_string()])?;
         Ok(Repo {
             root: self.primary().to_string(),
@@ -596,8 +599,8 @@ mod tests {
         };
         let login = tree.worktree_dir(&r, "feat/login");
         let timeout = tree.worktree_dir(&r, "fix/timeout");
-        add_worktree(&r.path(), &login, "feat/login").unwrap();
-        add_worktree(&r.path(), &timeout, "fix/timeout").unwrap();
+        add_worktree(&base.path(), &r.path(), &login, "feat/login").unwrap();
+        add_worktree(&base.path(), &r.path(), &timeout, "fix/timeout").unwrap();
         // One of them has work in it: the repository is going regardless, so
         // this must not stop the removal half way.
         write(&paths::join(&login, "scratch.txt"), "wip\n");
@@ -629,7 +632,7 @@ mod tests {
             roots: vec![base.path()],
         }
         .worktree_dir(&r, "feat/login");
-        add_worktree(&r.path(), &dir, "feat/login").unwrap();
+        add_worktree(&base.path(), &r.path(), &dir, "feat/login").unwrap();
         // Break git's link to it, the way deleting .git by hand would.
         std::fs::remove_file(paths::join(&dir, ".git")).unwrap();
 
@@ -667,6 +670,7 @@ mod tests {
             roots: vec![base.path()],
         };
         add_worktree(
+            &base.path(),
             &r.path(),
             &tree.worktree_dir(&r, "feat/login"),
             "feat/login",

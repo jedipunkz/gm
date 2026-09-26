@@ -291,7 +291,7 @@ mod tests {
 
         fetch_branch(&clone, &bs[0]).unwrap();
         let dir = tmp.join("wt");
-        add_worktree_from(&clone, &dir, "feat/new", "origin/feat/new").unwrap();
+        add_worktree_from(&tmp.path(), &clone, &dir, "feat/new", "origin/feat/new").unwrap();
         assert_eq!(
             git_in(&dir, &["rev-parse", "--abbrev-ref", "feat/new@{upstream}"]).unwrap(),
             "origin/feat/new"
