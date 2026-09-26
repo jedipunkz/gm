@@ -233,8 +233,11 @@ pub fn is_repo(dir: &str) -> bool {
 /// has not cloned into yet is normal, and an unreadable entry is skipped.
 pub fn find_repos(dir: &str) -> Vec<String> {
     let mut found = Vec::new();
-    // The walk does not follow symlinks, the root included, as WalkDir did.
-    if std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir()) {
+    // The walk does not follow symlinks below the root, as WalkDir did. The
+    // root itself is followed: a root that is a symlink — ~/ghq pointing at
+    // another disk — is a setup, not a mistake, and metadata keeps the
+    // repositories' paths in the spelling the user configured.
+    if std::fs::metadata(dir).is_ok_and(|m| m.is_dir()) {
         walk(&paths::clean(dir), true, &mut found);
     }
     found
@@ -530,6 +533,30 @@ mod tests {
         ] {
             assert_eq!(tree.contains(&path), want, "{path}");
         }
+    }
+
+    // A root that is itself a symlink is a setup, not a mistake: the walk
+    // follows it, and the repositories keep the spelling the user configured.
+    #[test]
+    fn find_repos_follows_a_symlinked_root() {
+        let dir = TempDir::new();
+        mkdir(&dir.join("real/github.com/acme/alpha/.git"));
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
+        assert_eq!(
+            find_repos(&dir.join("link")),
+            vec![dir.join("link/github.com/acme/alpha")]
+        );
+
+        // A symlink below the root is still not descended into.
+        std::os::unix::fs::symlink(
+            dir.join("real/github.com/acme"),
+            dir.join("real/github.com/elsewhere"),
+        )
+        .unwrap();
+        assert_eq!(
+            find_repos(&dir.join("real")),
+            vec![dir.join("real/github.com/acme/alpha")]
+        );
     }
 
     #[test]
