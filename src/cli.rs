@@ -1672,11 +1672,11 @@ mod tests {
         write(&paths::join(&wide.path(), "wip.txt"), "y\n");
 
         let t = tree(&root.path());
-        let out = run_in(&t, "", Config::default(), |app| app.status(&args(&["--dirty"])))
-            .out
-            .lines()
-            .map(str::to_string)
-            .collect::<Vec<_>>();
+        let run = run_in(&t, "", Config::default(), |app| {
+            app.status(&args(&["--dirty"]))
+        });
+        run.res.unwrap();
+        let out = run.out.lines().map(str::to_string).collect::<Vec<_>>();
 
         let summary = "1 changed file, no upstream";
         let starts = out
