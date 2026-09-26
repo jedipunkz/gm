@@ -598,7 +598,7 @@ fn status_finds_unfinished_work() {
     );
     for want in [
         "github.com/acme/ahead",
-        "1 ahead",
+        "1 unpushed",
         "github.com/acme/dirty",
         "1 changed file",
         "no upstream",
@@ -625,6 +625,70 @@ fn status_finds_unfinished_work() {
     // -a says so about the ones that are fine, rather than staying silent.
     let out = status(&["-a"]);
     assert!(out.contains("acme/clean") && out.contains("clean"), "{out}");
+}
+
+// Unpushed work does not have to sit on the branch checked out or on one with
+// an upstream: a branch that was never pushed counts, and a repository with
+// no remotes keeps the behaviour it had, since everything it has is unshared
+// by definition rather than by accident.
+#[test]
+fn status_counts_unpushed_off_the_checked_out_branch() {
+    let tmp = TempDir::new();
+    let origin = tmp.join("origin.git");
+    git(
+        &tmp.path(),
+        &["init", "-q", "--bare", "-b", "main", &origin],
+    );
+    let spare = Repo {
+        root: tmp.path(),
+        rel: "github.com/acme/spare".into(),
+    };
+    mkdir(&paths::dir(&spare.path()));
+    git(&tmp.path(), &["clone", "-q", &origin, &spare.path()]);
+    git(
+        &spare.path(),
+        &["commit", "-q", "--allow-empty", "-m", "base"],
+    );
+    git(&spare.path(), &["push", "-q", "-u", "origin", "main"]);
+
+    let status = |a: &[&str]| {
+        let r = run_in(&tree(&tmp.path()), "", Config::default(), |app| {
+            app.status(&args(a))
+        });
+        r.res.unwrap();
+        r.out
+    };
+    // In sync: not listed, as before.
+    assert!(
+        !status(&[]).contains("acme/spare"),
+        "an in-sync clone was listed"
+    );
+
+    // A commit on a branch nobody pushed. The branch is switched away from,
+    // so no shortcut through HEAD would ever see it.
+    git(&spare.path(), &["checkout", "-q", "-b", "feat/wip"]);
+    git(
+        &spare.path(),
+        &["commit", "-q", "--allow-empty", "-m", "wip"],
+    );
+    git(&spare.path(), &["checkout", "-q", "main"]);
+
+    let out = status(&[]);
+    assert!(out.contains("github.com/acme/spare"), "{out}");
+    assert!(out.contains("1 unpushed"), "{out}");
+    let out = status(&["--unpushed"]);
+    assert!(out.contains("acme/spare"), "{out}");
+
+    // A repository with no remote keeps today's behaviour.
+    let lonely = Repo {
+        root: tmp.path(),
+        rel: "github.com/acme/lonely".into(),
+    };
+    git_repo(&lonely.path());
+    assert!(
+        !status(&[]).contains("acme/lonely"),
+        "a repository with no remote was listed for its unpushed work"
+    );
 }
 
 #[test]

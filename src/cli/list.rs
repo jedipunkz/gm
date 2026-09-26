@@ -131,7 +131,7 @@ impl App<'_> {
             .filter(|(_, path)| {
                 let s = &states[path];
                 !(dirty_only && s.dirty == 0
-                    || unpushed && s.ahead == 0
+                    || unpushed && s.unpushed == 0
                     || !all && !dirty_only && !unpushed && !s.unfinished())
             })
             .collect();
@@ -208,7 +208,11 @@ fn summarize(s: &State) -> String {
     if s.dirty > 0 {
         parts.push(plural(s.dirty, "changed file", "changed files"));
     }
-    if s.ahead > 0 {
+    // Unpushed is the count the default listing works from; naming it covers
+    // every branch, so " ahead" is said only when there is no other count.
+    if s.unpushed > 0 {
+        parts.push(format!("{} unpushed", s.unpushed));
+    } else if s.ahead > 0 {
         parts.push(format!("{} ahead", s.ahead));
     }
     if s.behind > 0 {
