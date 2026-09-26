@@ -153,6 +153,7 @@ pub struct Done {
     repo_at: String,
     label: String, // how the new row reads, if one was made
     path: String,
+    busy_tag: u64,
     err: Option<Error>,
 }
 
@@ -165,12 +166,12 @@ pub enum Msg {
     /// dropped if the selection moved on in the meantime, which is what keeps
     /// a held arrow key from asking git about every row it swept past.
     Probe(String),
-    Status(String, Status),                   // one repository's git status
-    Spin(u64),                                // the spinner's next frame, with its tag
-    Done(Done),                               // a confirmed change has been carried out
-    RemoteBranches(RemoteBranches),           // what the remotes have that was not fetched
-    Prs(Prs),                                 // gh's answer about one repository
-    RepoStates(HashMap<String, repo::State>), // the result of a bulk repository status scan
+    Status(String, Status),         // one repository's git status
+    Spin(u64),                      // the spinner's next frame, with its tag
+    Done(Done),                     // a confirmed change has been carried out
+    RemoteBranches(RemoteBranches), // what the remotes have that was not fetched
+    Prs(Prs),                       // gh's answer about one repository
+    RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
 }
 
 /// RemoteBranches carries what the remotes of one repository have that the
@@ -178,12 +179,14 @@ pub enum Msg {
 pub struct RemoteBranches {
     path: String,
     branches: Vec<Branch>,
+    busy_tag: u64,
     err: Option<Error>,
 }
 
 /// Prs carries gh's answer about one repository.
 pub struct Prs {
     path: String, // the repository it was asked about
+    busy_tag: u64,
     prs: Result<Vec<PullRequest>>,
 }
 
@@ -378,18 +381,17 @@ impl Model {
                 if self.busy.is_empty() || tag != self.spin.tag {
                     return vec![];
                 }
-                self.spin.tag += 1;
                 self.spin.frame += 1;
-                vec![Cmd::After(SPINNER_INTERVAL, Msg::Spin(self.spin.tag))]
+                vec![Cmd::After(SPINNER_INTERVAL, Msg::Spin(tag))]
             }
             Msg::Done(d) => self.done(d),
             Msg::RemoteBranches(r) => self.add_remote_branches(r),
             Msg::Prs(p) => self.show_prs(p),
-            Msg::RepoStates(states) => {
+            Msg::RepoStates(tag, states) => {
                 self.repo_states = Some(states);
                 self.scanning_states = false;
                 self.note.clear();
-                self.busy.clear();
+                self.finish_busy(tag);
                 if self.dirty_only || self.unpushed_only {
                     if self.mode == Mode::Repos {
                         self.filter();
@@ -415,7 +417,7 @@ impl Model {
     }
 
     fn done(&mut self, d: Done) -> Vec<Cmd> {
-        self.busy.clear();
+        self.finish_busy(d.busy_tag);
         if let Some(e) = d.err {
             self.note = e.0;
             return vec![];
@@ -645,11 +647,20 @@ impl Model {
     /// start_busy puts what gm now waits on under the prompt and starts the
     /// spinner that shows it has not hung. The returned command is the first
     /// tick.
-    fn start_busy(&mut self, what: &str) -> Cmd {
+    fn start_busy(&mut self, what: &str) -> (u64, Cmd) {
+        self.spin.tag = self.spin.tag.wrapping_add(1);
+        self.spin.frame = 0;
         self.busy = what.to_string();
         self.busy_since = Instant::now();
         self.note.clear();
-        Cmd::After(Duration::ZERO, Msg::Spin(self.spin.tag))
+        let tag = self.spin.tag;
+        (tag, Cmd::After(Duration::ZERO, Msg::Spin(tag)))
+    }
+
+    fn finish_busy(&mut self, tag: u64) {
+        if !self.busy.is_empty() && tag == self.spin.tag {
+            self.busy.clear();
+        }
     }
 
     /// help_line draws the key hints, dropping the ones that do not fit rather

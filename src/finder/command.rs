@@ -271,8 +271,8 @@ impl Model {
 
         if enabled && self.repo_states.is_none() && !self.scanning_states {
             self.scanning_states = true;
-            let busy = self.start_busy("checking repository status…");
-            return vec![busy, self.scan_repo_states()];
+            let (busy_tag, busy) = self.start_busy("checking repository status…");
+            return vec![busy, self.scan_repo_states(busy_tag)];
         }
 
         if enabled && self.repo_states.is_none() {

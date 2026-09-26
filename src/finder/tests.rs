@@ -1265,13 +1265,16 @@ fn removing_worktree_prunes_empty_host_directory() {
 
     let mut m = new_model(&rs, "");
     m.repo_at = r.path();
-    let msg = answer(vec![m.perform(Pending {
-        kind: Change::RemoveWorktree,
-        mode: Mode::Worktrees,
-        repo_at: r.path(),
-        dir,
-        ..Default::default()
-    })])
+    let msg = answer(vec![m.perform(
+        Pending {
+            kind: Change::RemoveWorktree,
+            mode: Mode::Worktrees,
+            repo_at: r.path(),
+            dir,
+            ..Default::default()
+        },
+        0,
+    )])
     .unwrap();
 
     assert!(matches!(msg, Msg::Done(Done { err: None, .. })));
@@ -1964,6 +1967,7 @@ fn remote_branches_join_the_list() {
     let again = RemoteBranches {
         path: msg.path.clone(),
         branches: msg.branches.clone(),
+        busy_tag: msg.busy_tag,
         err: None,
     };
 
@@ -2279,6 +2283,104 @@ fn busy_spinner() {
         m.update(Msg::Spin(m.spin.tag)).is_empty(),
         "the spinner kept ticking with nothing running"
     );
+}
+
+#[test]
+fn stale_busy_answers_do_not_clear_newer_work() {
+    let root = TempDir::new();
+    let (mut m, r) = branch_model(&root);
+    let want = r.path();
+    m.prs_of = Arc::new(move |dir| {
+        assert_eq!(dir, want);
+        Ok(vec![pull_request(
+            7,
+            "Add login",
+            "feat/login",
+            false,
+            false,
+            "acme",
+        )])
+    });
+    let remote_cmds = m.update(key("ctrl+l"));
+    let Some(Msg::RemoteBranches(remote)) = answer(remote_cmds) else {
+        panic!("no answer from the remotes")
+    };
+    let pr_cmds = m.update(key("ctrl+j"));
+    let Some(Msg::Prs(prs)) = answer(pr_cmds) else {
+        panic!("no answer from gh")
+    };
+
+    m.update(Msg::RemoteBranches(remote));
+    assert!(m.busy.contains("asking GitHub"), "{:?}", m.busy);
+    m.update(Msg::Prs(prs));
+    assert_eq!(m.busy, "");
+
+    let (mut m, r) = branch_model(&root);
+    let want = r.path();
+    m.prs_of = Arc::new(move |dir| {
+        assert_eq!(dir, want);
+        Ok(vec![pull_request(
+            7,
+            "Add login",
+            "feat/login",
+            false,
+            false,
+            "acme",
+        )])
+    });
+    let pr_cmds = m.update(key("ctrl+j"));
+    let Some(Msg::Prs(prs)) = answer(pr_cmds) else {
+        panic!("no answer from gh")
+    };
+    let remote_cmds = m.update(key("ctrl+l"));
+    let Some(Msg::RemoteBranches(remote)) = answer(remote_cmds) else {
+        panic!("no answer from the remotes")
+    };
+
+    m.update(Msg::Prs(prs));
+    assert!(m.busy.contains("asking the remotes"), "{:?}", m.busy);
+    m.update(Msg::RemoteBranches(remote));
+    assert_eq!(m.busy, "");
+}
+
+#[test]
+fn repo_scan_and_done_only_clear_their_own_busy_line() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    let scan_cmds = run_slash(&mut m, "/dirty");
+    assert!(
+        m.busy.contains("checking repository status"),
+        "{:?}",
+        m.busy
+    );
+    let Some(Msg::RepoStates(tag, states)) = answer(scan_cmds) else {
+        panic!("no answer from the repository scan")
+    };
+    let pr_cmds = m.update(key("ctrl+j"));
+    let Some(Msg::Prs(prs)) = answer(pr_cmds) else {
+        panic!("no answer from gh")
+    };
+
+    m.update(Msg::RepoStates(tag, states));
+    assert!(m.busy.contains("asking GitHub"), "{:?}", m.busy);
+    m.update(Msg::Prs(prs));
+    assert_eq!(m.busy, "");
+
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/charlie".into(),
+    };
+    let mut m = new_model(std::slice::from_ref(&r), "");
+    run_slash(&mut m, "/create acme/delta");
+    let cmds = m.update(ch('y'));
+    assert!(m.busy.contains("creating"), "{:?}", m.busy);
+    let Some(Msg::Done(done)) = answer(cmds) else {
+        panic!("no answer from the create task")
+    };
+    m.start_busy("asking GitHub about github.com/acme/charlie…");
+
+    m.update(Msg::Done(done));
+    assert!(m.busy.contains("asking GitHub"), "{:?}", m.busy);
 }
 
 // A terminal too small for the layout clips it; nothing may panic drawing it,
