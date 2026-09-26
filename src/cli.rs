@@ -428,10 +428,10 @@ impl App<'_> {
 
         // Uniqueness is a property of the whole tree, not of the query: a
         // name that only the hits agree on would still be ambiguous to gm rm.
-        let short: HashMap<&str, String> = if p.on("unique") {
+        let short: HashMap<String, String> = if p.on("unique") {
             repos
                 .iter()
-                .map(|r| r.rel.as_str())
+                .map(|r| r.path())
                 .zip(repo::shortest_unique(&repos))
                 .collect()
         } else {
@@ -442,7 +442,7 @@ impl App<'_> {
             if p.on("p") {
                 writeln!(out, "{}", r.path())?;
             } else if p.on("unique") {
-                writeln!(out, "{}", short[r.rel.as_str()])?;
+                writeln!(out, "{}", short[&r.path()])?;
             } else {
                 writeln!(out, "{}", r.rel)?;
             }
@@ -1265,6 +1265,35 @@ mod tests {
         let got: Vec<&str> = r.out.split_whitespace().collect();
         assert_eq!(got, vec!["alice/gm", "tools"]);
         for name in got {
+            assert!(
+                t.resolve(name).is_ok(),
+                "printed name {name:?} does not resolve"
+            );
+        }
+    }
+
+    #[test]
+    fn list_unique_disambiguates_matching_roots() {
+        let root = TempDir::new();
+        let r1 = root.join("r1");
+        let r2 = root.join("r2");
+        for dir in [&r1, &r2] {
+            mkdir(&format!("{dir}/github.com/acme/alpha/.git"));
+        }
+        let t = Tree {
+            roots: vec![r1.clone(), r2.clone()],
+        };
+        let r = run_in(&t, "", Config::default(), |a| a.list(&args(&["--unique", "alpha"])));
+        r.res.unwrap();
+        let got: Vec<String> = r.out.split_whitespace().map(str::to_string).collect();
+        assert_eq!(
+            got,
+            vec![
+                format!("{r1}/github.com/acme/alpha"),
+                format!("{r2}/github.com/acme/alpha"),
+            ]
+        );
+        for name in &got {
             assert!(
                 t.resolve(name).is_ok(),
                 "printed name {name:?} does not resolve"
