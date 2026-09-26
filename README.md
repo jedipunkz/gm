@@ -191,7 +191,7 @@ You type only the branch name; `gm` picks the path:
 | `gm` | Open the fuzzy finder; print the selected path |
 | `gm get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...` | Clone into the tree; `-u` fetches an existing clone and fast-forwards its checked-out branch when the working tree is clean (a dirty tree or a diverged branch says so and stays put), then updates its submodules |
 | `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
-| `gm status [--dirty] [--unpushed] [-a] [-p]` | List unfinished work across repositories and worktrees (uncommitted changes or unpushed commits); never fetches, so it is fast and works offline |
+| `gm status [--dirty] [--unpushed] [-a] [-p]` | List unfinished work across repositories and worktrees (uncommitted changes, or commits on local branches no remote has — every branch counts, not just the checked-out one); never fetches, so it is fast and works offline |
 | `gm remove [--dry-run] [-y] <repo>...` | Remove a repository and its worktrees after confirming, pruning empty parents (`gm rm` also works) |
 | `gm create [-p] <repo>` | Create and `git init` a repository with `origin` already set |
 | `gm wt <create\|remove> [-y] <repo> <branch>` | Add or remove a worktree from a script; the finder is better for doing it by hand |

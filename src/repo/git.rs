@@ -461,11 +461,12 @@ pub fn parse_worktrees(out: &str) -> Vec<Worktree> {
 /// the answer is as fresh as the last time something did.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
-    pub branch: String, // as git names it, "HEAD" when detached
-    pub upstream: bool, // the branch tracks something
-    pub ahead: usize,   // commits here the upstream does not have
-    pub behind: usize,  // and the other way round
-    pub dirty: usize,   // changed files
+    pub branch: String,  // as git names it, "HEAD" when detached
+    pub upstream: bool,  // the branch tracks something
+    pub ahead: usize,    // commits here the upstream does not have
+    pub behind: usize,   // and the other way round
+    pub dirty: usize,    // changed files
+    pub unpushed: usize, // commits on branches no remote has, 0 without remotes
 }
 
 impl State {
@@ -473,7 +474,7 @@ impl State {
     /// behind is the remote's news rather than the user's, so it alone does
     /// not make a repository worth listing.
     pub fn unfinished(&self) -> bool {
-        self.dirty > 0 || self.ahead > 0
+        self.dirty > 0 || self.ahead > 0 || self.unpushed > 0
     }
 }
 
@@ -483,9 +484,30 @@ const STATUS_WORKERS: usize = 8;
 
 /// status_of reads one repository's state.
 pub fn status_of(dir: &str) -> State {
-    git_in(dir, &["status", "--porcelain", "-b"])
+    let mut s = git_in(dir, &["status", "--porcelain", "-b"])
         .map(|out| parse_status(&out))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // The commits on branches no remote has are unpushed work, as much as
+    // being ahead of the upstream is — more, since they name every branch,
+    // not just the checked-out one. Only a repository with remotes counts:
+    // one without would list every commit it ever made.
+    if !remotes(dir).0.is_empty() {
+        s.unpushed = unpushed_commits(dir);
+    }
+    s
+}
+
+/// unpushed_commits counts the commits reachable from local branches and from
+/// no remote-tracking ref. Never a fetch: the answer is as fresh as the last
+/// fetch was.
+fn unpushed_commits(dir: &str) -> usize {
+    git_in(
+        dir,
+        &["rev-list", "--count", "--branches", "--not", "--remotes"],
+    )
+    .ok()
+    .and_then(|n| n.trim().parse().ok())
+    .unwrap_or(0)
 }
 
 /// status_map reads every path, a few at a time: git is the slow part and the
@@ -839,6 +861,7 @@ detached
             ahead,
             behind,
             dirty,
+            unpushed: 0,
         };
         for (name, out, want) in [
             (

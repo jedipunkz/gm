@@ -93,7 +93,7 @@ impl Model {
             .filter(|&i| {
                 states.get(&self.all[i].path).is_some_and(|state| {
                     (!self.dirty_only || state.dirty > 0)
-                        && (!self.unpushed_only || state.ahead > 0)
+                        && (!self.unpushed_only || state.unpushed > 0 || state.ahead > 0)
                 })
             })
             .collect()
