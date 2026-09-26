@@ -1283,7 +1283,9 @@ mod tests {
         let t = Tree {
             roots: vec![r1.clone(), r2.clone()],
         };
-        let r = run_in(&t, "", Config::default(), |a| a.list(&args(&["--unique", "alpha"])));
+        let r = run_in(&t, "", Config::default(), |a| {
+            a.list(&args(&["--unique", "alpha"]))
+        });
         r.res.unwrap();
         let got: Vec<String> = r.out.split_whitespace().map(str::to_string).collect();
         assert_eq!(
