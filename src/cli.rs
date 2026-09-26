@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::process::{Command, Stdio};
 
+use ratatui::text::Span;
+
 use crate::config::{self, Config};
 use crate::finder::{self, Action, Keys};
 use crate::repo::{self, History, Repo, State, Tree};
@@ -584,11 +586,12 @@ impl App<'_> {
             .collect();
         let width = keep
             .iter()
-            .map(|(name, _)| name.chars().count())
+            .map(|(name, _)| Span::raw(name.as_str()).width())
             .max()
             .unwrap_or(0);
         for (name, path) in keep {
-            writeln!(self.out, "{name:<width$}  {}", summarize(&states[path]))?;
+            let pad = " ".repeat(width.saturating_sub(Span::raw(name.as_str()).width()));
+            writeln!(self.out, "{name}{pad}  {}", summarize(&states[path]))?;
         }
         Ok(())
     }
@@ -1089,6 +1092,8 @@ bind -x '"\C-{{key}}": __gm_jump'
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::text::Span;
+
     use crate::testutil::{TempDir, exists, git, git_repo, mkdir, write};
 
     /// Run is one command run against a tree, with both streams captured.
@@ -1647,6 +1652,42 @@ mod tests {
         // -a says so about the ones that are fine, rather than staying silent.
         let out = status(&["-a"]);
         assert!(out.contains("acme/clean") && out.contains("clean"), "{out}");
+    }
+
+    #[test]
+    fn status_aligns_summaries_for_wide_names() {
+        let root = TempDir::new();
+        let ascii = Repo {
+            root: root.path(),
+            rel: "github.com/acme/z".into(),
+        };
+        git_repo(&ascii.path());
+        write(&paths::join(&ascii.path(), "wip.txt"), "x\n");
+
+        let wide = Repo {
+            root: root.path(),
+            rel: "github.com/acme/ほげほげ".into(),
+        };
+        git_repo(&wide.path());
+        write(&paths::join(&wide.path(), "wip.txt"), "y\n");
+
+        let t = tree(&root.path());
+        let out = run_in(&t, "", Config::default(), |app| app.status(&args(&["--dirty"])))
+            .out
+            .lines()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+
+        let summary = "1 changed file, no upstream";
+        let starts = out
+            .iter()
+            .map(|line| {
+                let i = line.find(summary).expect(line);
+                Span::raw(&line[..i]).width()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(starts.len(), 2, "{out:?}");
+        assert_eq!(starts[0], starts[1], "{out:?}");
     }
 
     // The round trip a script does: make a worktree, read where it went off
