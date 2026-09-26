@@ -1711,6 +1711,34 @@ fn remove_refuses_the_main_worktree() {
     assert!(m.note.contains("repository itself"), "{:?}", m.note);
 }
 
+// git reports the resolved path of a worktree, which is not the path the
+// finder walked when the root sits behind a symlink. The main worktree must
+// still be recognised, or /remove offers to delete the repository itself.
+#[test]
+fn remove_refuses_the_main_worktree_behind_a_symlink() {
+    let base = TempDir::new();
+    let real = base.join("real");
+    let link = base.join("link");
+    mkdir(&paths::join(&real, "github.com/acme/alpha"));
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    let mut m = new_model(&repos(&link, &["github.com/acme/alpha"]), "");
+    m.worktrees_of = Arc::new(|dir| {
+        Ok(vec![Worktree {
+            path: std::fs::canonicalize(dir)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+            branch: "main".into(),
+            ..Default::default()
+        }])
+    });
+    m.open_worktrees();
+    let cmds = run_slash(&mut m, "/remove");
+    assert!(!is_quit(&cmds) && m.over == Overlay::None);
+    assert!(m.note.contains("repository itself"), "{:?}", m.note);
+}
+
 // ---- the branch list ----------------------------------------------------
 
 /// branch_model is a finder over one repository whose branches are stubbed:

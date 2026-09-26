@@ -115,7 +115,11 @@ pub const COMMANDS: &[Command] = &[
             }
 
             if m.mode == Mode::Worktrees {
-                if it.path == m.repo_at {
+                // git prints the resolved path for a worktree, while repo_at is
+                // the path the finder walked; under a symlinked root the two
+                // differ textually, so compare them the way the repository
+                // case below does.
+                if repo::same_path(&it.path, &m.repo_at) {
                     m.note = "that is the repository itself, not a worktree of it".into();
                     return vec![];
                 }
