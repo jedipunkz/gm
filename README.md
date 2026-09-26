@@ -34,6 +34,7 @@ Deliberately not implemented:
 
 ## 📋 Requirements
 
+- macOS / Linux: the finder and git's plumbing run against Unix only, so it cannot be built or run on Windows
 - `git` on `$PATH`
 - Rust 1.95 or newer, only to build it yourself
 - A true-color terminal, for the finder's themes to look as intended
@@ -78,7 +79,7 @@ details pane work the same in all four.
 | `Ctrl-L` (`branch_key`) | Show the branches of the selected repository | Show the branches | Back to the repositories | Show the branches |
 | `Ctrl-J` (`pr_key`) | Show the open pull requests of the selected repository | Show the pull requests | Show the pull requests | Back to the repositories |
 | `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser | Open the remote in a browser | Open the remote in a browser |
-| `Ctrl-G` | — | Back to the repositories | Back to the repositories | Back to the repositories |
+| `Ctrl-G` | Clear the query, then the filter | Back to the repositories | Back to the repositories | Back to the repositories |
 | `Esc` | Clear the query, then the filter, then quit | Back to the repositories | Back to the repositories | Back to the repositories |
 | `Ctrl-C` | Quit without printing | Quit without printing | Quit without printing | Quit without printing |
 
@@ -91,7 +92,7 @@ Other keys are ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U`, …), except
   worktree.
 - The hint line under the prompt lists the keys of the current list, using the
   chords you configured.
-- Going back to a list keeps its query, cursor and highlights.
+- Going back to the repository list keeps its query, cursor and highlights; the worktree, branch and pull request lists are rebuilt each time they are entered.
 - `Esc` undoes one layer at a time (worktree list → query → filter) and quits
   only when nothing is left. The hint line says what it will do next.
 - While `gm` waits on git or GitHub (loading pull requests, checking out, a
@@ -189,7 +190,7 @@ You type only the branch name; `gm` picks the path:
 | Command | What it does |
 |---|---|
 | `gm` | Open the fuzzy finder; print the selected path |
-| `gm get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...` | Clone into the tree; `-u` fetches an existing clone and fast-forwards its checked-out branch when the working tree is clean (a dirty tree or a diverged branch says so and stays put), then updates its submodules |
+| `gm get [-u] [-p] [--shallow] [--no-recursive] [-b <branch>] [-s] [-l] <repo>...` | Clone into the tree; `-u` fetches an existing clone and fast-forwards its checked-out branch when the working tree is clean (a dirty tree or a diverged branch says so and stays put), then updates its submodules |
 | `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
 | `gm status [--dirty] [--unpushed] [-a] [-p]` | List unfinished work across repositories and worktrees (uncommitted changes, or commits on local branches no remote has — every branch counts, not just the checked-out one); never fetches, so it is fast and works offline |
 | `gm remove [--dry-run] [-y] <repo>...` | Remove a repository and its worktrees after confirming, pruning empty parents (`gm rm` also works) |
