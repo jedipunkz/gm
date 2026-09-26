@@ -450,11 +450,23 @@ impl Model {
                         all.len() != before
                     }
                     Change::Create => {
-                        all.push(Item {
+                        // The repository list is ascending by frecency, best
+                        // last, and a fresh clone has no visits — so its row
+                        // belongs at the top, not at the end a push would
+                        // give it, which is the best spot in the list.
+                        let it = Item {
                             label: d.label.clone(),
                             path: d.path.clone(),
                             ..Default::default()
-                        });
+                        };
+                        let mut at = 0;
+                        while at < all.len()
+                            && (all[at].score < it.score
+                                || (all[at].score == it.score && all[at].label <= it.label))
+                        {
+                            at += 1;
+                        }
+                        all.insert(at, it);
                         true
                     }
                     Change::AddWorktree => {
@@ -470,15 +482,28 @@ impl Model {
                         if let Some(it) = existing {
                             it.path = d.path.clone();
                         } else {
-                            all.push(Item {
-                                label: d.label.clone(),
-                                path: d.path.clone(),
-                                branch: crate::repo::Branch {
-                                    name: d.label.clone(),
+                            // In the worktree list the main worktree belongs
+                            // to the bottom row, and the rest read newest
+                            // first, so a new worktree goes at the top. The
+                            // branch and pull request lists keep the row a
+                            // branch was: those are updated in place above.
+                            let at = if d.mode == Mode::Worktrees {
+                                0
+                            } else {
+                                all.len()
+                            };
+                            all.insert(
+                                at,
+                                Item {
+                                    label: d.label.clone(),
+                                    path: d.path.clone(),
+                                    branch: crate::repo::Branch {
+                                        name: d.label.clone(),
+                                        ..Default::default()
+                                    },
                                     ..Default::default()
                                 },
-                                ..Default::default()
-                            });
+                            );
                         }
                         true
                     }
@@ -490,6 +515,15 @@ impl Model {
                     if changed(&mut self.all) {
                         self.view_stale = true;
                         self.filter();
+                        // The created row is the selection, wherever its
+                        // ordering put it; standing on the bottom row would
+                        // be right only when it was pushed to the end.
+                        if !matches!(d.kind, Change::Remove | Change::RemoveWorktree)
+                            && let Some(i) =
+                                self.view.iter().position(|&x| self.all[x].path == d.path)
+                        {
+                            self.cursor = i;
+                        }
                     }
                 } else if d.mode == Mode::Repos
                     && self.mode != Mode::Repos

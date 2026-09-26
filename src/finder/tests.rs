@@ -1142,6 +1142,64 @@ fn confirm_create() {
     assert!(m.note.contains("created"));
 }
 
+// The row a fresh clone deserves is the top: the list is ascending by
+// frecency, so pushing it to the end gave the least-visited repository the
+// best spot until the next restart.
+#[test]
+fn created_repository_lands_where_its_slot_is() {
+    let root = TempDir::new();
+    let mut m = new_model(
+        &repos(
+            &root.path(),
+            &["github.com/acme/bravo", "github.com/acme/charlie"],
+        ),
+        "",
+    );
+    (m.w, m.h) = (90, 16);
+    run_slash(&mut m, "/create acme/alpha");
+    let cmds = m.update(ch('y'));
+    feed(&mut m, cmds);
+
+    assert_eq!(
+        m.current().unwrap().path,
+        root.join("github.com/acme/alpha"),
+        "the created row is the selection"
+    );
+    let rs = rows(&m);
+    assert_eq!(rs.first().unwrap(), "github.com/acme/alpha", "{rs:?}");
+    assert_eq!(
+        rs.last().unwrap(),
+        "github.com/acme/charlie",
+        "the best match must stay at the bottom: {rs:?}"
+    );
+}
+
+// The main worktree is the bottom row, before and after a worktree is made:
+// the created one goes at the top, and it is selected.
+#[test]
+fn created_worktree_keeps_the_main_worktree_last() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let mut m = new_model(std::slice::from_ref(&r), "");
+    (m.w, m.h) = (90, 16);
+    m.open_worktrees();
+    assert_eq!(label(&m), "main", "the main worktree starts at the bottom");
+
+    run_slash(&mut m, "/create feat/login");
+    assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
+    let cmds = m.update(ch('y'));
+    feed(&mut m, cmds);
+    assert_eq!(m.mode, Mode::Worktrees, "{:?}", m.note);
+    let rs = rows(&m);
+    assert_eq!(rs.last().unwrap(), "main", "{rs:?}");
+    assert_eq!(rs.first().unwrap(), "feat/login", "{rs:?}");
+    assert!(m.current().unwrap().path.contains("feat/login"));
+}
+
 // The worktrees go with the repository, so the question names them before
 // anyone says yes; the repository is not one of its own worktrees.
 #[test]
