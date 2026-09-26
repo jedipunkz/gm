@@ -92,10 +92,19 @@ impl Tree {
 
     /// existing_path finds a repository at rel under the first matching root.
     pub fn existing_path(&self, rel: &str) -> Option<String> {
+        self.existing_paths(rel).into_iter().next()
+    }
+
+    /// existing_paths finds every root a repository at rel already lives
+    /// under, most preferred first: one repository can be cloned under two
+    /// roots, and a caller that would clone or update one of them has to say
+    /// which instead of picking silently.
+    pub fn existing_paths(&self, rel: &str) -> Vec<String> {
         self.roots
             .iter()
             .map(|root| paths::join(root, rel))
-            .find(|path| is_repo(path))
+            .filter(|path| is_repo(path))
+            .collect()
     }
 
     /// list walks every root and returns the repositories found.
