@@ -1604,7 +1604,8 @@ fn worktree_mode_keys_go_back() {
     assert!(!is_quit(&new_model(&rs, "").update(key("ctrl+g"))));
 }
 
-// When git cannot answer, the finder stays usable rather than emptying itself.
+// When git cannot answer, the finder stays usable and says why on the hint
+// line, the way the pull request list does; silence reads as a broken key.
 #[test]
 fn worktree_mode_leaves_the_list_alone_on_error() {
     let root = TempDir::new();
@@ -1612,6 +1613,31 @@ fn worktree_mode_leaves_the_list_alone_on_error() {
     m.worktrees_of = Arc::new(|_| Err("not a git repository".into()));
     m.open_worktrees();
     assert!(m.mode == Mode::Repos && m.view.len() == 1);
+    assert!(m.note.contains("not a git repository"), "{:?}", m.note);
+}
+
+// An empty answer from Ctrl-L has a name too: every fresh gm create has no
+// branch yet, so pressing Ctrl-L on one must not look like a broken key.
+#[test]
+fn empty_lists_are_named() {
+    let root = TempDir::new();
+    let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
+    m.branches_of = Arc::new(|_| Ok(vec![]));
+    m.open_branches();
+    assert!(m.mode == Mode::Repos, "{:?}", m.note);
+    assert!(
+        m.note.contains("no branches in github.com/acme/alpha"),
+        "{:?}",
+        m.note
+    );
+
+    m.worktrees_of = Arc::new(|_| Ok(vec![]));
+    m.open_worktrees();
+    assert!(
+        m.note.contains("no worktrees in github.com/acme/alpha"),
+        "{:?}",
+        m.note
+    );
 }
 
 // Against real git: the branch is checked out where gm says it belongs, the row
