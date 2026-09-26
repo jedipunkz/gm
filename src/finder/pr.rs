@@ -15,13 +15,17 @@ impl Model {
         let Some(it) = self.current().cloned().filter(|_| self.mode == Mode::Repos) else {
             return vec![];
         };
-        let busy = self.start_busy(&format!("asking GitHub about {}…", it.label));
+        let (busy_tag, busy) = self.start_busy(&format!("asking GitHub about {}…", it.label));
         let (prs_of, path) = (self.prs_of.clone(), it.path);
         vec![
             busy,
             Cmd::Task(Box::new(move || {
                 let prs = prs_of(&path);
-                Some(Msg::Prs(Prs { path, prs }))
+                Some(Msg::Prs(Prs {
+                    path,
+                    busy_tag,
+                    prs,
+                }))
             })),
         ]
     }
@@ -30,7 +34,7 @@ impl Model {
     /// still the one selected in the repository list; otherwise the user has
     /// moved on.
     pub(super) fn show_prs(&mut self, msg: Prs) -> Vec<Cmd> {
-        self.busy.clear();
+        self.finish_busy(msg.busy_tag);
         let Some(it) = self
             .current()
             .cloned()
@@ -110,21 +114,24 @@ impl Model {
                 return vec![];
             }
         };
-        let busy = self.start_busy(&format!(
+        let (busy_tag, busy) = self.start_busy(&format!(
             "checking #{} out at {}…",
             it.pr.number,
             tildify(&dir)
         ));
         vec![
             busy,
-            self.perform(Pending {
-                kind: Change::CheckOutPr,
-                mode: self.mode,
-                repo_at: self.repo_at.clone(),
-                arg: it.pr.number.to_string(),
-                dir,
-                ..Default::default()
-            }),
+            self.perform(
+                Pending {
+                    kind: Change::CheckOutPr,
+                    mode: self.mode,
+                    repo_at: self.repo_at.clone(),
+                    arg: it.pr.number.to_string(),
+                    dir,
+                    ..Default::default()
+                },
+                busy_tag,
+            ),
         ]
     }
 }

@@ -43,7 +43,7 @@ impl Model {
             })
             .collect();
         self.replace_list(Mode::Branches, &it, items);
-        let busy = self.start_busy(&format!(
+        let (busy_tag, busy) = self.start_busy(&format!(
             "asking the remotes of {} for their branches…",
             it.label
         ));
@@ -55,6 +55,7 @@ impl Model {
             Some(Msg::RemoteBranches(RemoteBranches {
                 path,
                 branches,
+                busy_tag,
                 err,
             }))
         })));
@@ -65,7 +66,7 @@ impl Model {
     /// was asked for, at the top: nothing says how recent they are. The
     /// selection stays on the row it was on.
     pub(super) fn add_remote_branches(&mut self, msg: RemoteBranches) -> Vec<Cmd> {
-        self.busy.clear();
+        self.finish_busy(msg.busy_tag);
         if self.mode != Mode::Branches || self.repo_at != msg.path {
             return vec![];
         }
@@ -148,20 +149,23 @@ impl Model {
         } else {
             format!("checking {} out at {}…", it.branch.name, tildify(&dir))
         };
-        let busy = self.start_busy(&what);
+        let (busy_tag, busy) = self.start_busy(&what);
         let b = it.branch;
         vec![
             busy,
-            self.perform(Pending {
-                kind: Change::CheckOut,
-                mode: self.mode,
-                repo_at: self.repo_at.clone(),
-                arg: b.name,
-                from: b.remote,
-                fetch: b.unfetched,
-                dir,
-                ..Default::default()
-            }),
+            self.perform(
+                Pending {
+                    kind: Change::CheckOut,
+                    mode: self.mode,
+                    repo_at: self.repo_at.clone(),
+                    arg: b.name,
+                    from: b.remote,
+                    fetch: b.unfetched,
+                    dir,
+                    ..Default::default()
+                },
+                busy_tag,
+            ),
         ]
     }
 

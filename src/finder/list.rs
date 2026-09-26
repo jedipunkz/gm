@@ -101,10 +101,12 @@ impl Model {
 
     /// scan_repo_states asks git about every repository at once, off the UI
     /// thread. The result serves both the dirty and unpushed filters.
-    pub(super) fn scan_repo_states(&self) -> Cmd {
+    pub(super) fn scan_repo_states(&self, busy_tag: u64) -> Cmd {
         let paths: Vec<String> = self.all.iter().map(|it| it.path.clone()).collect();
         let scan = self.state_scan_of.clone();
-        Cmd::Task(Box::new(move || Some(Msg::RepoStates(scan(&paths)))))
+        Cmd::Task(Box::new(move || {
+            Some(Msg::RepoStates(busy_tag, scan(&paths)))
+        }))
     }
 
     /// render_row draws one row, highlighting the characters the query

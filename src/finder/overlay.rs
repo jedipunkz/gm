@@ -48,7 +48,7 @@ pub struct Pending {
 
 impl Model {
     /// perform carries out a confirmed change, off the UI thread.
-    pub(super) fn perform(&self, a: Pending) -> Cmd {
+    pub(super) fn perform(&self, a: Pending, busy_tag: u64) -> Cmd {
         let (tree, gh) = (self.tree.clone(), self.gh.clone());
         Cmd::Task(Box::new(move || {
             let kind = a.kind;
@@ -63,6 +63,7 @@ impl Model {
                     repo_at: a.repo_at.clone(),
                     label,
                     path,
+                    busy_tag,
                     err,
                 }))
             };
@@ -235,10 +236,13 @@ impl Model {
                     _ => None,
                 };
                 let mut cmds = Vec::new();
+                let mut busy_tag = 0;
                 if let Some(what) = busy {
-                    cmds.push(self.start_busy(&what));
+                    let started = self.start_busy(&what);
+                    busy_tag = started.0;
+                    cmds.push(started.1);
                 }
-                cmds.push(self.perform(a));
+                cmds.push(self.perform(a, busy_tag));
                 return cmds;
             }
             Overlay::Confirm if matches!(name, "n" | "N" | "q" | "esc" | "ctrl+c") => {
