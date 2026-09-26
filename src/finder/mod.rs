@@ -633,6 +633,17 @@ impl Model {
                 self.cursor = self.cursor.saturating_sub(1);
                 return self.load_status().into_iter().collect();
             }
+            "pgdown" | "pgup" => {
+                // One screen at a time: the window move() renders with is the
+                // size a page is measured in.
+                let rows = self.page_rows();
+                if name == "pgdown" {
+                    self.cursor = (self.cursor + rows).min(self.view.len().saturating_sub(1));
+                } else {
+                    self.cursor = self.cursor.saturating_sub(rows);
+                }
+                return self.load_status().into_iter().collect();
+            }
             _ => {}
         }
 
@@ -823,13 +834,16 @@ impl Model {
     /// render draws the whole screen: the list hanging from the prompt on the
     /// left, the details pane on the right, the prompt, the hints, and any
     /// panel over the lot.
+    /// page_rows is how many rows of the list one turn of `pgup`/`pgdown`
+    /// moves, the height of the window render hangs from the prompt.
+    fn page_rows(&self) -> usize {
+        self.h.saturating_sub(4).max(3) as usize // the bordered input box, plus the hint line under it
+    }
+
     pub fn render(&self, buf: &mut Buffer) {
         let area = *buf.area();
-        let (w, h) = (
-            self.w.min(area.width) as usize,
-            self.h.min(area.height) as usize,
-        );
-        let rows = h.saturating_sub(4).max(3); // the bordered input box, plus the hint line under it
+        let w = self.w.min(area.width) as usize;
+        let rows = self.page_rows();
         // The list gets the left 3/5: it is what gets scanned.
         let (list_w, info_w) = if w >= 66 {
             (w - w * 2 / 5 - 3, w * 2 / 5)

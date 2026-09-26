@@ -1174,6 +1174,48 @@ fn created_repository_lands_where_its_slot_is() {
     );
 }
 
+// PgDown and PgUp move a screen of rows at a time, clamped by the list, and
+// the status of the row they land on is loaded like the arrows do.
+#[test]
+fn page_keys_move_a_screen_at_a_time() {
+    let root = TempDir::new();
+    let (w, h) = (90, 14); // the list window is 14 - 4 = 10 rows tall
+    let names: Vec<String> = (0..26).map(|i| format!("github.com/acme/{i:02}")).collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let rs = repos(&root.path(), &refs);
+    let mut m = new_model(&rs, "");
+    (m.w, m.h) = (w, h);
+    assert_eq!(
+        m.cursor,
+        m.view.len() - 1,
+        "the finder starts at the bottom"
+    );
+
+    // Up: three pages tops out at the first row.
+    m.update(key("pgup"));
+    assert_eq!(m.cursor, m.view.len() - 1 - m.page_rows());
+    m.update(key("pgup"));
+    assert_eq!(m.cursor, m.view.len() - 1 - m.page_rows() * 2);
+    m.update(key("pgup"));
+    assert_eq!(m.cursor, 0);
+    assert_eq!(m.current().unwrap().label, "github.com/acme/00");
+
+    // Down: three pages bottoms out at the last row.
+    m.update(key("pgdown"));
+    assert_eq!(m.cursor, m.page_rows());
+    m.update(key("pgdown"));
+    assert_eq!(m.cursor, m.page_rows() * 2);
+    m.update(key("pgdown"));
+    assert_eq!(m.cursor, m.view.len() - 1);
+    assert_eq!(m.current().unwrap().label, "github.com/acme/25");
+
+    // An empty list: both keys are harmless.
+    let mut m = new_model(&[], "");
+    m.update(key("pgdown"));
+    m.update(key("pgup"));
+    assert!(m.current().is_none());
+}
+
 // The main worktree is the bottom row, before and after a worktree is made:
 // the created one goes at the top, and it is selected.
 #[test]
