@@ -600,20 +600,20 @@ pub fn branch_exists(dir: &str, branch: &str) -> bool {
 
 /// add_worktree checks branch out at dir, starting the branch from HEAD when
 /// it does not exist yet.
-pub fn add_worktree(repo_dir: &str, dir: &str, branch: &str) -> Result<()> {
-    add_worktree_from(repo_dir, dir, branch, "")
-}
-
-/// add_worktree_in removes the empty directories it made if git cannot add the
-/// worktree. worktree_root is left in place for the next checkout.
-pub fn add_worktree_in(worktree_root: &str, repo_dir: &str, dir: &str, branch: &str) -> Result<()> {
-    add_worktree_from_in(worktree_root, repo_dir, dir, branch, "")
+pub fn add_worktree(worktree_root: &str, repo_dir: &str, dir: &str, branch: &str) -> Result<()> {
+    add_worktree_from(worktree_root, repo_dir, dir, branch, "")
 }
 
 /// add_worktree_from is add_worktree for a branch that may live only on a
 /// remote: a new branch starts at start, "origin/feature", and tracks it. An
 /// empty start is HEAD.
-pub fn add_worktree_from(repo_dir: &str, dir: &str, branch: &str, start: &str) -> Result<()> {
+pub fn add_worktree_from(
+    worktree_root: &str,
+    repo_dir: &str,
+    dir: &str,
+    branch: &str,
+    start: &str,
+) -> Result<()> {
     if !valid_branch(branch) {
         return Err(err!("{branch:?} is not a branch name"));
     }
@@ -626,19 +626,7 @@ pub fn add_worktree_from(repo_dir: &str, dir: &str, branch: &str, start: &str) -
     } else {
         args.extend(["-b", branch, dir]);
     }
-    git_quiet(&args)
-}
-
-/// add_worktree_from_in is add_worktree_from for a path gm owns under
-/// worktree_root. Failed additions leave no empty branch directories behind.
-pub fn add_worktree_from_in(
-    worktree_root: &str,
-    repo_dir: &str,
-    dir: &str,
-    branch: &str,
-    start: &str,
-) -> Result<()> {
-    match add_worktree_from(repo_dir, dir, branch, start) {
+    match git_quiet(&args) {
         Ok(()) => Ok(()),
         Err(e) => {
             super::prune_empty_parents(worktree_root, paths::dir(dir));
@@ -1103,6 +1091,7 @@ detached
         };
         assert!(
             add_worktree(
+                &base.path(),
                 &main,
                 &tree.worktree_dir(&r, "../../escaped"),
                 "../../escaped"
@@ -1130,8 +1119,8 @@ detached
         };
         let dir = tree.worktree_dir(&r, "feat/login");
 
-        add_worktree(&main, &dir, "feat/login").unwrap();
-        let e = add_worktree(&main, &dir, "feat/login").unwrap_err();
+        add_worktree(&base.path(), &main, &dir, "feat/login").unwrap();
+        let e = add_worktree(&base.path(), &main, &dir, "feat/login").unwrap_err();
         assert!(
             e.0.contains("already exists"),
             "the error lost git's explanation: {e}"
@@ -1147,10 +1136,10 @@ detached
         git_repo(&main);
         let root = base.join(WORKTREE_ROOT);
         let first = base.join("other/feat/login");
-        add_worktree(&main, &first, "feat/login").unwrap();
+        add_worktree(&root, &main, &first, "feat/login").unwrap();
 
         let failed = paths::join(&root, "github.com/acme/alpha/fix/login");
-        assert!(add_worktree_in(&root, &main, &failed, "feat/login").is_err());
+        assert!(add_worktree(&root, &main, &failed, "feat/login").is_err());
         assert!(!crate::testutil::exists(&paths::join(&root, "github.com")));
 
         remove_worktree(&main, &first, false).unwrap();
@@ -1175,7 +1164,7 @@ detached
             "{bs:?}"
         );
         let dir = tmp.join("wt");
-        add_worktree_from(&clone, &dir, "feat/login", "origin/feat/login").unwrap();
+        add_worktree_from(&tmp.path(), &clone, &dir, "feat/login", "origin/feat/login").unwrap();
         assert_eq!(
             git_in(
                 &dir,

@@ -85,7 +85,7 @@ impl Model {
                         .at(&a.repo_at)
                         .ok_or_else(|| err!("{} is not under any root", a.repo_at))?;
                     let root = paths::join(&r.root, repo::WORKTREE_ROOT);
-                    repo::add_worktree_from_in(&root, &a.repo_at, &a.dir, &a.arg, &a.from)?;
+                    repo::add_worktree_from(&root, &a.repo_at, &a.dir, &a.arg, &a.from)?;
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
                 Change::CheckOutPr => done((|| {

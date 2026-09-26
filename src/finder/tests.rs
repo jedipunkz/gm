@@ -1261,7 +1261,7 @@ fn removing_worktree_prunes_empty_host_directory() {
         roots: vec![root.path()],
     };
     let dir = tree.worktree_dir(r, "feat/login");
-    repo::add_worktree(&r.path(), &dir, "feat/login").unwrap();
+    repo::add_worktree(&root.path(), &r.path(), &dir, "feat/login").unwrap();
 
     let mut m = new_model(&rs, "");
     m.repo_at = r.path();

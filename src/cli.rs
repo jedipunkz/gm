@@ -653,7 +653,7 @@ impl App<'_> {
         } else {
             "new branch"
         };
-        repo::add_worktree_in(
+        repo::add_worktree(
             &paths::join(&r.root, repo::WORKTREE_ROOT),
             &r.path(),
             &dir,
@@ -1516,8 +1516,8 @@ mod tests {
             &["remote", "add", "origin", "https://github.com/acme/alpha"],
         );
         let outside = base.join("wt/login");
-        repo::add_worktree(&src, &outside, "feat/login").unwrap();
-        repo::add_worktree(&src, &paths::join(&src, "inner"), "fix/inner").unwrap();
+        repo::add_worktree(&base.path(), &src, &outside, "feat/login").unwrap();
+        repo::add_worktree(&base.path(), &src, &paths::join(&src, "inner"), "fix/inner").unwrap();
 
         // --dry-run says so, and touches nothing.
         let dry = run_in(&tree(&root), "", Config::default(), |a| {
@@ -1605,7 +1605,7 @@ mod tests {
         // A worktree holds work in progress by definition, and lives under a
         // dotted directory the repository walk never descends into.
         let wt = t.worktree_dir(&dirty, "feat/login");
-        repo::add_worktree(&dirty.path(), &wt, "feat/login").unwrap();
+        repo::add_worktree(&root, &dirty.path(), &wt, "feat/login").unwrap();
         write(&paths::join(&wt, "scratch.txt"), "y\n");
 
         let status = |a: &[&str]| {
@@ -1698,8 +1698,8 @@ mod tests {
         let t = tree(&root.path());
         let login = t.worktree_dir(&r, "feat/login");
         let timeout = t.worktree_dir(&r, "fix/timeout");
-        repo::add_worktree(&r.path(), &login, "feat/login").unwrap();
-        repo::add_worktree(&r.path(), &timeout, "fix/timeout").unwrap();
+        repo::add_worktree(&root.path(), &r.path(), &login, "feat/login").unwrap();
+        repo::add_worktree(&root.path(), &r.path(), &timeout, "fix/timeout").unwrap();
         write(&paths::join(&login, "wip.txt"), "wip\n");
 
         let res = run_in(&t, "", Config::default(), |a| {
