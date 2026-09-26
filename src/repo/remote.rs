@@ -1,19 +1,12 @@
 use std::collections::HashSet;
 use std::ffi::OsStr;
-use std::io::Read;
-use std::os::unix::process::CommandExt;
-use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use super::deadline::{FETCH_TIMEOUT, LIST_TIMEOUT, run_deadline};
 use super::git::{
     Branch, exit_error, git_command_with, git_in, git_message, remotes, valid_branch,
 };
 use crate::{Error, Result, err};
-
-/// Timeouts for the calls that go to a remote. Listing moves only ref names;
-/// fetching one branch moves its objects, which can take a while.
-const LIST_TIMEOUT: Duration = Duration::from_secs(20);
-const FETCH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 /// git_remote runs git for a call that talks to a remote, with every way it
 /// could ask for a password shut. The finder owns the terminal: a prompt would
@@ -29,9 +22,6 @@ fn git_remote_with(program: &OsStr, timeout: Duration, dir: &str, args: &[&str])
         .arg(dir)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0");
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
     // ssh prompts on the controlling terminal, not on stdin; batch mode makes
     // it fail instead. A user's own ssh command is left alone; an empty one
     // is no command, as it is to git.
@@ -40,75 +30,14 @@ fn git_remote_with(program: &OsStr, timeout: Duration, dir: &str, args: &[&str])
     {
         cmd.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
     }
-    // A new session has no controlling terminal, so nothing git starts can
-    // open /dev/tty to ask, whatever it is.
-    // SAFETY: setsid is async-signal-safe and touches nothing of the parent.
-    unsafe {
-        cmd.pre_exec(|| {
-            libc::setsid();
-            Ok(())
-        });
-    }
-
-    let mut child = cmd.spawn()?;
-    let drain = |r: Option<Box<dyn Read + Send>>| {
-        std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            if let Some(mut r) = r {
-                let _ = r.read_to_end(&mut buf);
-            }
-            buf
-        })
-    };
-    let stdout = drain(
-        child
-            .stdout
-            .take()
-            .map(|s| Box::new(s) as Box<dyn Read + Send>),
-    );
-    let stderr = drain(
-        child
-            .stderr
-            .take()
-            .map(|s| Box::new(s) as Box<dyn Read + Send>),
-    );
-
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            let pgid = child.id() as libc::pid_t;
-            if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 {
-                let _ = child.kill();
-            }
-            let _ = child.wait();
-            return Err(err!("git {} took longer than {}", args[0], human(timeout)));
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    let (out, errout) = (
-        stdout.join().unwrap_or_default(),
-        stderr.join().unwrap_or_default(),
-    );
-    if !status.success() {
-        return match git_message(&errout) {
+    let out = run_deadline(&mut cmd, timeout, &format!("git {}", args[0]), Error::from)?;
+    if !out.status.success() {
+        return match git_message(&out.stderr) {
             msg if !msg.is_empty() => Err(Error(msg)),
-            _ => Err(exit_error(&status)),
+            _ => Err(exit_error(&out.status)),
         };
     }
-    Ok(String::from_utf8_lossy(&out).into_owned())
-}
-
-/// human spells a timeout the way Go's Duration.String did: 20s, 5m0s.
-fn human(d: Duration) -> String {
-    let s = d.as_secs();
-    if s < 60 {
-        format!("{s}s")
-    } else {
-        format!("{}m{}s", s / 60, s % 60)
-    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 fn git_config(dir: &str, key: &str) -> String {

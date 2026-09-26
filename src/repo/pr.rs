@@ -1,6 +1,8 @@
 use std::ffi::OsStr;
 use std::process::Command;
+use std::time::Duration;
 
+use super::deadline::{FETCH_TIMEOUT, run_deadline};
 use super::git::{exit_error, git_message};
 use crate::{Error, Result, err, paths};
 
@@ -39,6 +41,13 @@ impl PullRequest {
 /// PR_LIMIT is how many open pull requests gh is asked for, newest first.
 const PR_LIMIT: &str = "100";
 
+/// gh talks to the network the way git's remote calls do, so it gets the same
+/// kind of deadline: a listing moves nothing but names, and a checkout
+/// downloads objects like a fetch. A blackholed network or a stalled auth
+/// helper is hung, not waiting, and the deadline turns it into an error.
+const GH_LIST_TIMEOUT: Duration = Duration::from_secs(30);
+const GH_CHECKOUT_TIMEOUT: Duration = FETCH_TIMEOUT;
+
 fn gh_command(program: &OsStr) -> Command {
     let command = Command::new(program);
     #[cfg(test)]
@@ -54,16 +63,18 @@ fn gh_command(program: &OsStr) -> Command {
 /// GitHub, so this is slow next to git and fails without a network, gh or a
 /// login; the error says which.
 pub fn pull_requests(dir: &str) -> Result<Vec<PullRequest>> {
-    let out = gh_command(OsStr::new("gh"))
-        .args([
-            "pr", "list", "--state", "open", "--limit", PR_LIMIT, "--json",
-        ])
-        .arg("number,title,headRefName,isDraft,isCrossRepository,author,headRepositoryOwner")
-        .current_dir(dir)
-        .env("GH_PROMPT_DISABLED", "1")
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(gh_missing)?;
+    pull_requests_with(OsStr::new("gh"), GH_LIST_TIMEOUT, dir)
+}
+
+fn pull_requests_with(gh: &OsStr, timeout: Duration, dir: &str) -> Result<Vec<PullRequest>> {
+    let mut cmd = gh_command(gh);
+    cmd.args([
+        "pr", "list", "--state", "open", "--limit", PR_LIMIT, "--json",
+    ])
+    .arg("number,title,headRefName,isDraft,isCrossRepository,author,headRepositoryOwner")
+    .current_dir(dir)
+    .env("GH_PROMPT_DISABLED", "1");
+    let out = run_deadline(&mut cmd, timeout, "gh pr list", gh_missing)?;
     if !out.status.success() {
         return Err(gh_failed(&out));
     }
@@ -103,13 +114,11 @@ pub fn parse_pull_requests(out: &[u8]) -> Result<Vec<PullRequest>> {
 pub fn check_out_pull_request(gh: &str, repo_dir: &str, dir: &str, number: u64) -> Result<()> {
     std::fs::create_dir_all(paths::dir(dir))?;
     // Everything gh prints stays off the terminal: the finder is drawn there.
-    let out = gh_command(OsStr::new(gh))
-        .args(["pr", "checkout", &number.to_string(), "--worktree", dir])
+    let mut cmd = gh_command(OsStr::new(gh));
+    cmd.args(["pr", "checkout", &number.to_string(), "--worktree", dir])
         .current_dir(repo_dir)
-        .env("GH_PROMPT_DISABLED", "1")
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(gh_missing)?;
+        .env("GH_PROMPT_DISABLED", "1");
+    let out = run_deadline(&mut cmd, GH_CHECKOUT_TIMEOUT, "gh pr checkout", gh_missing)?;
     if out.status.success() {
         return Ok(());
     }
@@ -226,5 +235,31 @@ mod tests {
         let e = check_out_pull_request_in(&root, &gh, &main, &dir, 8).unwrap_err();
         assert!(e.0.contains("could not find pull request"), "{e}");
         assert!(!crate::testutil::exists(&paths::join(&root, "github.com")));
+    }
+
+    // gh runs under a deadline like git's remote calls do: when it hangs, gm
+    // gets an error instead of a spinner forever, and nothing it started
+    // outlives the kill.
+    #[test]
+    fn pull_requests_times_out() {
+        let tmp = TempDir::new();
+        let marker = tmp.join("grandchild-survived");
+        let gh = script(
+            &tmp.path(),
+            &format!("#!/bin/sh\n(sleep 3; touch '{marker}') &\nwait\n"),
+        );
+        let repo = tmp.join("repo");
+        git_repo(&repo);
+
+        let e = pull_requests_with(OsStr::new(&gh), Duration::from_secs(1), &repo).unwrap_err();
+        assert!(
+            e.0.contains("gh pr list took longer than 1s"),
+            "the timeout was not named:\n{e}"
+        );
+        std::thread::sleep(Duration::from_millis(3_100));
+        assert!(
+            !std::path::Path::new(&marker).exists(),
+            "grandchild outlived the timed-out gh process"
+        );
     }
 }

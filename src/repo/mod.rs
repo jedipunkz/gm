@@ -2,6 +2,7 @@
 //! lives under them, and how a shorthand reference turns into a URL and a
 //! directory.
 
+mod deadline;
 mod git;
 mod history;
 mod pr;
