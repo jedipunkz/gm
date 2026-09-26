@@ -56,9 +56,15 @@ pub const DEFAULT_PR_KEY: &str = "ctrl-j";
 pub const DEFAULT_REMOTE_KEY: &str = "ctrl-alt-b";
 
 /// RESERVED are the Ctrl chords the finder already answers to; binding an
-/// action to one of them would shadow quitting or moving. Only plain Ctrl
-/// chords can collide: the finder's own keys carry no other modifier.
-const RESERVED: [(char, &str); 3] = [('c', "quit"), ('n', "move down"), ('p', "move up")];
+/// action to one of them would shadow quitting, moving or backing out. Only
+/// plain Ctrl chords can collide: the finder's own keys carry no other
+/// modifier.
+const RESERVED: [(char, &str); 4] = [
+    ('c', "quit"),
+    ('n', "move down"),
+    ('p', "move up"),
+    ('g', "back out"),
+];
 
 /// Keys are the finder's configurable chords.
 #[derive(Debug, Clone, Default)]

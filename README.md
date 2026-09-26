@@ -248,7 +248,7 @@ the valid ones.
 | Setting | Where it works | Allowed chords | Rejected |
 |---|---|---|---|
 | `launch_key` | The shell, via `gm shell` | Plain Ctrl chord | Anything with `alt` or `shift` |
-| `worktree_key`, `branch_key`, `pr_key`, `remote_key` | The finder | Ctrl, optionally with `alt` and `shift` | `ctrl-c`, `ctrl-n`, `ctrl-p` (quit and move); the same chord as another of the four |
+| `worktree_key`, `branch_key`, `pr_key`, `remote_key` | The finder | Ctrl, optionally with `alt` and `shift` | `ctrl-c`, `ctrl-n`, `ctrl-p`, `ctrl-g` (quit, move and back out); the same chord as another of the four |
 
 - Ctrl is written `ctrl-`, `ctrl+`, `c-` or `^`. `alt` and `shift` follow in
   any order: `ctrl-alt-b`, `c-a-b`, `ctrl-shift-b`, `ctrl-alt-shift-b`.

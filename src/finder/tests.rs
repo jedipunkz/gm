@@ -278,7 +278,7 @@ fn prompt_starts_empty() {
 #[test]
 fn reserved_keys_are_refused() {
     let keys = test_keys();
-    for name in ["ctrl-c", "ctrl-n", "ctrl-p"] {
+    for name in ["ctrl-c", "ctrl-n", "ctrl-p", "ctrl-g"] {
         let c = parse_chord(name, DEFAULT_WORKTREE_KEY).unwrap();
         for set in [
             |k: &mut Keys, c: Chord| k.worktree = c,
