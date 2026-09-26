@@ -368,6 +368,178 @@ fn get_and_create_refuse_to_leave_the_root() {
     }
 }
 
+// gm get -u matches ghq: the checked-out branch moves across what the fetch
+// brought when the tree is clean, a divergence is left alone and said, and
+// so is dirt.
+#[test]
+fn get_u_fast_forwards_a_clean_clone() {
+    let tmp = TempDir::new();
+    let origin = tmp.join("origin.git");
+    git(
+        &tmp.path(),
+        &["init", "-q", "--bare", "-b", "main", &origin],
+    );
+    let reference = format!("file://localhost{origin}");
+    let rel = repo::rel_path_of(&repo::normalize_url(&reference, false).unwrap());
+
+    // Someone else has a commit pushed already, and the clone is made before
+    // it arrives.
+    let w = tmp.join("w");
+    git(&tmp.path(), &["clone", "-q", &origin, &w]);
+    write(&paths::join(&w, "a.txt"), "1\n");
+    git(&w, &["add", "a.txt"]);
+    git(&w, &["commit", "-q", "-m", "one"]);
+    git(&w, &["push", "-q", "-u", "origin", "main"]);
+    let root = tmp.join("root");
+    let dst = paths::join(&root, &rel);
+    mkdir(&paths::dir(&dst));
+    git(&tmp.path(), &["clone", "-q", &origin, &dst]);
+    let head = git(&dst, &["rev-parse", "HEAD"]);
+
+    // Another commit arrives after the clone was made.
+    write(&paths::join(&w, "a.txt"), "2\n");
+    git(&w, &["add", "a.txt"]);
+    git(&w, &["commit", "-q", "-m", "two"]);
+    git(&w, &["push", "-q", "origin", "main"]);
+
+    let r = run_in(&tree(&root), "", Config::default(), |a| {
+        a.get(&args(&["-u", &reference]))
+    });
+    r.res.unwrap();
+    let out = r.err.clone();
+    assert!(out.contains(&format!("ff       {dst}: 1 commit")), "{out}");
+    assert_ne!(head, git(&dst, &["rev-parse", "HEAD"]));
+    assert_eq!(
+        git(&w, &["rev-parse", "HEAD"]),
+        git(&dst, &["rev-parse", "HEAD"])
+    );
+
+    // Nothing new brought: the clone stays where it is, and no ff is said.
+    let r = run_in(&tree(&root), "", Config::default(), |a| {
+        a.get(&args(&["-u", &reference]))
+    });
+    r.res.unwrap();
+    assert!(!r.err.contains(&format!("ff       {dst}")), "{}", r.err);
+
+    // A local commit makes the branch diverge; it is never merged.
+    write(&paths::join(&dst, "b.txt"), "local\n");
+    git(&dst, &["add", "b.txt"]);
+    git(&dst, &["commit", "-q", "-m", "local"]);
+    let diverged_head = git(&dst, &["rev-parse", "HEAD"]);
+    write(&paths::join(&w, "a.txt"), "3\n");
+    git(&w, &["add", "a.txt"]);
+    git(&w, &["commit", "-q", "-m", "three"]);
+    git(&w, &["push", "-q", "origin", "main"]);
+
+    let r = run_in(&tree(&root), "", Config::default(), |a| {
+        a.get(&args(&["-u", &reference]))
+    });
+    r.res.unwrap();
+    assert!(
+        r.err.contains(&format!("skip     {dst}: diverged")),
+        "{}",
+        r.err
+    );
+    assert_eq!(diverged_head, git(&dst, &["rev-parse", "HEAD"]));
+
+    // Dirt is are refused a move as well: nothing is merged into it.
+    write(&paths::join(&dst, "c.txt"), "uncommitted\n");
+    let r = run_in(&tree(&root), "", Config::default(), |a| {
+        a.get(&args(&["-u", &reference]))
+    });
+    r.res.unwrap();
+    assert!(
+        r.err.contains(&format!("skip     {dst}: dirty")),
+        "{}",
+        r.err
+    );
+    assert_eq!(diverged_head, git(&dst, &["rev-parse", "HEAD"]));
+}
+
+// The clone gm get made owns its submodules, so -u keeps them with it: the
+// submodule is brought to what the fetched commits name.
+#[test]
+fn get_u_updates_submodules() {
+    let tmp = TempDir::new();
+    // The submodule has two commits waiting to be picked up.
+    let sub_origin = tmp.join("sub.git");
+    git(
+        &tmp.path(),
+        &["init", "-q", "--bare", "-b", "main", &sub_origin],
+    );
+    let sub = tmp.join("sub");
+    git(&tmp.path(), &["clone", "-q", &sub_origin, &sub]);
+    write(&paths::join(&sub, "f.txt"), "1\n");
+    git(&sub, &["add", "f.txt"]);
+    git(&sub, &["commit", "-q", "-m", "one"]);
+    git(&sub, &["push", "-q", "-u", "origin", "main"]);
+
+    // The parent records it, and the clone owns it from the start.
+    let parent_origin = tmp.join("parent.git");
+    git(
+        &tmp.path(),
+        &["init", "-q", "--bare", "-b", "main", &parent_origin],
+    );
+    let p = tmp.join("p-src");
+    git(&tmp.path(), &["clone", "-q", &parent_origin, &p]);
+    git(
+        &p,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            &sub_origin,
+            "sub",
+        ],
+    );
+    git(&p, &["commit", "-q", "-m", "with submodule"]);
+    git(&p, &["push", "-q", "-u", "origin", "main"]);
+
+    let reference = format!("file://localhost{parent_origin}");
+    let rel = repo::rel_path_of(&repo::normalize_url(&reference, false).unwrap());
+    let root = tmp.join("root");
+    let dst = paths::join(&root, &rel);
+    mkdir(&paths::dir(&dst));
+    git(
+        &tmp.path(),
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "clone",
+            "-q",
+            "--recursive",
+            &parent_origin,
+            &dst,
+        ],
+    );
+    // gm's own update fetches the submodule through file transport, so it is
+    // allowed where it runs — not globally, just in this clone.
+    git(&dst, &["config", "protocol.file.allow", "always"]);
+    let old = git(&paths::join(&dst, "sub"), &["rev-parse", "HEAD"]);
+
+    // The submodule moves; the parent records the move.
+    write(&paths::join(&sub, "f.txt"), "2\n");
+    git(&sub, &["add", "f.txt"]);
+    git(&sub, &["commit", "-q", "-m", "two"]);
+    git(&sub, &["push", "-q", "origin", "main"]);
+    let _ = git(&p, &["-C", "sub", "pull", "-q"]);
+    git(&p, &["add", "sub"]);
+    git(&p, &["commit", "-q", "-m", "new submodule"]);
+    git(&p, &["push", "-q", "origin", "main"]);
+
+    let r = run_in(&tree(&root), "", Config::default(), |a| {
+        a.get(&args(&["-u", &reference]))
+    });
+    r.res.unwrap();
+    assert_ne!(old, git(&paths::join(&dst, "sub"), &["rev-parse", "HEAD"]));
+    assert_eq!(
+        git(&sub, &["rev-parse", "HEAD"]),
+        git(&paths::join(&dst, "sub"), &["rev-parse", "HEAD"])
+    );
+}
+
 // One repository under two roots is ambiguous to gm get: cloning a
 // second copy or updating the first is a decision the user has to make.
 #[test]

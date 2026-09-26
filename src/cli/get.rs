@@ -9,6 +9,54 @@ use crate::{Result, err, paths, plural};
 use super::{App, Flag, parse};
 
 impl App<'_> {
+    /// advance moves a fetched clone across the commits the fetch brought:
+    /// the checked-out branch is fast-forwarded onto its upstream when the
+    /// working tree is clean, and then its submodules are brought to what
+    /// the new commits name. A dirty tree and a diverged branch are left
+    /// where they were and named; a detached head and a branch without an
+    /// upstream have nothing that could move, so they are silent.
+    fn advance(&mut self, dst: &str, submodules: bool) -> Result<()> {
+        let branch = repo::git_in(dst, &["branch", "--show-current"])?;
+        if branch.is_empty() {
+            return Ok(()); // detached head: nothing to name or move
+        }
+        // No upstream is no error; ghq only knows the fetch for that branch.
+        let upstream = repo::git_in(
+            dst,
+            &["rev-parse", "--abbrev-ref", &format!("{branch}@{{u}}")],
+        )
+        .ok()
+        .filter(|u| !u.is_empty());
+        let Some(upstream) = upstream else {
+            return Ok(());
+        };
+        if repo::is_dirty(dst)? {
+            writeln!(self.err, "skip     {dst}: dirty")?;
+            return Ok(());
+        }
+        let old = repo::git_in(dst, &["rev-parse", "HEAD"])?;
+        // Only a fast-forward is ever merged: a divergence is the user's
+        // work meeting someone else's, which no flag should decide.
+        if let Err(e) = repo::git_quiet(&["-C", dst, "merge", "--ff-only", &upstream]) {
+            writeln!(self.err, "skip     {dst}: diverged ({e})")?;
+            return Ok(());
+        }
+        let new = repo::git_in(dst, &["rev-parse", "HEAD"])?;
+        if new != old {
+            let n = repo::git_in(dst, &["rev-list", "--count", &format!("{old}..{new}")])?;
+            writeln!(
+                self.err,
+                "ff       {dst}: {}",
+                plural(n.trim().parse().unwrap_or(0), "commit", "commits")
+            )?;
+        }
+        if submodules && std::fs::metadata(paths::join(dst, ".gitmodules")).is_ok() {
+            // The clone was made with submodules; the update keeps them.
+            repo::git_quiet(&["-C", dst, "submodule", "update", "--init", "--recursive"])?;
+        }
+        Ok(())
+    }
+
     pub(super) fn get(&mut self, args: &[String]) -> Result<()> {
         let flags = [
             Flag {
@@ -82,6 +130,10 @@ impl App<'_> {
                 }
                 writeln!(self.err, "update   {dst}")?;
                 repo::git(&["-C", &dst, "remote", "update", "--prune"])?;
+                // ghq get -u moves the checked-out branch; matching it needs
+                // the working tree behind it, and a fast-forward, so a
+                // divergence is never merged.
+                self.advance(&dst, !p.on("no-recursive"))?;
                 self.bump(&dst);
                 continue;
             }
