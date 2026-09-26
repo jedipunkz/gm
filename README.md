@@ -73,6 +73,7 @@ details pane work the same in all four.
 | any character | Filter | Filter | Filter | Filter |
 | `↑` / `Ctrl-P` | Move up | Move up | Move up | Move up |
 | `↓` / `Ctrl-N` | Move down | Move down | Move down | Move down |
+| `PgUp` / `PgDn` | A page up / down | A page up / down | A page up / down | A page up / down |
 | `Enter` | Print the repository path and exit | Print the worktree path and exit | Check the branch out as a worktree, print its path and exit | Check the pull request out as a worktree, print its path and exit |
 | `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories | Show the worktrees | Show the worktrees |
 | `Ctrl-L` (`branch_key`) | Show the branches of the selected repository | Show the branches | Back to the repositories | Show the branches |
