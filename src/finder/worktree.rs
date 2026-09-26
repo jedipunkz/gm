@@ -45,9 +45,19 @@ impl Model {
         let Some(it) = self.current().cloned().filter(|_| self.mode == Mode::Repos) else {
             return vec![];
         };
+        // A git error is worth saying; an empty answer is nearly unreachable
+        // (the main worktree always lists), but gm is not silent about it
+        // either.
         let wts = match (self.worktrees_of)(&it.path) {
             Ok(wts) if !wts.is_empty() => wts,
-            _ => return vec![],
+            Err(e) => {
+                self.note = e.0;
+                return vec![];
+            }
+            Ok(_) => {
+                self.note = format!("no worktrees in {}", it.label);
+                return vec![];
+            }
         };
         // Reversed, so git's first worktree — the main one — lands at the
         // bottom next to the cursor, the way the best match does in the main

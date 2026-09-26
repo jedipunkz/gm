@@ -19,9 +19,18 @@ impl Model {
         let Some(it) = self.current().cloned().filter(|_| self.mode == Mode::Repos) else {
             return vec![];
         };
+        // Silence reads as a broken key, so an empty or a failed answer is
+        // said, the way the pull request list does.
         let bs = match (self.branches_of)(&it.path) {
             Ok(bs) if !bs.is_empty() => bs,
-            _ => return vec![],
+            Err(e) => {
+                self.note = e.0;
+                return vec![];
+            }
+            Ok(_) => {
+                self.note = format!("no branches in {}", it.label);
+                return vec![];
+            }
         };
         let at: HashMap<String, String> = (self.worktrees_of)(&it.path)
             .unwrap_or_default()
