@@ -142,9 +142,10 @@ impl Tree {
     /// a wrong repository is never removed or moved.
     pub fn resolve(&self, query: &str) -> Result<Repo> {
         let repos = self.list();
+        let query_path = paths::clean(query);
         let exact: Vec<&Repo> = repos
             .iter()
-            .filter(|r| matches(&r.rel, query, true))
+            .filter(|r| matches(&r.rel, query, true) || r.path() == query_path)
             .collect();
         let hits = if exact.is_empty() {
             repos
@@ -160,7 +161,7 @@ impl Tree {
             many => {
                 let mut msg = format!("{query:?} matches {} repositories:", many.len());
                 for r in many {
-                    msg.push_str(&format!("\n  {}", r.rel));
+                    msg.push_str(&format!("\n  {}", r.path()));
                 }
                 Err(msg.into())
             }
@@ -288,8 +289,10 @@ pub fn matches(rel: &str, query: &str, exact: bool) -> bool {
 /// other repository in the set shares ("ghq", else "x-motemen/ghq", else the
 /// full path).
 pub fn shortest_unique(repos: &[Repo]) -> Vec<String> {
+    let mut rel_count = std::collections::HashMap::<String, usize>::new();
     let mut count = std::collections::HashMap::<String, usize>::new();
     for r in repos {
+        *rel_count.entry(r.rel.clone()).or_default() += 1;
         let parts: Vec<&str> = r.rel.split('/').collect();
         for i in 0..parts.len() {
             *count.entry(parts[i..].join("/")).or_default() += 1;
@@ -298,6 +301,9 @@ pub fn shortest_unique(repos: &[Repo]) -> Vec<String> {
     repos
         .iter()
         .map(|r| {
+            if rel_count[&r.rel] > 1 {
+                return r.path();
+            }
             let parts: Vec<&str> = r.rel.split('/').collect();
             (0..parts.len())
                 .rev()
@@ -432,6 +438,26 @@ mod tests {
     }
 
     #[test]
+    fn shortest_unique_uses_paths_for_duplicate_rels() {
+        let repo = |root: &str, rel: &str| Repo {
+            root: root.into(),
+            rel: rel.into(),
+        };
+        assert_eq!(
+            shortest_unique(&[
+                repo("/r1", "github.com/acme/alpha"),
+                repo("/r2", "github.com/acme/alpha"),
+                repo("/r1", "github.com/acme/bravo"),
+            ]),
+            vec![
+                "/r1/github.com/acme/alpha",
+                "/r2/github.com/acme/alpha",
+                "bravo"
+            ]
+        );
+    }
+
+    #[test]
     fn open_resolves_roots_in_order() {
         let home = paths::home().unwrap();
         let cfg = |body: &str| crate::config::parse(body).unwrap();
@@ -500,6 +526,29 @@ mod tests {
             "an ambiguous query must be refused"
         );
         assert!(tree.resolve("nothing").is_err());
+    }
+
+    #[test]
+    fn resolve_accepts_full_paths_and_reports_them_on_ambiguity() {
+        let root = TempDir::new();
+        let r1 = root.join("r1");
+        let r2 = root.join("r2");
+        for dir in [&r1, &r2] {
+            mkdir(&format!("{dir}/github.com/acme/alpha/.git"));
+        }
+        let tree = Tree {
+            roots: vec![r1.clone(), r2.clone()],
+        };
+        let err = tree.resolve("alpha").unwrap_err();
+        assert!(err.0.contains(&format!("\n  {r1}/github.com/acme/alpha")));
+        assert!(err.0.contains(&format!("\n  {r2}/github.com/acme/alpha")));
+
+        assert_eq!(
+            tree.resolve(&format!("{r1}/github.com/acme/alpha"))
+                .unwrap()
+                .path(),
+            format!("{r1}/github.com/acme/alpha")
+        );
     }
 
     // The walk gm migrate -r relies on: every working copy is found once,
