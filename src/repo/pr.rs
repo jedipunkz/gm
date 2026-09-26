@@ -121,6 +121,24 @@ pub fn check_out_pull_request(gh: &str, repo_dir: &str, dir: &str, number: u64) 
     }
 }
 
+/// check_out_pull_request_in removes the empty directories it made if gh
+/// cannot create the worktree. worktree_root is left for the next checkout.
+pub fn check_out_pull_request_in(
+    worktree_root: &str,
+    gh: &str,
+    repo_dir: &str,
+    dir: &str,
+    number: u64,
+) -> Result<()> {
+    match check_out_pull_request(gh, repo_dir, dir, number) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            super::prune_empty_parents(worktree_root, paths::dir(dir));
+            Err(e)
+        }
+    }
+}
+
 /// gh_missing turns a gh that could not be started into the one line worth
 /// reading.
 fn gh_missing(e: std::io::Error) -> Error {
@@ -203,7 +221,10 @@ mod tests {
             &bin,
             "#!/bin/sh\necho 'could not find pull request' >&2\nexit 1\n",
         );
-        let e = check_out_pull_request(&gh, &main, &tmp.join("x"), 8).unwrap_err();
+        let root = tmp.join("worktrees");
+        let dir = paths::join(&root, "github.com/acme/alpha/feat/login");
+        let e = check_out_pull_request_in(&root, &gh, &main, &dir, 8).unwrap_err();
         assert!(e.0.contains("could not find pull request"), "{e}");
+        assert!(!crate::testutil::exists(&paths::join(&root, "github.com")));
     }
 }

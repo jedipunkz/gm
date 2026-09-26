@@ -5,7 +5,7 @@ use super::info::{Seg, tildify, wrap_segs};
 use super::worktree::Mode;
 use super::{Cmd, Done, Key, Model, Msg};
 use crate::repo::{self, Branch};
-use crate::{Error, err};
+use crate::{Error, err, paths};
 
 /// Overlay says which panel is drawn over the list.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -81,7 +81,11 @@ impl Model {
                         };
                         repo::fetch_branch(&a.repo_at, &b)?;
                     }
-                    repo::add_worktree_from(&a.repo_at, &a.dir, &a.arg, &a.from)?;
+                    let r = tree
+                        .at(&a.repo_at)
+                        .ok_or_else(|| err!("{} is not under any root", a.repo_at))?;
+                    let root = paths::join(&r.root, repo::WORKTREE_ROOT);
+                    repo::add_worktree_from_in(&root, &a.repo_at, &a.dir, &a.arg, &a.from)?;
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
                 Change::CheckOutPr => done((|| {
@@ -89,7 +93,11 @@ impl Model {
                         .arg
                         .parse()
                         .map_err(|_| err!("{:?} is not a pull request", a.arg))?;
-                    repo::check_out_pull_request(&gh, &a.repo_at, &a.dir, n)?;
+                    let r = tree
+                        .at(&a.repo_at)
+                        .ok_or_else(|| err!("{} is not under any root", a.repo_at))?;
+                    let root = paths::join(&r.root, repo::WORKTREE_ROOT);
+                    repo::check_out_pull_request_in(&root, &gh, &a.repo_at, &a.dir, n)?;
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
                 Change::RemoveWorktree => done(

@@ -653,7 +653,12 @@ impl App<'_> {
         } else {
             "new branch"
         };
-        repo::add_worktree(&r.path(), &dir, branch)?;
+        repo::add_worktree_in(
+            &paths::join(&r.root, repo::WORKTREE_ROOT),
+            &r.path(),
+            &dir,
+            branch,
+        )?;
         writeln!(self.err, "created  {} ({start})", r.rel)?;
         self.bump(&dir);
         writeln!(self.out, "{dir}")?;

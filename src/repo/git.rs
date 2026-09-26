@@ -604,6 +604,12 @@ pub fn add_worktree(repo_dir: &str, dir: &str, branch: &str) -> Result<()> {
     add_worktree_from(repo_dir, dir, branch, "")
 }
 
+/// add_worktree_in removes the empty directories it made if git cannot add the
+/// worktree. worktree_root is left in place for the next checkout.
+pub fn add_worktree_in(worktree_root: &str, repo_dir: &str, dir: &str, branch: &str) -> Result<()> {
+    add_worktree_from_in(worktree_root, repo_dir, dir, branch, "")
+}
+
 /// add_worktree_from is add_worktree for a branch that may live only on a
 /// remote: a new branch starts at start, "origin/feature", and tracks it. An
 /// empty start is HEAD.
@@ -621,6 +627,24 @@ pub fn add_worktree_from(repo_dir: &str, dir: &str, branch: &str, start: &str) -
         args.extend(["-b", branch, dir]);
     }
     git_quiet(&args)
+}
+
+/// add_worktree_from_in is add_worktree_from for a path gm owns under
+/// worktree_root. Failed additions leave no empty branch directories behind.
+pub fn add_worktree_from_in(
+    worktree_root: &str,
+    repo_dir: &str,
+    dir: &str,
+    branch: &str,
+    start: &str,
+) -> Result<()> {
+    match add_worktree_from(repo_dir, dir, branch, start) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            super::prune_empty_parents(worktree_root, paths::dir(dir));
+            Err(e)
+        }
+    }
 }
 
 /// Branch is one branch a worktree can be made from. remote is set when only a
@@ -1114,6 +1138,22 @@ detached
         );
         tree.create("acme/bravo", false).unwrap();
         remove_worktree(&main, &dir, false).unwrap();
+    }
+
+    #[test]
+    fn failed_worktree_add_prunes_its_empty_parents() {
+        let base = TempDir::new();
+        let main = base.join("github.com/acme/alpha");
+        git_repo(&main);
+        let root = base.join(WORKTREE_ROOT);
+        let first = base.join("other/feat/login");
+        add_worktree(&main, &first, "feat/login").unwrap();
+
+        let failed = paths::join(&root, "github.com/acme/alpha/fix/login");
+        assert!(add_worktree_in(&root, &main, &failed, "feat/login").is_err());
+        assert!(!crate::testutil::exists(&paths::join(&root, "github.com")));
+
+        remove_worktree(&main, &first, false).unwrap();
     }
 
     #[test]
