@@ -2194,6 +2194,32 @@ fn open_pr_list(m: &mut Model) {
     feed(m, cmds);
 }
 
+// A full page exactly means there were at least that many open pull
+// requests: the hint line says so, so a #42 that is not on the list is not
+// read as "no such pull request".
+#[test]
+fn pr_list_says_when_it_is_cut_short() {
+    let root = TempDir::new();
+    let (mut m, rs) = pr_model(&root);
+    // Exactly a page: everything the real page wears applies, plus the note.
+    let page: Vec<PullRequest> = (1..=repo::PR_LIMIT as u64)
+        .map(|n| pull_request(n, "Change something", "feat/x", false, false, "acme"))
+        .collect();
+    let _want = rs[1].path();
+    m.prs_of = Arc::new(move |_| Ok(page.clone()));
+
+    open_pr_list(&mut m);
+    assert!(m.mode == Mode::Prs && m.view.len() == repo::PR_LIMIT);
+    assert!(
+        m.note.contains(&format!(
+            "showing the newest {} open pull requests",
+            repo::PR_LIMIT
+        )),
+        "{:?}",
+        m.note
+    );
+}
+
 // Newest at the bottom, drafts marked, a checked-out pull request goes to its
 // worktree, and a fork's main is not mistaken for the repository's own.
 #[test]

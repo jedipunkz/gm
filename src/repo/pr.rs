@@ -38,8 +38,10 @@ impl PullRequest {
     }
 }
 
-/// PR_LIMIT is how many open pull requests gh is asked for, newest first.
-const PR_LIMIT: &str = "100";
+/// PR_LIMIT is how many open pull requests gh is asked for, newest first. A
+/// repository with more than this has the rest invisible: whoever shows the
+/// answer — and gets exactly a full page back — says so.
+pub(crate) const PR_LIMIT: usize = 100;
 
 /// gh talks to the network the way git's remote calls do, so it gets the same
 /// kind of deadline: a listing moves nothing but names, and a checkout
@@ -68,12 +70,11 @@ pub fn pull_requests(dir: &str) -> Result<Vec<PullRequest>> {
 
 fn pull_requests_with(gh: &OsStr, timeout: Duration, dir: &str) -> Result<Vec<PullRequest>> {
     let mut cmd = gh_command(gh);
-    cmd.args([
-        "pr", "list", "--state", "open", "--limit", PR_LIMIT, "--json",
-    ])
-    .arg("number,title,headRefName,isDraft,isCrossRepository,author,headRepositoryOwner")
-    .current_dir(dir)
-    .env("GH_PROMPT_DISABLED", "1");
+    let limit = PR_LIMIT.to_string();
+    cmd.args(["pr", "list", "--state", "open", "--limit", &limit, "--json"])
+        .arg("number,title,headRefName,isDraft,isCrossRepository,author,headRepositoryOwner")
+        .current_dir(dir)
+        .env("GH_PROMPT_DISABLED", "1");
     let out = run_deadline(&mut cmd, timeout, "gh pr list", gh_missing)?;
     if !out.status.success() {
         return Err(gh_failed(&out));

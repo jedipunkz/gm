@@ -91,6 +91,11 @@ impl Model {
             })
             .collect();
         self.replace_list(Mode::Prs, &it, items);
+        // A full page exactly means the next page cost nothing to hide:
+        // #42 not on the list is not "no such pull request".
+        if prs.len() >= repo::PR_LIMIT {
+            self.note = format!("showing the newest {} open pull requests", repo::PR_LIMIT);
+        }
         self.load_status().into_iter().collect()
     }
 
