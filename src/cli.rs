@@ -350,11 +350,25 @@ impl App<'_> {
         for reference in &p.args {
             let u = repo::normalize_url(reference, p.on("p"))?;
             let rel = repo::rel_path_of(&u);
-            let existing = self.tree.existing_path(&rel);
-            let dst = existing.clone().unwrap_or_else(|| self.tree.path_for(&rel));
+            // One repository under two roots is a real setup (a work laptop
+            // and a private one, say), so cloning or updating "the" one needs
+            // a name that says which. The finder learned this in #120; the
+            // CLI answers the same way.
+            let existing = self.tree.existing_paths(&rel);
+            let dst = match existing.as_slice() {
+                [] => self.tree.path_for(&rel),
+                [one] => one.clone(),
+                many => {
+                    let mut msg = format!("{reference:?} exists under {} roots:", many.len());
+                    for path in many {
+                        msg.push_str(&format!("\n  {path}"));
+                    }
+                    return Err(msg.into());
+                }
+            };
             last = dst.clone();
 
-            if existing.is_some() {
+            if !existing.is_empty() {
                 if !p.on("u") {
                     writeln!(self.err, "exists   {dst}")?;
                     self.bump(&dst);
@@ -1459,6 +1473,41 @@ mod tests {
                 "gm {cmd} made a directory outside the root"
             );
         }
+    }
+
+    // One repository under two roots is ambiguous to gm get: cloning a
+    // second copy or updating the first is a decision the user has to make.
+    #[test]
+    fn get_refuses_a_repository_two_roots_have() {
+        let base = TempDir::new();
+        let first = base.join("first");
+        let second = base.join("second");
+        let rel = "github.com/acme/alpha";
+        for root in [&first, &second] {
+            git_repo(&paths::join(root, rel));
+        }
+        let t = Tree {
+            roots: vec![first.clone(), second.clone()],
+        };
+
+        let r = run_in(&t, "", Config::default(), |a| {
+            a.get(&args(&["github.com/acme/alpha"]))
+        });
+        let e = r.res.expect_err("gm get picked one of two roots silently");
+        assert!(
+            e.0.contains(&first) && e.0.contains(&second),
+            "the error does not name both copies:\n{}",
+            e.0
+        );
+
+        let r = run_in(&t, "", Config::default(), |a| {
+            a.get(&args(&["-u", "github.com/acme/alpha"]))
+        });
+        assert!(
+            r.res.is_err(),
+            "gm get -u updated one copy without being told which:\n{}",
+            r.res.unwrap_err().0
+        );
     }
 
     #[test]
