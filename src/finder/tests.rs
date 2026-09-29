@@ -266,12 +266,32 @@ fn prompt_starts_empty() {
         .lines()
         .find(|l| l.contains('❯'))
         .expect("the view has no prompt line");
-    let rest = prompt.split_once('❯').unwrap().1;
+    // The input box ends at the first border after the prompt; the mode box follows.
+    let rest = prompt.split_once('❯').unwrap().1.split('│').next().unwrap();
     assert_eq!(
         rest.trim_matches(|c| c == '│' || c == ' '),
         "",
         "the prompt starts with something"
     );
+}
+
+// The box right of the prompt names the list being searched.
+#[test]
+fn mode_box_names_the_list() {
+    let root = TempDir::new();
+    let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
+    (m.w, m.h) = (80, 10);
+    for (mode, want) in [
+        (Mode::Repos, "│repository│"),
+        (Mode::Worktrees, "│ worktree │"),
+        (Mode::Branches, "│  branch  │"),
+        (Mode::Prs, "│    pr    │"),
+    ] {
+        m.mode = mode;
+        let out = view_text(&m);
+        let prompt = out.lines().find(|l| l.contains('❯')).unwrap();
+        assert!(prompt.ends_with(want), "{mode:?}: {prompt:?}");
+    }
 }
 
 // The chords that would leave the finder impossible to quit or move around in.

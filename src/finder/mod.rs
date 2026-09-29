@@ -887,14 +887,23 @@ impl Model {
         }
 
         // The prompt box, two columns short of the window, as the Go finder
-        // drew it.
-        let box_area = Rect::new(
-            area.x,
-            area.y + rows as u16,
-            (w as u16).saturating_sub(2),
-            3,
-        )
-        .intersection(area);
+        // drew it, with the list being searched boxed at its right end: ten
+        // columns inside, the width of "repository".
+        let box_w = (w as u16).saturating_sub(2);
+        let mode_w = 12.min(box_w);
+        let y = area.y + rows as u16;
+        let box_area = Rect::new(area.x, y, box_w - mode_w, 3).intersection(area);
+        let mode_area = Rect::new(area.x + box_w - mode_w, y, mode_w, 3).intersection(area);
+        let mode = match self.mode {
+            Mode::Repos => "repository",
+            Mode::Worktrees => "worktree",
+            Mode::Branches => "branch",
+            Mode::Prs => "pr",
+        };
+        Paragraph::new(Line::styled(mode, self.st.prompt))
+            .alignment(ratatui::layout::Alignment::Center)
+            .block(self.bordered(0))
+            .render(mode_area, buf);
         let prompt =
             Line::from(
                 self.input
