@@ -166,6 +166,10 @@ impl Chord {
     }
 }
 
+/// DISGUISED are the Ctrl chords a terminal sends as the byte of another key,
+/// so binding one takes that key over, or never fires at all.
+pub const DISGUISED: [(char, &str); 3] = [('m', "Enter"), ('i', "Tab"), ('j', "Enter (line feed)")];
+
 /// MODIFIERS are the optional prefixes accepted after the required ctrl, in
 /// any order: ctrl-alt-shift-b and ctrl-shift-alt-b are the same chord.
 const ALT: [&str; 6] = ["alt-", "alt+", "a-", "meta-", "meta+", "m-"];

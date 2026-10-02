@@ -298,7 +298,16 @@ fn mode_box_names_the_list() {
 #[test]
 fn reserved_keys_are_refused() {
     let keys = test_keys();
-    for name in ["ctrl-c", "ctrl-n", "ctrl-p", "ctrl-g"] {
+    // ctrl-m and ctrl-i are Enter and Tab in a terminal.
+    for name in [
+        "ctrl-c",
+        "ctrl-n",
+        "ctrl-p",
+        "ctrl-g",
+        "ctrl-m",
+        "ctrl-i",
+        "ctrl-alt-m",
+    ] {
         let c = parse_chord(name, DEFAULT_WORKTREE_KEY).unwrap();
         for set in [
             |k: &mut Keys, c: Chord| k.worktree = c,

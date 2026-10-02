@@ -192,6 +192,13 @@ impl App<'_> {
                 k.display
             ));
         }
+        // Bound in the shell, these would take Enter or Tab over.
+        if let Some((_, key)) = config::DISGUISED.iter().find(|(c, _)| *c == k.letter) {
+            return Err(err!(
+                "launch_key cannot be {}: a terminal sends it as {key}",
+                k.display
+            ));
+        }
         write!(
             self.out,
             "{}",
