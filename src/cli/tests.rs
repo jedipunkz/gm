@@ -57,6 +57,33 @@ fn usage_covers_every_command() {
     }
 }
 
+// Help and the version answer without gm.toml or the roots: a broken file
+// must not hide how to fix it, or what version is broken.
+#[test]
+fn help_and_version_need_no_config() {
+    for a in ["-h", "--help", "help", "-v", "--version", "version"] {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        run_with(
+            &args(&[a]),
+            || Err("gm.toml: unknown key \"bogus\"".into()),
+            &mut out,
+            &mut err,
+        )
+        .unwrap_or_else(|e| panic!("gm {a}: {e}"));
+        assert!(String::from_utf8(out).unwrap().contains("gm"), "gm {a}");
+    }
+    // Every other command still stops on the broken file.
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let e = run_with(
+        &args(&["list"]),
+        || Err("gm.toml: unknown key \"bogus\"".into()),
+        &mut out,
+        &mut err,
+    )
+    .unwrap_err();
+    assert!(e.0.contains("bogus"), "{e}");
+}
+
 // A new command must not shadow an existing name or alias.
 #[test]
 fn names_are_unique() {
