@@ -249,8 +249,8 @@ the valid ones.
 
 | Setting | Where it works | Allowed chords | Rejected |
 |---|---|---|---|
-| `launch_key` | The shell, via `gm shell` | Plain Ctrl chord | Anything with `alt` or `shift` |
-| `worktree_key`, `branch_key`, `pr_key`, `remote_key` | The finder | Ctrl, optionally with `alt` and `shift` | `ctrl-c`, `ctrl-n`, `ctrl-p`, `ctrl-g` (quit, move and back out); the same chord as another of the four |
+| `launch_key` | The shell, via `gm shell` | Plain Ctrl chord | Anything with `alt` or `shift`; `ctrl-m`, `ctrl-i`, `ctrl-j` (Enter, Tab, line feed) |
+| `worktree_key`, `branch_key`, `pr_key`, `remote_key` | The finder | Ctrl, optionally with `alt` and `shift` | `ctrl-c`, `ctrl-n`, `ctrl-p`, `ctrl-g` (quit, move and back out); `ctrl-m`, `ctrl-i` with any modifier (Enter, Tab); the same chord as another of the four |
 
 - Ctrl is written `ctrl-`, `ctrl+`, `c-` or `^`. `alt` and `shift` follow in
   any order: `ctrl-alt-b`, `c-a-b`, `ctrl-shift-b`, `ctrl-alt-shift-b`.
@@ -258,7 +258,8 @@ the valid ones.
 - After changing `launch_key`, re-run `gm shell <shell>`, or restart the shell
   if your rc file sources it.
 - Avoid chords the shell or terminal already uses: `ctrl-r` (reverse history
-  search), `ctrl-c`, `ctrl-d`, `ctrl-z` (terminal signals).
+  search), `ctrl-c`, `ctrl-d`, `ctrl-z` (terminal signals), `ctrl-m`, `ctrl-i`,
+  `ctrl-j` (a terminal sends them as Enter, Tab and line feed).
 
 Whether a chord reaches `gm` depends on the terminal:
 

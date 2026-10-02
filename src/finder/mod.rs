@@ -36,7 +36,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget};
 
 pub use theme::{Theme, lookup_theme};
 
-use crate::config::Chord;
+use crate::config::{self, Chord};
 use crate::repo::{self, Branch, History, PullRequest, Repo, Status, Tree, Worktree};
 use crate::{Error, Result, err};
 use command::{completions, is_command, split_input};
@@ -90,6 +90,18 @@ impl Keys {
                 if chord.key() == o.key() {
                     return Err(err!("{name} and {other} are both {}", chord.display));
                 }
+            }
+            // crossterm reads the byte as Enter or Tab, so the binding would
+            // never fire; with Alt or Shift too, outside the Kitty protocol.
+            // Ctrl-J is the exception: in raw mode it arrives as Ctrl-J.
+            if let Some((_, key)) = config::DISGUISED
+                .iter()
+                .find(|(c, _)| *c == chord.letter && *c != 'j')
+            {
+                return Err(err!(
+                    "{name} cannot be {}: a terminal sends it as {key}",
+                    chord.display
+                ));
             }
             if !chord.plain() {
                 continue; // Alt or Shift can never collide with the fixed keys

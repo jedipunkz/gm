@@ -144,7 +144,16 @@ fn shell_snippets_bind_the_configured_key() {
     }
     // An unusable key must stop gm rather than print a binding that
     // silently does nothing.
-    for bad in ["alt-r", "ctrl-shift-b", "ctrl-alt-b"] {
+    // ctrl-m, ctrl-i and ctrl-j are Enter, Tab and line feed in a terminal:
+    // binding one takes that key over in the shell.
+    for bad in [
+        "alt-r",
+        "ctrl-shift-b",
+        "ctrl-alt-b",
+        "ctrl-m",
+        "ctrl-i",
+        "ctrl-j",
+    ] {
         let r = run_in(&tree(&tmp.path()), "", cfg(bad), |a| {
             a.shell(&args(&["zsh"]))
         });
