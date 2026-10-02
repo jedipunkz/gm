@@ -5,54 +5,18 @@
 A [ghq](https://github.com/x-motemen/ghq)-style repository manager with a
 built-in fuzzy finder.
 
-- Clones land in one predictable `host/user/repo` tree.
-- `Ctrl-G` jumps to any of them, or to any of their git worktrees.
+- Clones land in one `host/user/repo` tree.
+- `Ctrl-G` jumps to any clone or worktree.
+- Branches and pull requests open as worktrees.
 
-## ✨ Advantages over ghq
-
-- **Built-in finder** — no `ghq list | fzf | cd` pipeline. The best match is
-  the bottom row, next to the prompt, so the usual pick is just `Enter`.
-- **Own ranking** — fuzzy score first; frecency (how recently and how often you
-  opened a repository) breaks ties. See [Ranking](#-ranking).
-- **Details pane** — path, remote, branch, working-tree status, visit count and
-  the last three commits (with branch and tag decorations) of the selected
-  repository, to tell similarly named clones apart.
-- **First-class worktrees** — `Ctrl-W` lists worktrees, `Ctrl-L` branches,
-  `Ctrl-J` open pull requests. `Enter` checks one out as a worktree and goes
-  there. ghq only knows about clones.
-- **`gm.toml`** — roots, theme and key bindings. `$GHQ_ROOT` and `ghq.root` are
-  still honored, so an existing ghq tree needs no migration.
-- **`gm create` sets up `origin`**, which ghq leaves to you.
-
-Deliberately not implemented:
-
-- Cloning Mercurial / Subversion / Darcs (existing clones are still listed)
-- Bare clones and partial clones
-- Parallel import
-- `--vcs`
-- Per-URL roots (`ghq.<url>.root`)
-
-## 📋 Requirements
-
-- macOS / Linux: the finder and git's plumbing run against Unix only, so it cannot be built or run on Windows
-- `git` on `$PATH`
-- Rust 1.95 or newer, only to build it yourself
-- A true-color terminal, for the finder's themes to look as intended
-
-## 📦 Install
+## 🚀 Quick start
 
 ```sh
-brew install jedipunkz/gm/gm                                  # macOS / Linux, prebuilt binary, no Rust needed
-cargo install --locked --git https://github.com/jedipunkz/gm  # from source, needs Rust
+brew install jedipunkz/gm/gm                                  # prebuilt binary (macOS / Linux)
+cargo install --locked --git https://github.com/jedipunkz/gm  # from source
 ```
 
-- The Homebrew formula comes from the [tap](https://github.com/jedipunkz/homebrew-gm).
-- `gm version` prints the installed version.
-
-## 🐚 Shell integration
-
-Add one line to your rc file. `Ctrl-G` (or your `launch_key`) then opens the
-finder and `cd`s to the pick.
+Add to your rc file:
 
 ```sh
 gm shell fish | source    # ~/.config/fish/config.fish
@@ -60,172 +24,158 @@ eval "$(gm shell zsh)"    # ~/.zshrc
 eval "$(gm shell bash)"   # ~/.bashrc
 ```
 
-Without the binding, `gm` opens the finder and prints the chosen path, so it
-also works inside `$(...)`.
+Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there.
 
-## ⌨️ Keys
+- An existing ghq tree works as is (`$GHQ_ROOT`, `ghq.root`).
+- Without the binding, `gm` prints the chosen path, so `$(gm)` works.
+- Homebrew formula: [tap](https://github.com/jedipunkz/homebrew-gm). `gm version` prints the version.
 
-The finder has four lists. `Ctrl-W`, `Ctrl-L` and `Ctrl-J` switch to one;
-pressing the same key again returns to the repositories. Filtering and the
-details pane work the same in all four.
+| Requirement | When |
+|---|---|
+| macOS / Linux (not Windows: the finder and git plumbing are Unix only) | Always |
+| `git` on `$PATH` | Always |
+| [`gh`](https://cli.github.com/), logged in, with `gh pr checkout --worktree` | Pull request list |
+| Rust 1.95+ | Building from source |
+| True-color terminal | Themes |
 
-| Key | Repository list | Worktree list | Branch list | Pull request list |
-|---|---|---|---|---|
-| any character | Filter | Filter | Filter | Filter |
-| `↑` / `Ctrl-P` | Move up | Move up | Move up | Move up |
-| `↓` / `Ctrl-N` | Move down | Move down | Move down | Move down |
-| `PgUp` / `PgDn` | A page up / down | A page up / down | A page up / down | A page up / down |
-| `Enter` | Print the repository path and exit | Print the worktree path and exit | Check the branch out as a worktree, print its path and exit | Check the pull request out as a worktree, print its path and exit |
-| `Ctrl-W` (`worktree_key`) | Show the worktrees of the selected repository | Back to the repositories | Show the worktrees | Show the worktrees |
-| `Ctrl-L` (`branch_key`) | Show the branches of the selected repository | Show the branches | Back to the repositories | Show the branches |
-| `Ctrl-J` (`pr_key`) | Show the open pull requests of the selected repository | Show the pull requests | Show the pull requests | Back to the repositories |
-| `Ctrl-Alt-B` (`remote_key`) | Open the remote in a browser | Open the remote in a browser | Open the remote in a browser | Open the remote in a browser |
-| `Ctrl-G` | Clear the query, then the filter | Back to the repositories | Back to the repositories | Back to the repositories |
-| `Esc` | Clear the query, then the filter, then quit | Back to the repositories | Back to the repositories | Back to the repositories |
-| `Ctrl-C` | Quit without printing | Quit without printing | Quit without printing | Quit without printing |
+## 🔎 Finder
 
-Other keys are ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U`, …), except
-`Ctrl-W`, which no longer deletes the previous word.
+| List | Open | Rows | `Enter` |
+|---|---|---|---|
+| Repositories | `gm` / `Ctrl-G` | Clones under the roots | Go there |
+| Worktrees | `Ctrl-W` | Worktrees of the selected repository | Go there |
+| Branches | `Ctrl-L` | Branches of the selected repository | Go to its worktree, created if missing |
+| Pull requests | `Ctrl-J` | Open pull requests of the selected repository | Go to its worktree, created if missing |
 
-### Finder behavior
+- "Go there" prints the path and exits; the shell binding `cd`s.
+- The best match is the bottom row, next to the prompt. In the worktree list it is the main worktree.
+- Details pane: path, remote, branch, working-tree status, visit count, last three commits (with branch and tag decorations).
+- Hint line: the current list's keys (your chords), what `Esc` does next, and a spinner with elapsed seconds while git or GitHub works. The finder stays usable meanwhile.
+- The repository list keeps its query, cursor and highlights when you return. The other lists are rebuilt each time.
 
-- The best match is the bottom row. In the worktree list, that row is the main
-  worktree.
-- The hint line under the prompt lists the keys of the current list, using the
-  chords you configured.
-- Going back to the repository list keeps its query, cursor and highlights; the worktree, branch and pull request lists are rebuilt each time they are entered.
-- `Esc` undoes one layer at a time (worktree list → query → filter) and quits
-  only when nothing is left. The hint line says what it will do next.
-- While `gm` waits on git or GitHub (loading pull requests, checking out, a
-  `/dirty` or `/unpushed` scan), the hint line shows a spinner, what it waits
-  on and the elapsed seconds. The finder stays usable meanwhile.
+### Keys
 
-### Branch list
+| Key | Repository list | Other lists |
+|---|---|---|
+| Any character | Filter | Filter |
+| `↑` `Ctrl-P` / `↓` `Ctrl-N` | Move | Move |
+| `PgUp` / `PgDn` | Page | Page |
+| `Ctrl-W` / `Ctrl-L` / `Ctrl-J` | Open that list | Open that list; the current list's own key goes back |
+| `Ctrl-Alt-B` | Open the remote in a browser | Same |
+| `Ctrl-G` | Clear query, then filter | Back to repositories |
+| `Esc` | Clear query, then filter, then quit | Back to repositories |
+| `Ctrl-C` | Quit, print nothing | Same |
 
-- Shows local branches, plus remote branches with no local branch of the same
-  name (e.g. `origin/feat/login`). Newest commit at the bottom.
-- Branches a remote has that the last `git fetch` did not bring are added at
-  the top once the remotes answer (`git ls-remote`, in the background). Nothing
-  is fetched until you pick one. No `gh` is needed: git uses its own
-  credentials (ssh agent, credential helper). `gm` never prompts for a
-  password; a remote that needs one is skipped and named on the hint line.
-- `Enter` on a branch that is already checked out goes to its worktree.
-- `Enter` on any other branch creates the worktree without asking, then goes
-  there. A remote branch becomes a local branch that tracks it; an unfetched
-  one is fetched first (that branch only).
-
-### Pull request list
-
-- Requires the [GitHub CLI](https://cli.github.com/) (`gh`), logged in, and new
-  enough to have `gh pr checkout --worktree`.
-- Shows open pull requests, newest at the bottom. Drafts are marked `[draft]`.
-- Type a number such as `#42` to find one.
-- `Enter` goes to the pull request's worktree. If there is none, `gh pr
-  checkout` creates it first; `gh` names the branch and, for a fork, sets up
-  where it pushes.
-- The worktree is named after the head branch. A fork's goes under
-  `.forks/<owner>/` (`.forks/bob/main`), apart from the repository's own
-  branches: no branch name can start with a dot, so a fork's `main` collides
-  neither with the repository's `main` nor with a local branch `bob/main`.
+- Other keys edit text (`Ctrl-A`, `Ctrl-E`, `Ctrl-U`, …). `Ctrl-W` does not delete a word.
+- `Ctrl-W`, `Ctrl-L`, `Ctrl-J`, `Ctrl-Alt-B` are configurable: see [Key bindings](#key-bindings).
 
 ### Slash commands
 
-A `/` at the start of the input types a command instead of a filter. The box
-completes it as you type; `Tab` accepts the completion.
+- A `/` at the start of the input types a command. `Tab` accepts the completion. `acme/alpha` still filters.
+- To act on a search result: `gm;/remove` (query, `;`, command). Or `Esc` empties the box, keeping the selection.
+- `/create` and `/remove` ask `y` / `n` in a panel, warn about uncommitted changes that would be lost, and run without leaving the finder.
 
-| Command | What it does |
+#### Every list
+
+| Command | Action |
 |---|---|
-| `/help` | Show the command list; `q` or `Esc` closes it |
-| `/dirty` | Show only repositories with uncommitted work |
-| `/unpushed` | Show only repositories with unpushed commits |
-| `/create <repo>` | Create a repository, after asking; adds it to the list |
-| `/create <branch>` | In the worktree list: check that branch out as a worktree |
-| `/get [flags] <repo>` | Same as `gm get`, then go to the clone |
-| `/remove` | Remove the selected repository, or worktree, after asking |
-| `/worktrees` | Same as `Ctrl-W` |
-| `/branches` | Same as `Ctrl-L` |
-| `/prs` | Same as `Ctrl-J` |
-| `/remote` | Same as `Ctrl-Alt-B` |
+| `/help` | Command list (`q` / `Esc` closes) |
+| `/get [flags] <repo>` | Close the finder, run [`gm get`](#-commands) in the terminal (progress, passphrase), go to the clone |
+| `/remote` | = `Ctrl-Alt-B` |
+| `/worktrees` `/branches` `/prs` | = `Ctrl-W` `Ctrl-L` `Ctrl-J`. In that list already: nothing |
 
-- Only a leading `/` starts a command. `acme/alpha` still filters.
-- To act on a repository you searched for, end the query with `;` and type the
-  command: `gm;/remove` selects `gm` and removes it. Alternatively, press `Esc`
-  to empty the box (the selection is kept), then type the command.
-- `/create` and `/remove`:
-  - Ask first in a panel over the list; answer `y` or `n`.
-  - Run without leaving the finder. The removed row disappears, the created
-    one is added and selected, and the hint line reports the result.
-  - The question warns about uncommitted changes that would be lost.
-  - Removing a repository also removes its worktrees; the question says how
-    many.
-  - In the worktree list, `/create <branch>` checks the branch out, starting it
-    from `HEAD` if it does not exist yet (the question tells you).
-    `/remove` removes the selected worktree; the main worktree is refused (use
-    `/remove` in the repository list instead).
-- `/get` closes the finder and clones in the visible terminal, since cloning
-  may need a progress bar or a passphrase. It then prints the clone's path, so
-  the shell binding `cd`s there.
-- `/dirty` and `/unpushed` share one Git status scan on first use, in parallel
-  and in the background. The hint line shows the active filter; using both
-  keeps repositories that satisfy both. `Esc` clears the query first, then all
-  active status filters.
+#### Repository list
 
-### Worktree location
+| Command | Action |
+|---|---|
+| `/dirty` | Toggle: only repositories with uncommitted changes |
+| `/unpushed` | Toggle: only repositories with unpushed commits |
+| `/create <repo>` | Create a repository with `origin` set; it is added and selected |
+| `/remove` | Remove the selected repository and its worktrees (the panel says how many) |
 
-You type only the branch name; `gm` picks the path:
+- `/dirty` and `/unpushed` together keep repositories matching both. One background status scan serves both. `Esc` clears the query, then the filters.
+
+#### Worktree list
+
+| Command | Action |
+|---|---|
+| `/create <branch>` | Check the branch out as a worktree; a new branch starts from `HEAD` |
+| `/remove` | Remove the selected worktree; the main worktree is refused |
+| `/dirty` `/unpushed` | Refused |
+
+#### Branch list, pull request list
+
+| Command | Action |
+|---|---|
+| `/create <branch>` | Same as the worktree list |
+| `/remove` `/dirty` `/unpushed` | Refused |
+
+## 🌳 Worktrees
 
 ```
-~/gm/github.com/jedipunkz/gm/            the repository
-~/gm/.worktrees/github.com/jedipunkz/gm/feat/login
+~/ghq/github.com/jedipunkz/gm/                                repository
+~/ghq/.worktrees/github.com/jedipunkz/gm/feat/login           branch
+~/ghq/.worktrees/github.com/jedipunkz/gm/.forks/bob/main      fork's pull request
 ```
 
-- The leading dot in `.worktrees` is required. A worktree has a `.git` file, and
-  `gm` skips dotted directories, so worktrees are not listed as repositories
-  and `gm migrate` does not refuse them.
-- For scripts (e.g. a dotfiles bootstrap), `gm wt create <repo> <branch>` and
-  `gm wt remove <repo> <branch>` do the same without the finder.
-  - `create` prints the new path: `cd (gm wt create gm feat/login)`.
-  - `remove` warns about uncommitted work and asks first, unless given `-y`.
+- You give the branch name; `gm` picks the path.
+- `.worktrees` is dotted because `gm` skips dotted directories: worktrees (which have a `.git` file) are not listed as repositories and do not block `gm migrate`.
+- `.forks/<owner>/` is dotted because no branch name starts with a dot: a fork's `main` never collides with `main` or `bob/main`.
 
-## 🧰 Sub Commands
+### Branch list
 
-| Command | What it does |
-|---|---|
-| `gm` | Open the fuzzy finder; print the selected path |
-| `gm get [-u] [-p] [--shallow] [--no-recursive] [-b <branch>] [-s] [-l] <repo>...` | Clone into the tree; `-u` fetches an existing clone and fast-forwards its checked-out branch when the working tree is clean (a dirty tree or a diverged branch says so and stays put), then updates its submodules |
-| `gm list [-p] [-e] [--unique] [<query>]` | List repositories (`-p` full paths, `-e` exact match, `--unique` shortest unambiguous name) |
-| `gm status [--dirty] [--unpushed] [-a] [-p]` | List unfinished work across repositories and worktrees (uncommitted changes, or commits on local branches no remote has — every branch counts, not just the checked-out one); never fetches, so it is fast and works offline |
-| `gm remove [--dry-run] [-y] <repo>...` | Remove a repository and its worktrees after confirming, pruning empty parents (`gm rm` also works) |
-| `gm create [-p] <repo>` | Create and `git init` a repository with `origin` already set |
-| `gm wt <create\|remove> [-y] <repo> <branch>` | Add or remove a worktree from a script; the finder is better for doing it by hand |
-| `gm migrate [--dry-run] [-y] [-r] <dir>...` | Move an existing clone into the tree, using its `origin` remote; `-r` searches the directory for them |
-| `gm root [--all]` | Print the root directory |
-| `gm shell <fish\|zsh\|bash>` | Print the `Ctrl-G` binding |
+- Local branches, plus remote branches without a local one (`origin/feat/login`). Newest at the bottom.
+- Branches the last `git fetch` missed appear at the top once `git ls-remote` answers (background). Fetched only when picked, that branch only.
+- Uses git's own credentials (ssh agent, credential helper); no `gh`. Never prompts: a remote needing a password is skipped and named on the hint line.
+- `Enter`: checked out already → go to its worktree. Otherwise create the worktree without asking; a remote branch becomes a local tracking branch.
 
-`<repo>` accepts:
+### Pull request list
 
-- A full URL
-- `git@host:user/repo.git`
-- `host/user/repo`
-- `user/repo`
-- `repo` (the user comes from `git config github.user`)
+- Open pull requests, newest at the bottom, drafts marked `[draft]`. Type `#42` to find one by number.
+- `Enter`: go to its worktree. If none, `gh pr checkout` creates it; `gh` names the branch and, for a fork, sets where it pushes.
+- The worktree is named after the head branch.
 
-## ⚙️ Configuration
+## 🧰 Commands
 
-- File: `~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`). Optional.
-- A parse error or an unknown key is an error; the file is never half ignored.
+| Command | Action | Flags |
+|---|---|---|
+| `gm` | Open the finder, print the chosen path | |
+| `gm get <repo>...` | Clone into the tree; an existing clone is skipped | `-u` update existing clone ¹<br>`-p` SSH<br>`--shallow` depth 1<br>`--no-recursive` no submodules<br>`-b <branch>` single branch<br>`-s` quiet<br>`-l` open a shell there |
+| `gm list [<query>]` | List repositories | `-p` full paths<br>`-e` exact match<br>`--unique` shortest unambiguous name |
+| `gm status` | List unfinished work in repositories and worktrees ² | `--dirty` uncommitted only<br>`--unpushed` unpushed only<br>`-a` include clean ones<br>`-p` full paths |
+| `gm create <repo>` | `git init` with `origin` set, print the path | `-p` SSH `origin` |
+| `gm remove <repo>...` | Remove a repository and its worktrees, prune empty parents. Alias `gm rm` | `--dry-run`<br>`-y` no prompt |
+| `gm wt create <repo> <branch>` | Add a worktree, print its path: `cd (gm wt create gm feat/login)` | |
+| `gm wt remove <repo> <branch>` | Remove a worktree; warns about uncommitted work | `-y` no prompt |
+| `gm migrate <dir>...` | Move an existing clone into the tree by its `origin` | `--dry-run`<br>`-y` no prompt<br>`-r` search the directories for clones |
+| `gm root` | Print the root | `--all` every root |
+| `gm shell <fish\|zsh\|bash>` | Print the `Ctrl-G` binding | |
+| `gm version` / `gm help` | Print the version / usage | |
+
+1. Fetches, then fast-forwards the checked-out branch if the working tree is clean (dirty or diverged: reported, left as is), then updates submodules.
+2. Uncommitted changes, or commits on any local branch that no remote has. Never fetches: fast, works offline.
+
+`<repo>` is one of: URL, `git@host:user/repo.git`, `host/user/repo`, `user/repo`, `repo` (user from `git config github.user`).
+
+`gm wt` is for scripts (e.g. a dotfiles bootstrap); by hand, the finder is easier.
+
+## 🔧 Configuration
+
+`~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`), optional. A parse error or an unknown key is an error.
 
 ```toml
-root         = "~/ghq"       # or ["~/ghq", "~/src"], searched in order
+root         = "~/ghq"         # or ["~/ghq", "~/src"], searched in order
 theme        = "tokyonight"
-launch_key   = "ctrl-g"        # the shell key that opens gm
-worktree_key = "ctrl-w"        # the finder key that lists worktrees
-branch_key   = "ctrl-l"        # the finder key that lists branches
-pr_key       = "ctrl-j"        # the finder key that lists pull requests
-remote_key   = "ctrl-alt-b"    # the finder key that opens the remote
+launch_key   = "ctrl-g"        # shell: open gm
+worktree_key = "ctrl-w"        # finder: worktree list
+branch_key   = "ctrl-l"        # finder: branch list
+pr_key       = "ctrl-j"        # finder: pull request list
+remote_key   = "ctrl-alt-b"    # finder: open the remote
 ```
 
-The root is resolved in this order, so an existing ghq tree works untouched:
+### Root
+
+First match wins:
 
 1. `$GM_ROOT`
 2. `root` in `gm.toml`
@@ -234,10 +184,8 @@ The root is resolved in this order, so an existing ghq tree works untouched:
 5. `git config --get-all ghq.root`
 6. `~/ghq`
 
-Each root must be absolute; `~` and `~/...` expand to your home directory.
-Relative roots are rejected instead of being resolved from the current working
-directory. Empty entries in `$GM_ROOT` and `$GHQ_ROOT` colon-separated lists
-are ignored.
+- Roots must be absolute; `~` and `~/...` expand. Relative roots are rejected.
+- Empty entries in colon-separated `$GM_ROOT` / `$GHQ_ROOT` are ignored.
 
 ### Themes
 
@@ -248,36 +196,41 @@ the valid ones.
 
 ### Key bindings
 
-| Setting | Where it works | Allowed chords | Rejected |
+| Setting | Works in | Allowed | Rejected |
 |---|---|---|---|
-| `launch_key` | The shell, via `gm shell` | Plain Ctrl chord | Anything with `alt` or `shift`; `ctrl-m`, `ctrl-i`, `ctrl-j` (Enter, Tab, line feed) |
-| `worktree_key`, `branch_key`, `pr_key`, `remote_key` | The finder | Ctrl, optionally with `alt` and `shift` | `ctrl-c`, `ctrl-n`, `ctrl-p`, `ctrl-g` (quit, move and back out); `ctrl-m`, `ctrl-i` with any modifier (Enter, Tab); the same chord as another of the four |
-
-- Ctrl is written `ctrl-`, `ctrl+`, `c-` or `^`. `alt` and `shift` follow in
-  any order: `ctrl-alt-b`, `c-a-b`, `ctrl-shift-b`, `ctrl-alt-shift-b`.
-- An invalid chord is an error, not a binding that silently does nothing.
-- After changing `launch_key`, re-run `gm shell <shell>`, or restart the shell
-  if your rc file sources it.
-- Avoid chords the shell or terminal already uses: `ctrl-r` (reverse history
-  search), `ctrl-c`, `ctrl-d`, `ctrl-z` (terminal signals), `ctrl-m`, `ctrl-i`,
-  `ctrl-j` (a terminal sends them as Enter, Tab and line feed).
-
-Whether a chord reaches `gm` depends on the terminal:
+| `launch_key` | Shell | Plain Ctrl chord | `alt`, `shift`; `ctrl-m` `ctrl-i` `ctrl-j` (Enter, Tab, line feed) |
+| `worktree_key` `branch_key` `pr_key` `remote_key` | Finder | Ctrl, optionally `alt`, `shift` | `ctrl-c` `ctrl-n` `ctrl-p` `ctrl-g`; `ctrl-m` `ctrl-i` with any modifier; a chord another of the four uses |
 
 | Chord | Reaches `gm` |
 |---|---|
 | `ctrl-<letter>` | Everywhere |
-| `ctrl-alt-<letter>` | Nearly everywhere: Alt is sent as an ESC prefix |
-| `ctrl-shift-<letter>` | Only with the Kitty keyboard protocol — Ghostty, kitty, WezTerm, foot, recent Alacritty. Elsewhere it arrives as plain `ctrl-<letter>` |
+| `ctrl-alt-<letter>` | Nearly everywhere (Alt is sent as an ESC prefix) |
+| `ctrl-shift-<letter>` | Kitty keyboard protocol only: Ghostty, kitty, WezTerm, foot, recent Alacritty. Elsewhere it arrives as `ctrl-<letter>` |
+
+- Syntax: `ctrl-`, `ctrl+`, `c-` or `^`, then `alt` / `shift` in any order: `ctrl-alt-b`, `c-a-b`, `ctrl-alt-shift-b`.
+- An invalid chord is an error, never a silent no-op.
+- After changing `launch_key`, re-run `gm shell <shell>` or restart the shell.
+- Avoid chords the shell or terminal uses: `ctrl-r` (history search), `ctrl-c` `ctrl-d` `ctrl-z` (signals), `ctrl-m` `ctrl-i` `ctrl-j` (Enter, Tab, line feed).
 
 ## 🎯 Ranking
 
-- Typing filters by fuzzy match.
-- A literal substring beats a subsequence pieced together from elsewhere.
-- The repository name counts for more than the user name.
-- Frecency only breaks ties between equally good matches.
-- Visits are recorded in `$XDG_STATE_HOME/gm/frecency.json` (default
-  `~/.local/state/gm/frecency.json`). Delete it to start over.
+1. Fuzzy score: a literal substring beats a scattered subsequence; the repository name outweighs the user name.
+2. Frecency (how recently and often you opened it) breaks ties only.
+
+Visits are stored in `$XDG_STATE_HOME/gm/frecency.json` (default `~/.local/state/gm/frecency.json`). Delete it to reset.
+
+## 🆚 Compared with ghq
+
+| | gm | ghq |
+|---|---|---|
+| Finder | Built in, own ranking, details pane | `ghq list \| fzf \| cd` |
+| Worktrees, branches, pull requests | In the finder | — |
+| `create` sets `origin` | Yes | No |
+| Config | `gm.toml` (roots, theme, keys); reads `$GHQ_ROOT`, `ghq.root` | git config |
+
+Not implemented, deliberately: cloning Mercurial / Subversion / Darcs (existing
+clones are still listed), bare and partial clones, parallel import, `--vcs`,
+per-URL roots (`ghq.<url>.root`).
 
 ## 📄 License
 
