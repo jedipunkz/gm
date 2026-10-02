@@ -474,7 +474,14 @@ impl State {
     /// behind is the remote's news rather than the user's, so it alone does
     /// not make a repository worth listing.
     pub fn unfinished(&self) -> bool {
-        self.dirty > 0 || self.ahead > 0 || self.unpushed > 0
+        self.dirty > 0 || self.has_unpushed()
+    }
+
+    /// has_unpushed is what the finder's /unpushed and gm status --unpushed
+    /// both keep. Being ahead counts even when another remote-tracking ref has
+    /// the commits: the row says "N ahead", so the filter has to agree.
+    pub fn has_unpushed(&self) -> bool {
+        self.unpushed > 0 || self.ahead > 0
     }
 }
 
@@ -765,6 +772,18 @@ pub fn remove_worktree(repo_dir: &str, dir: &str, force: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    // The bug where /unpushed kept a repository whose commits were ahead of
+    // the upstream but on another remote, and gm status --unpushed did not.
+    #[test]
+    fn ahead_alone_is_unpushed() {
+        let s = super::State {
+            ahead: 1,
+            ..Default::default()
+        };
+        assert!(s.has_unpushed() && s.unfinished());
+        assert!(!super::State::default().has_unpushed());
+    }
+
     use super::*;
     use crate::testutil::{TempDir, git_repo, mkdir, write};
 

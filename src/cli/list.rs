@@ -131,7 +131,7 @@ impl App<'_> {
             .filter(|(_, path)| {
                 let s = &states[path];
                 !(dirty_only && s.dirty == 0
-                    || unpushed && s.unpushed == 0
+                    || unpushed && !s.has_unpushed()
                     || !all && !dirty_only && !unpushed && !s.unfinished())
             })
             .collect();
