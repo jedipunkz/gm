@@ -216,19 +216,6 @@ the valid ones.
 
 Visits are stored in `$XDG_STATE_HOME/gm/frecency.json` (default `~/.local/state/gm/frecency.json`). Delete it to reset.
 
-## 🆚 Compared with ghq
-
-| | gm | ghq |
-|---|---|---|
-| Finder | Built in, own ranking, details pane | `ghq list \| fzf \| cd` |
-| Worktrees, branches, pull requests | In the finder | — |
-| `create` sets `origin` | Yes | No |
-| Config | `gm.toml` (roots, theme, keys); reads `$GHQ_ROOT`, `ghq.root` | git config |
-
-Not implemented, deliberately: cloning Mercurial / Subversion / Darcs (existing
-clones are still listed), bare and partial clones, parallel import, `--vcs`,
-per-URL roots (`ghq.<url>.root`).
-
 ## 📄 License
 
 MIT
