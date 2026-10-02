@@ -91,11 +91,6 @@ impl Tree {
         paths::join(self.primary(), rel)
     }
 
-    /// existing_path finds a repository at rel under the first matching root.
-    pub fn existing_path(&self, rel: &str) -> Option<String> {
-        self.existing_paths(rel).into_iter().next()
-    }
-
     /// existing_paths finds every root a repository at rel already lives
     /// under, most preferred first: one repository can be cloned under two
     /// roots, and a caller that would clone or update one of them has to say

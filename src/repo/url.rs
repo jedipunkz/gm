@@ -102,6 +102,16 @@ pub fn normalize_url(reference: &str, ssh: bool) -> Result<Url> {
     if segments.into_iter().any(|seg| seg == "." || seg == "..") {
         return Err(err!("{reference:?} has a \".\" or \"..\" in its path"));
     }
+    // Nor does a space or a control character belong in a directory name:
+    // "acme/x --shallow" is a typo, not a repository called "x --shallow".
+    if std::iter::once(u.hostname())
+        .chain([u.path.as_str()])
+        .any(|s| s.chars().any(|c| c.is_whitespace() || c.is_control()))
+    {
+        return Err(err!(
+            "{reference:?} has a space or a control character in it"
+        ));
+    }
     if ssh && u.scheme == "https" {
         u.scheme = "ssh".into();
         u.user = "git".into();
@@ -289,6 +299,11 @@ mod tests {
             "git@github.com:../../evil.git",
             "ssh://git@github.com/u/../../evil",
         ] {
+            assert!(normalize_url(bad, false).is_err(), "{bad:?} was accepted");
+        }
+        // Nor a space or a control character, which /get's flags used to
+        // turn into a directory named "x --shallow".
+        for bad in ["acme/x --shallow", "acme/x\tb", "exa mple.com/u/r"] {
             assert!(normalize_url(bad, false).is_err(), "{bad:?} was accepted");
         }
         // Dots inside a name are only a name.

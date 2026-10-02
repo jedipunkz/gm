@@ -58,6 +58,12 @@ impl App<'_> {
     }
 
     pub(super) fn get(&mut self, args: &[String]) -> Result<()> {
+        self.get_last(args).map(drop)
+    }
+
+    /// get_last is gm get, answering with the path of the last repository it
+    /// handled, which is where the finder's /get goes.
+    pub(super) fn get_last(&mut self, args: &[String]) -> Result<String> {
         let flags = [
             Flag {
                 names: &["u", "update"],
@@ -165,9 +171,9 @@ impl App<'_> {
         }
 
         if p.on("l") && !last.is_empty() {
-            return look_in(&last);
+            look_in(&last)?;
         }
-        Ok(())
+        Ok(last)
     }
 
     pub(super) fn create(&mut self, args: &[String]) -> Result<()> {

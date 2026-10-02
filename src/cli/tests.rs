@@ -296,6 +296,26 @@ fn act_get_keeps_what_get_recorded() {
     );
 }
 
+// /get is split like a command line: flags work the way they do for gm get,
+// and the path printed is the repository's, not the raw argument's.
+#[test]
+fn finder_get_takes_flags() {
+    let root = TempDir::new();
+    let dst = root.join("example.com/acme/alpha");
+    git_repo(&dst);
+    let r = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.act(
+            finder::Outcome {
+                action: Action::Get,
+                arg: "-s  example.com/acme/alpha".into(),
+            },
+            &mut History::open(""),
+        )
+    });
+    r.res.unwrap();
+    assert_eq!(r.out.trim(), dst);
+}
+
 // get searches every configured root before cloning into the primary one,
 // and the finder returns the root where the repository was found.
 #[test]

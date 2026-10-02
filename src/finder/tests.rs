@@ -1076,7 +1076,7 @@ fn help_shows_arguments() {
     (m.w, m.h) = (90, 24);
     m.over = Overlay::Help;
     let view = view_text(&m);
-    for want in ["/create <repo>", "/get <repo>", "/remove"] {
+    for want in ["/create <repo>", "/get [flags] <repo>", "/remove"] {
         assert!(view.contains(want), "{want:?}:\n{view}");
     }
 }

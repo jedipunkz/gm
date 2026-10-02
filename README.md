@@ -139,7 +139,7 @@ completes it as you type; `Tab` accepts the completion.
 | `/unpushed` | Show only repositories with unpushed commits |
 | `/create <repo>` | Create a repository, after asking; adds it to the list |
 | `/create <branch>` | In the worktree list: check that branch out as a worktree |
-| `/get <repo>` | Same as `gm get`, then go to the clone |
+| `/get [flags] <repo>` | Same as `gm get`, then go to the clone |
 | `/remove` | Remove the selected repository, or worktree, after asking |
 | `/worktrees` | Same as `Ctrl-W` |
 | `/branches` | Same as `Ctrl-L` |
