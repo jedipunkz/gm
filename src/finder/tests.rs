@@ -1162,6 +1162,28 @@ fn confirm_create() {
     assert!(m.note.contains("created"));
 }
 
+// /create asks every root first, so the panel never offers to make a second
+// copy of a repository that lives under another one.
+#[test]
+fn create_refuses_a_repository_under_another_root() {
+    let base = TempDir::new();
+    let (r1, r2) = (base.join("r1"), base.join("r2"));
+    let rs = repos(&r2, &["github.com/acme/bravo"]);
+    git_repo(&rs[0].path());
+    let mut m = Model::new(
+        &Tree {
+            roots: vec![r1, r2],
+        },
+        &rs,
+        &History::open(""),
+        &theme(),
+        test_keys(),
+    );
+    run_slash(&mut m, "/create acme/bravo");
+    assert_eq!(m.over, Overlay::None);
+    assert!(m.note.contains(&rs[0].path()), "{:?}", m.note);
+}
+
 // The row a fresh clone deserves is the top: the list is ascending by
 // frecency, so pushing it to the end gave the least-visited repository the
 // best spot until the next restart.

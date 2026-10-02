@@ -108,6 +108,17 @@ impl Tree {
             .collect()
     }
 
+    /// refuse_existing errors when a repository at rel already lives under any
+    /// root: creating it under the primary one would make a second, empty
+    /// copy of it.
+    pub fn refuse_existing(&self, rel: &str) -> Result<()> {
+        let existing = self.existing_paths(rel);
+        if existing.is_empty() {
+            return Ok(());
+        }
+        Err(err!("{rel} already exists: {}", existing.join(", ")))
+    }
+
     /// list walks every root and returns the repositories found.
     pub fn list(&self) -> Vec<Repo> {
         let mut repos = Vec::new();
@@ -185,6 +196,7 @@ impl Tree {
         let rel = rel_path_of(&u);
         let dst = self.path_for(&rel);
 
+        self.refuse_existing(&rel)?;
         if std::fs::read_dir(&dst).is_ok_and(|mut d| d.next().is_some()) {
             return Err(err!("{dst} already exists and is not empty"));
         }
@@ -194,7 +206,13 @@ impl Tree {
             prune_empty_parents(self.primary(), paths::dir(&dst));
             return Err(e);
         }
-        git_quiet(&["-C", &dst, "remote", "add", "origin", &u.to_string()])?;
+        if let Err(e) = git_quiet(&["-C", &dst, "remote", "add", "origin", &u.to_string()]) {
+            // A repository without the origin it was asked for is not what
+            // was created, so it does not stay.
+            remove_all(&dst)?;
+            prune_empty_parents(self.primary(), paths::dir(&dst));
+            return Err(e);
+        }
         Ok(Repo {
             root: self.primary().to_string(),
             rel,
@@ -763,6 +781,22 @@ mod tests {
             strays(&r, &other_worktrees(&r)),
             ["feat/notes.txt", "scratch"]
         );
+    }
+
+    // The bug where gm create made an empty second copy under the primary
+    // root of a repository that lived under another one.
+    #[test]
+    fn create_refuses_a_repository_under_another_root() {
+        let base = TempDir::new();
+        let (r1, r2) = (base.join("r1"), base.join("r2"));
+        let there = paths::join(&r2, "github.com/acme/bravo");
+        git_repo(&there);
+        let tree = Tree {
+            roots: vec![r1.clone(), r2],
+        };
+        let e = tree.create("acme/bravo", false).unwrap_err();
+        assert!(e.0.contains(&there), "{}", e.0);
+        assert!(!exists(&paths::join(&r1, "github.com")));
     }
 
     #[test]
