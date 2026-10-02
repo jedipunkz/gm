@@ -27,7 +27,6 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 
 - An existing ghq tree works as is (`$GHQ_ROOT`, `ghq.root`).
 - Without the binding, `gm` prints the chosen path, so `$(gm)` works.
-- Homebrew formula: [tap](https://github.com/jedipunkz/homebrew-gm). `gm version` prints the version.
 
 | Requirement | When |
 |---|---|
