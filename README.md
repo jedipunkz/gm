@@ -12,8 +12,7 @@ built-in fuzzy finder.
 ## 🚀 Quick start
 
 ```sh
-brew install jedipunkz/gm/gm                                  # prebuilt binary (macOS / Linux)
-cargo install --locked --git https://github.com/jedipunkz/gm  # from source
+brew install jedipunkz/gm/gm
 ```
 
 Add to your rc file:
@@ -35,7 +34,6 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | macOS / Linux (not Windows: the finder and git plumbing are Unix only) | Always |
 | `git` on `$PATH` | Always |
 | [`gh`](https://cli.github.com/), logged in, with `gh pr checkout --worktree` | Pull request list |
-| Rust 1.95+ | Building from source |
 | True-color terminal | Themes |
 
 ## 🔎 Finder
