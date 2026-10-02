@@ -47,6 +47,14 @@ impl App<'_> {
         if !wts.is_empty() {
             writeln!(self.err, "warning: {}", worktree_warning(&wts))?;
         }
+        let strays = repo::strays(r, &wts);
+        if !strays.is_empty() {
+            writeln!(
+                self.err,
+                "warning: also removed, not a worktree: {}",
+                strays.join(", ")
+            )?;
+        }
         if !yes && !self.confirm(&format!("remove {}?", r.path())) {
             writeln!(self.err, "skipped")?;
             return Ok(());

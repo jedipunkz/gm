@@ -150,6 +150,15 @@ pub const COMMANDS: &[Command] = &[
                         repo::worktree_labels(&others, |p| changed(p))
                     ));
                 }
+                if let Some(r) = m.tree.at(&it.path) {
+                    let strays = repo::strays(&r, &others);
+                    if !strays.is_empty() {
+                        detail.push(format!(
+                            "also removed, not a worktree: {}",
+                            strays.join(", ")
+                        ));
+                    }
+                }
             }
             m.confirm(Pending {
                 kind: Change::Remove,
