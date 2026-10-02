@@ -65,26 +65,42 @@ pub(super) fn run_deadline(
             .map(|s| Box::new(s) as Box<dyn Read + Send>),
     );
 
+    let pgid = child.id() as libc::pid_t;
     let deadline = Instant::now() + timeout;
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
+    let mut status = None;
+    loop {
+        if status.is_none() {
+            status = child.try_wait()?;
+            if status.is_some() {
+                // Nothing the program started outlives it: a process it left
+                // in the background still holds the pipes, and the reads
+                // below would wait for that one instead.
+                unsafe { libc::kill(-pgid, libc::SIGKILL) };
+            }
+        }
+        // A process that left the group still has the pipes, so the reads
+        // are under the deadline too.
+        if let Some(status) = status
+            && stdout.is_finished()
+            && stderr.is_finished()
+        {
+            return Ok(Output {
+                status,
+                stdout: stdout.join().unwrap_or_default(),
+                stderr: stderr.join().unwrap_or_default(),
+            });
         }
         if Instant::now() >= deadline {
-            let pgid = child.id() as libc::pid_t;
-            if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 {
+            if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 && status.is_none() {
                 let _ = child.kill();
             }
-            let _ = child.wait();
+            if status.is_none() {
+                let _ = child.wait();
+            }
             return Err(err!("{what} took longer than {}", human(timeout)));
         }
         std::thread::sleep(Duration::from_millis(20));
-    };
-    Ok(Output {
-        status,
-        stdout: stdout.join().unwrap_or_default(),
-        stderr: stderr.join().unwrap_or_default(),
-    })
+    }
 }
 
 /// human spells a timeout the way Go's Duration.String did: 20s, 5m0s.
@@ -94,5 +110,36 @@ pub(super) fn human(d: Duration) -> String {
         format!("{s}s")
     } else {
         format!("{}m{}s", d.as_secs() / 60, d.as_secs() % 60)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The bug where the deadline stopped at the child's exit: a process it
+    // left in the background, holding the pipes, kept gm waiting past it.
+    #[test]
+    fn a_background_process_does_not_outlast_the_deadline() {
+        let mut c = Command::new("sh");
+        c.args(["-c", "sleep 6 & exit 0"]);
+        let t = Instant::now();
+        run_deadline(&mut c, Duration::from_secs(1), "sh", Error::from).unwrap();
+        assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
+    }
+
+    // One that left the group, out of the kill's reach, still meets the
+    // deadline.
+    #[test]
+    fn a_process_that_left_the_group_meets_the_deadline() {
+        let mut c = Command::new("sh");
+        c.args([
+            "-c",
+            "perl -MPOSIX -e 'POSIX::setsid(); sleep 6' & sleep 0.5; exit 0",
+        ]);
+        let t = Instant::now();
+        let e = run_deadline(&mut c, Duration::from_secs(1), "sh", Error::from).unwrap_err();
+        assert!(e.0.contains("sh took longer than 1s"), "{e}");
+        assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
     }
 }
