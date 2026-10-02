@@ -118,19 +118,51 @@ pub fn exit_code(e: &Error) -> Option<i32> {
 
 /// run dispatches one command line.
 pub fn run(args: Vec<String>) -> Result<()> {
-    let cfg = config::load()?;
-    let tree = Tree::open(&cfg)?;
     let (mut out, mut err) = (std::io::stdout(), std::io::stderr());
-    let mut a = App {
+    let res = run_with(
+        &args,
+        || {
+            let cfg = config::load()?;
+            let tree = Tree::open(&cfg)?;
+            Ok((cfg, tree))
+        },
+        &mut out,
+        &mut err,
+    );
+    out.flush()?;
+    res
+}
+
+/// run_with is run with the settings and the tree read by open, and only
+/// when the command needs them: help and the version answer before, since
+/// they are what a user with a broken gm.toml runs to find out how to fix it,
+/// and what a bug report asks for.
+fn run_with(
+    args: &[String],
+    open: impl FnOnce() -> Result<(Config, Tree)>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> Result<()> {
+    match args.first().map(String::as_str) {
+        Some("-h" | "--help" | "help") => {
+            write!(out, "{}", usage())?;
+            return Ok(());
+        }
+        Some("-v" | "--version" | "version") => {
+            writeln!(out, "gm {VERSION}")?;
+            return Ok(());
+        }
+        _ => {}
+    }
+    let (cfg, tree) = open()?;
+    App {
         cfg,
         tree,
         state: repo::history_file().unwrap_or_default(),
-        out: &mut out,
-        err: &mut err,
-    };
-    let res = a.dispatch(&args);
-    a.out.flush()?;
-    res
+        out,
+        err,
+    }
+    .dispatch(args)
 }
 
 impl App<'_> {
@@ -138,14 +170,6 @@ impl App<'_> {
         let Some(first) = args.first() else {
             return self.finder();
         };
-        match first.as_str() {
-            "-h" | "--help" | "help" => {
-                write!(self.out, "{}", usage())?;
-                return Ok(());
-            }
-            "-v" | "--version" => return self.version(&[]),
-            _ => {}
-        }
         match COMMANDS
             .iter()
             .find(|c| c.name == first || c.aliases.contains(&first.as_str()))
