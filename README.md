@@ -123,9 +123,10 @@ Other keys are ordinary text editing (`Ctrl-A`, `Ctrl-E`, `Ctrl-U`, …), except
 - `Enter` goes to the pull request's worktree. If there is none, `gh pr
   checkout` creates it first; `gh` names the branch and, for a fork, sets up
   where it pushes.
-- The worktree is named after the head branch. A fork's is prefixed with its
-  owner (`bob/main`), so a fork's `main` does not collide with the
-  repository's own.
+- The worktree is named after the head branch. A fork's goes under
+  `.forks/<owner>/` (`.forks/bob/main`), apart from the repository's own
+  branches: no branch name can start with a dot, so a fork's `main` collides
+  neither with the repository's `main` nor with a local branch `bob/main`.
 
 ### Slash commands
 
