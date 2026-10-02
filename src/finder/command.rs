@@ -74,7 +74,13 @@ pub const COMMANDS: &[Command] = &[
                     return vec![];
                 }
             };
-            let dst = m.tree.path_for(&repo::rel_path_of(&u));
+            let rel = repo::rel_path_of(&u);
+            // Asked now, so the panel never offers to make a second copy.
+            if let Err(e) = m.tree.refuse_existing(&rel) {
+                m.note = e.0;
+                return vec![];
+            }
+            let dst = m.tree.path_for(&rel);
             m.confirm(Pending {
                 kind: Change::Create,
                 arg: arg.into(),
