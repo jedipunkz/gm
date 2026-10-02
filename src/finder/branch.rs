@@ -183,13 +183,20 @@ impl Model {
     /// checked before a path is built from it: a branch name comes from
     /// whoever pushed it.
     pub(super) fn worktree_for(&self, name: &str) -> Result<String, String> {
+        self.worktree_at(name, name)
+    }
+
+    /// worktree_at is worktree_for with the checkout filed under dir_name
+    /// instead, which is how a fork's pull request stays apart from the
+    /// repository's branches.
+    pub(super) fn worktree_at(&self, name: &str, dir_name: &str) -> Result<String, String> {
         if !repo::valid_branch(name) {
             return Err(format!("{name:?} is not a branch name"));
         }
         let Some(r) = self.tree.at(&self.repo_at) else {
             return Err(format!("{} is not under any root", self.repo_at));
         };
-        let dir = self.tree.worktree_dir(&r, name);
+        let dir = self.tree.worktree_dir(&r, dir_name);
         if crate::paths::exists(&dir) {
             return Err(format!("{} already exists", tildify(&dir)));
         }

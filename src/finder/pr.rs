@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use super::info::tildify;
 use super::list::Item;
@@ -57,9 +57,9 @@ impl Model {
         // A pull request is already checked out when its branch is, or when
         // its worktree is where gm files it. A fork's branch is matched by
         // place only: its main is not the repository's main.
-        let (mut by_branch, mut by_path) = (HashMap::new(), HashSet::new());
+        let (mut by_branch, mut by_path) = (HashMap::new(), Vec::new());
         for w in (self.worktrees_of)(&it.path).unwrap_or_default() {
-            by_path.insert(w.path.clone());
+            by_path.push(w.path.clone());
             if !w.branch.is_empty() {
                 by_branch.insert(w.branch, w.path);
             }
@@ -70,8 +70,10 @@ impl Model {
                 return path.clone();
             }
             if let Some(r) = r.as_ref().filter(|_| repo::valid_branch(&p.checkout())) {
-                let dir = self.tree.worktree_dir(r, &p.checkout());
-                if by_path.contains(&dir) {
+                let dir = self.tree.worktree_dir(r, &p.worktree_name());
+                // git prints the resolved path, the tree the configured one:
+                // under a symlinked root they differ as text.
+                if by_path.iter().any(|w| repo::same_path(w, &dir)) {
                     return dir;
                 }
             }
@@ -112,7 +114,7 @@ impl Model {
             };
             return vec![Cmd::Quit];
         }
-        let dir = match self.worktree_for(&it.pr.checkout()) {
+        let dir = match self.worktree_at(&it.pr.checkout(), &it.pr.worktree_name()) {
             Ok(dir) => dir,
             Err(why) => {
                 self.note = why;

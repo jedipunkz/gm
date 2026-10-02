@@ -36,7 +36,22 @@ impl PullRequest {
         }
         self.branch.clone()
     }
+
+    /// worktree_name is where under the repository's worktree directory the
+    /// pull request is checked out. A fork's goes under FORK_DIR, apart from
+    /// the repository's own branches: bob:main is not a local bob/main, and
+    /// bob:fix must not land inside a local bob's worktree.
+    pub fn worktree_name(&self) -> String {
+        if self.fork && !self.head_owner.is_empty() {
+            return format!("{FORK_DIR}/{}", self.checkout());
+        }
+        self.branch.clone()
+    }
 }
+
+/// FORK_DIR holds the checkouts of fork pull requests. No branch name can
+/// have a component starting with a dot, so none can be filed here.
+pub const FORK_DIR: &str = ".forks";
 
 /// PR_LIMIT is how many open pull requests gh is asked for, newest first. A
 /// repository with more than this has the rest invisible: whoever shows the
@@ -193,6 +208,8 @@ mod tests {
             (prs[1].label(), prs[1].checkout()),
             ("#9 [draft] Fix typo".into(), "bob/main".into())
         );
+        assert_eq!(prs[0].worktree_name(), "feat/login");
+        assert_eq!(prs[1].worktree_name(), ".forks/bob/main");
         assert_eq!(prs[1].author, "bob");
     }
 

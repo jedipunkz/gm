@@ -2354,6 +2354,69 @@ fn pr_mode() {
     assert_eq!(label(&m), rs[1].rel);
 }
 
+// A fork's checkout is found under a symlinked root, where git prints the
+// resolved path, and is filed apart from the repository's own branches: a
+// local bob/main is not fork pull request bob:main.
+#[test]
+fn pr_mode_finds_a_fork_checkout_by_place() {
+    let base = TempDir::new();
+    let real = base.join("real");
+    mkdir(&real);
+    let link = base.join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let rs = repos(&link, &["github.com/acme/alpha"]);
+    let wt = |name: &str| {
+        paths::join(
+            &real,
+            &format!("{}/github.com/acme/alpha/{name}", repo::WORKTREE_ROOT),
+        )
+    };
+    let (fork, local) = (wt(".forks/bob/main"), wt("bob/main"));
+    mkdir(&fork);
+    mkdir(&local);
+
+    let mut m = new_model(&rs, "");
+    (m.w, m.h) = (100, 16);
+    let (f, l) = (fork.clone(), local.clone());
+    m.worktrees_of = Arc::new(move |dir| {
+        let w = |p: &str, b: &str| Worktree {
+            path: p.into(),
+            branch: b.into(),
+            ..Default::default()
+        };
+        Ok(vec![w(dir, "main"), w(&l, "bob/main"), w(&f, "bob-main")])
+    });
+    m.prs_of = Arc::new(|_| {
+        Ok(vec![pull_request(
+            9, "Fix typo", "main", false, true, "bob",
+        )])
+    });
+    open_pr_list(&mut m);
+    assert_eq!(m.mode, Mode::Prs, "{:?}", m.note);
+    let at = m.current().unwrap().path.clone();
+    assert!(repo::same_path(&at, &fork), "{at:?}");
+
+    // Without the fork's own checkout, the local bob/main is not offered.
+    let l = local.clone();
+    m.worktrees_of = Arc::new(move |dir| {
+        Ok(vec![
+            Worktree {
+                path: dir.into(),
+                branch: "main".into(),
+                ..Default::default()
+            },
+            Worktree {
+                path: l.clone(),
+                branch: "bob/main".into(),
+                ..Default::default()
+            },
+        ])
+    });
+    m.update(key("ctrl+j"));
+    open_pr_list(&mut m);
+    assert_eq!(m.current().unwrap().path, "");
+}
+
 #[test]
 fn prs_command() {
     let root = TempDir::new();
