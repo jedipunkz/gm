@@ -343,13 +343,10 @@ impl App<'_> {
         match res.action {
             Action::Jump => self.go_to(&res.arg, hist),
             Action::Get => {
-                self.get(std::slice::from_ref(&res.arg))?;
-                let u = repo::normalize_url(&res.arg, false)?;
-                let rel = repo::rel_path_of(&u);
-                let dst = self
-                    .tree
-                    .existing_path(&rel)
-                    .unwrap_or_else(|| self.tree.path_for(&rel));
+                // Typed as a command line, so it is split like one: flags
+                // and several references work the way they do for gm get.
+                let args: Vec<String> = res.arg.split_whitespace().map(String::from).collect();
+                let dst = self.get_last(&args)?;
                 writeln!(self.out, "{dst}")?;
                 Ok(())
             }

@@ -92,7 +92,7 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "/get",
-        arg: "<repo>",
+        arg: "[flags] <repo>",
         what: "clone a repository, then go there",
         run: |m, arg| m.leave_with(Action::Get, arg),
     },
