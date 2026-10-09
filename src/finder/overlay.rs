@@ -4,8 +4,8 @@ use super::command::COMMANDS;
 use super::info::{Seg, tildify, wrap_segs};
 use super::worktree::Mode;
 use super::{Cmd, Done, Key, Model, Msg};
-use crate::repo::{self, Branch};
-use crate::{Error, err, paths};
+use crate::repo::{self, Branch, Worktree};
+use crate::{Error, err, paths, plural};
 
 /// Overlay says which panel is drawn over the list.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -28,6 +28,7 @@ pub enum Change {
     RemoveWorktree,
     CheckOut,   // a worktree for a branch in the branch list, then go there
     CheckOutPr, // a worktree for a pull request, made by gh, then go there
+    Expire,     // the idle worktrees of the repository, and their merged branches
 }
 
 /// Pending is the change a confirmation is waiting on. Nothing has happened
@@ -44,6 +45,7 @@ pub struct Pending {
     pub title: String,       // "remove", "create worktree"
     pub detail: Vec<String>, // what it will do, a line each
     pub force: bool,         // there is work in it and the user has been told
+    pub wts: Vec<Worktree>,  // the worktrees /expire removes
 }
 
 impl Model {
@@ -65,6 +67,7 @@ impl Model {
                     path,
                     busy_tag,
                     err,
+                    gone: vec![],
                 }))
             };
             match kind {
@@ -108,6 +111,29 @@ impl Model {
                     }
                     .map(|_| (a.dir.clone(), String::new())),
                 ),
+                Change::Expire => {
+                    let gone = tree.at(&a.repo_at).map(|r| repo::expire(&r, &a.wts));
+                    let Some(gone) = gone else {
+                        return done(Err(err!("{} is not under any root", a.repo_at)));
+                    };
+                    // A refusal is one worktree's news, not the whole command's:
+                    // the rest are gone either way, so it goes in the label.
+                    let mut said = format!(
+                        "removed {}, {}",
+                        plural(gone.removed.len(), "worktree", "worktrees"),
+                        plural(gone.branches, "branch", "branches")
+                    );
+                    if !gone.failed.is_empty() {
+                        said += &format!("; kept {}", gone.failed.join("; "));
+                    }
+                    let Some(Msg::Done(d)) = done(Ok((String::new(), said))) else {
+                        return None;
+                    };
+                    Some(Msg::Done(Done {
+                        gone: gone.removed,
+                        ..d
+                    }))
+                }
                 Change::None => None,
             }
         }))
@@ -213,6 +239,59 @@ impl Model {
         })
     }
 
+    /// confirm_expire asks about removing every worktree of the listed
+    /// repository that has sat idle for age, "30d". It is about the whole list,
+    /// not the selected row, so the panel names each one that goes.
+    pub(super) fn confirm_expire(&mut self, age: &str) -> Vec<Cmd> {
+        if self.mode != Mode::Worktrees {
+            self.note = "/expire applies to the worktree list".into();
+            return vec![];
+        }
+        let days = match repo::parse_days(age) {
+            Ok(d) => d,
+            Err(e) => {
+                self.note = e.0;
+                return vec![];
+            }
+        };
+        // git is asked now, the way /remove asks: the list may be minutes old.
+        let wts = match (self.worktrees_of)(&self.repo_at) {
+            Ok(w) => w,
+            Err(e) => {
+                self.note = e.0;
+                return vec![];
+            }
+        };
+        let changed = self.changed_of.clone();
+        let (dirty, idle): (Vec<_>, Vec<_>) = repo::expired(&self.repo_at, &wts, days, repo::now())
+            .into_iter()
+            .partition(|w| changed(&w.path) > 0);
+        let kept = (!dirty.is_empty()).then(|| {
+            format!(
+                "kept, uncommitted changes: {}",
+                repo::worktree_labels(&dirty, |p| changed(p))
+            )
+        });
+        if idle.is_empty() {
+            self.note = format!("no worktree idle for {days} days");
+            if let Some(k) = kept {
+                self.note += &format!("; {k}");
+            }
+            return vec![];
+        }
+        let names = idle.iter().map(Worktree::label).collect::<Vec<_>>();
+        let mut detail = vec![format!("idle {days}+ days: {}", names.join(", "))];
+        detail.extend(kept);
+        detail.push("their branches go too where git branch -d allows".into());
+        self.confirm(Pending {
+            kind: Change::Expire,
+            title: format!("remove {}", plural(idle.len(), "worktree", "worktrees")),
+            detail,
+            wts: idle,
+            ..Default::default()
+        })
+    }
+
     /// panel_key is the whole keyboard while a panel is up. Everything it does
     /// not answer to is swallowed, so nothing moves behind it.
     pub(super) fn panel_key(&mut self, k: &Key) -> Vec<Cmd> {
@@ -233,6 +312,10 @@ impl Model {
                     Change::RemoveWorktree => {
                         Some(format!("removing worktree at {}…", tildify(&a.dir)))
                     }
+                    Change::Expire => Some(format!(
+                        "removing {}…",
+                        plural(a.wts.len(), "worktree", "worktrees")
+                    )),
                     _ => None,
                 };
                 let mut cmds = Vec::new();

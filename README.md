@@ -98,6 +98,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 |---|---|
 | `/create <branch>` | Check the branch out as a worktree; a new branch starts from `HEAD` |
 | `/remove` | Remove the selected worktree; the main worktree is refused |
+| `/expire <days>d` | Remove every worktree whose HEAD has not moved for that long (its reflog says when), then its branch if `git branch -d` allows. The whole list, not the selected row: the panel names each one. Uncommitted changes keep a worktree |
 | `/dirty` `/unpushed` | Refused |
 
 #### Branch list, pull request list
@@ -105,7 +106,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | Command | Action |
 |---|---|
 | `/create <branch>` | Same as the worktree list |
-| `/remove` `/dirty` `/unpushed` | Refused |
+| `/remove` `/expire` `/dirty` `/unpushed` | Refused |
 
 ## 🌳 Worktrees
 
@@ -144,6 +145,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `gm remove <repo>...` | Remove a repository and its worktrees, prune empty parents. Alias `gm rm` | `--dry-run`<br>`-y` no prompt |
 | `gm wt create <repo> <branch>` | Add a worktree, print its path: `cd (gm wt create gm feat/login)` | |
 | `gm wt remove <repo> <branch>` | Remove a worktree; warns about uncommitted work | `-y` no prompt |
+| `gm wt expire <repo> <days>d` | Same as `/expire`: `gm wt expire gm 30d` | `--dry-run`<br>`-y` no prompt |
 | `gm migrate <dir>...` | Move an existing clone into the tree by its `origin` | `--dry-run`<br>`-y` no prompt<br>`-r` search the directories for clones |
 | `gm root` | Print the root | `--all` every root |
 | `gm shell <fish\|zsh\|bash>` | Print the `Ctrl-G` binding | |
