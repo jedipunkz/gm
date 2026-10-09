@@ -42,7 +42,7 @@ const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "get",
         aliases: &["clone"],
-        usage: "get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...",
+        usage: "get [-u] [--ssh] [--shallow] [-b <branch>] [-s] [-l] <repo>...",
         run: |a, args| a.get(args),
     },
     Cmd {
@@ -60,7 +60,7 @@ const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "create",
         aliases: &["new"],
-        usage: "create [-p] <repo>",
+        usage: "create [--ssh] <repo>",
         run: |a, args| a.create(args),
     },
     Cmd {

@@ -1057,3 +1057,25 @@ fn wt_usage() {
         assert!(r.res.is_err(), "gm wt {a:?} was accepted");
     }
 }
+
+// -p means full paths wherever gm takes it; SSH is spelled out, so gm get -p
+// and gm create -p are mistakes rather than a quiet switch of protocol.
+#[test]
+fn ssh_is_its_own_flag() {
+    let root = TempDir::new();
+    let t = tree(&root.path());
+    let made = run_in(&t, "", Config::default(), |a| {
+        a.create(&args(&["--ssh", "github.com/acme/alpha"]))
+    });
+    let dir = made.res.map(|_| made.out.trim().to_string()).unwrap();
+    assert_eq!(
+        repo::git_in(&dir, &["remote", "get-url", "origin"]).unwrap(),
+        "ssh://git@github.com/acme/alpha"
+    );
+    for cmd in ["get", "create"] {
+        let r = run_in(&t, "", Config::default(), |a| {
+            a.dispatch(&args(&[cmd, "-p", "acme/bravo"]))
+        });
+        assert_eq!(r.res, Err(USAGE_ERROR.into()), "gm {cmd} -p was accepted");
+    }
+}

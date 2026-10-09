@@ -138,10 +138,10 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | Command | Action | Flags |
 |---|---|---|
 | `gm` | Open the finder, print the chosen path | |
-| `gm get <repo>...` | Clone into the tree; an existing clone is skipped | `-u` update existing clone ¹<br>`-p` SSH<br>`--shallow` depth 1<br>`--no-recursive` no submodules<br>`-b <branch>` single branch<br>`-s` quiet<br>`-l` open a shell there |
+| `gm get <repo>...` | Clone into the tree; an existing clone is skipped | `-u` update existing clone ¹<br>`--ssh` SSH<br>`--shallow` depth 1<br>`--no-recursive` no submodules<br>`-b <branch>` single branch<br>`-s` quiet<br>`-l` open a shell there |
 | `gm list [<query>]` | List repositories | `-p` full paths<br>`-e` exact match<br>`--unique` shortest unambiguous name |
 | `gm status` | List unfinished work in repositories and worktrees ² | `--dirty` uncommitted only<br>`--unpushed` unpushed only<br>`-a` include clean ones<br>`-p` full paths |
-| `gm create <repo>` | `git init` with `origin` set, print the path | `-p` SSH `origin` |
+| `gm create <repo>` | `git init` with `origin` set, print the path | `--ssh` SSH `origin` |
 | `gm remove <repo>...` | Remove a repository and its worktrees, prune empty parents. Alias `gm rm` | `--dry-run`<br>`-y` no prompt |
 | `gm wt create <repo> <branch>` | Add a worktree, print its path: `cd (gm wt create gm feat/login)`. Alias `gm wt new` | |
 | `gm wt remove <repo> <branch>` | Remove a worktree, then its branch if `git branch -d` allows; warns about uncommitted work. Alias `gm wt rm` | `--dry-run`<br>`-y` no prompt |

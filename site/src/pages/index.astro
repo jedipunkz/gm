@@ -64,11 +64,11 @@ const slash = [
 
 const subcommands = [
   ["gm", "Open the fuzzy finder; print the selected path"],
-  ["gm get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...", "Clone into the tree; -u updates an existing clone"],
+  ["gm get [-u] [--ssh] [--shallow] [-b <branch>] [-s] [-l] <repo>...", "Clone into the tree; -u updates an existing clone"],
   ["gm list [-p] [-e] [--unique] [<query>]", "List repositories (-p full paths, -e exact match, --unique shortest unambiguous name)"],
   ["gm status [--dirty] [--unpushed] [-a] [-p]", "List unfinished work across repositories and worktrees; never fetches"],
   ["gm remove [--dry-run] [-y] <repo>...", "Remove a repository and its worktrees after confirming, pruning empty parents (gm rm also works)"],
-  ["gm create [-p] <repo>", "Create and git init a repository with origin already set"],
+  ["gm create [--ssh] <repo>", "Create and git init a repository with origin already set"],
   ["gm wt <create|remove> [-y] <repo> <branch>", "Add or remove a worktree from a script; the finder is better for doing it by hand"],
   ["gm wt expire [--dry-run] [-y] <repo> <days>d", "Remove the worktrees idle that long, and their merged branches"],
   ["gm migrate [--dry-run] [-y] [-r] <dir>...", "Move an existing clone into the tree, using its origin remote; -r searches the directory"],

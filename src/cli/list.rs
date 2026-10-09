@@ -108,7 +108,7 @@ impl App<'_> {
                 usage: "include repositories that are clean and in sync",
             },
             Flag {
-                names: &["p"],
+                names: &["p", "full-path"],
                 value: None,
                 usage: "print full paths",
             },

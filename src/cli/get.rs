@@ -71,7 +71,7 @@ impl App<'_> {
                 usage: "update the repository if it is already cloned",
             },
             Flag {
-                names: &["p"],
+                names: &["ssh"],
                 value: None,
                 usage: "clone via SSH",
             },
@@ -108,7 +108,7 @@ impl App<'_> {
 
         let mut last = String::new();
         for reference in &p.args {
-            let u = repo::normalize_url(reference, p.on("p"))?;
+            let u = repo::normalize_url(reference, p.on("ssh"))?;
             let rel = repo::rel_path_of(&u);
             // One repository under two roots is a real setup (a work laptop
             // and a private one, say), so cloning or updating "the" one needs
@@ -178,15 +178,17 @@ impl App<'_> {
 
     pub(super) fn create(&mut self, args: &[String]) -> Result<()> {
         let flags = [Flag {
-            names: &["p"],
+            names: &["ssh"],
             value: None,
             usage: "set the origin remote to its SSH URL",
         }];
         let p = parse(self, "gm create", &flags, args)?;
         let [reference] = p.args.as_slice() else {
-            return Err("usage: gm create [-p] <repo>|<user>/<repo>|<host>/<user>/<repo>".into());
+            return Err(
+                "usage: gm create [--ssh] <repo>|<user>/<repo>|<host>/<user>/<repo>".into(),
+            );
         };
-        let r = self.tree.create(reference, p.on("p"))?;
+        let r = self.tree.create(reference, p.on("ssh"))?;
         self.bump(&r.path());
         writeln!(self.out, "{}", r.path())?;
         Ok(())
