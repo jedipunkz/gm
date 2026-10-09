@@ -1,5 +1,7 @@
 <div align="center">
-  
+
+<img src="assets/icon.png" alt="gm icon" width="160">
+
 # gm
 
 <p>
