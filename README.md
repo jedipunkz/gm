@@ -229,6 +229,6 @@ the valid ones.
 
 Visits are stored in `$XDG_STATE_HOME/gm/frecency.json` (default `~/.local/state/gm/frecency.json`). Delete it to reset.
 
-## 📄 License
+## 🦄 License
 
 MIT
