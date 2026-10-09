@@ -1,13 +1,21 @@
+<div align="center">
+  
 # gm
 
 [![CI](https://github.com/jedipunkz/gm/actions/workflows/pr.yaml/badge.svg)](https://github.com/jedipunkz/gm/actions/workflows/pr.yaml)
-
+  <a href="https://github.com/jedipunkz/gm/releases/latest"><img src="https://img.shields.io/github/v/release/jedipunkz/gm?style=flat-square" alt="Latest release"></a>
+  
 A [ghq](https://github.com/x-motemen/ghq)-style repository manager with a
 built-in fuzzy finder.
+</div>
+
+## ✨ Features
 
 - Clones land in one `host/user/repo` tree.
 - `Ctrl-G` jumps to any clone or worktree.
 - Branches and pull requests open as worktrees.
+
+
 
 ## 🚀 Quick start
 
