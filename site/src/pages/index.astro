@@ -469,11 +469,16 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
       radial-gradient(60% 50% at 50% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
       var(--bg);
   }
+  /* The icon opens the hero, so the section's top padding shrinks by what the
+     icon adds: the gap above it then matches the gap below. */
+  .hero:has(.hero-icon) {
+    padding-top: 40px;
+  }
   .hero-icon {
     display: block;
-    width: 160px;
+    width: clamp(112px, 22vw, 152px);
     height: auto;
-    margin: 0 auto 20px;
+    margin: 0 auto 24px;
   }
   .hero h1 {
     font-size: clamp(2.3rem, 6vw, 4.1rem);
