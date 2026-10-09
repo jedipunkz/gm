@@ -201,8 +201,9 @@ impl App<'_> {
     /// create and remove, spelled out, no abbreviations.
     pub(super) fn wt(&mut self, args: &[String]) -> Result<()> {
         match args.first().map(String::as_str) {
-            Some("create") => self.wt_create(&args[1..]),
-            Some("remove") => self.wt_remove(&args[1..]),
+            // The aliases are gm's own: gm new and gm rm.
+            Some("create" | "new") => self.wt_create(&args[1..]),
+            Some("remove" | "rm") => self.wt_remove(&args[1..]),
             Some("expire") => self.wt_expire(&args[1..]),
             _ => Err(WT_USAGE.into()),
         }

@@ -143,8 +143,8 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `gm status` | List unfinished work in repositories and worktrees ² | `--dirty` uncommitted only<br>`--unpushed` unpushed only<br>`-a` include clean ones<br>`-p` full paths |
 | `gm create <repo>` | `git init` with `origin` set, print the path | `-p` SSH `origin` |
 | `gm remove <repo>...` | Remove a repository and its worktrees, prune empty parents. Alias `gm rm` | `--dry-run`<br>`-y` no prompt |
-| `gm wt create <repo> <branch>` | Add a worktree, print its path: `cd (gm wt create gm feat/login)` | |
-| `gm wt remove <repo> <branch>` | Remove a worktree, then its branch if `git branch -d` allows; warns about uncommitted work | `--dry-run`<br>`-y` no prompt |
+| `gm wt create <repo> <branch>` | Add a worktree, print its path: `cd (gm wt create gm feat/login)`. Alias `gm wt new` | |
+| `gm wt remove <repo> <branch>` | Remove a worktree, then its branch if `git branch -d` allows; warns about uncommitted work. Alias `gm wt rm` | `--dry-run`<br>`-y` no prompt |
 | `gm wt expire <repo> <days>d` | Same as `/expire`: `gm wt expire gm 30d` | `--dry-run`<br>`-y` no prompt |
 | `gm migrate <dir>...` | Move an existing clone into the tree by its `origin` | `--dry-run`<br>`-y` no prompt<br>`-r` search the directories for clones |
 | `gm root` | Print the root | `--all` every root |

@@ -978,16 +978,22 @@ fn wt_create_and_remove() {
 
     // The same branch twice is a mistake worth stopping at, not a silent
     // no-op: the second call would otherwise look like it worked.
+    // gm new and gm rm answer under wt as well.
     let again = run_in(&t, &state, Config::default(), |a| {
-        a.wt(&args(&["create", "acme/alpha", "feat/login"]))
+        a.wt(&args(&["new", "acme/alpha", "feat/login"]))
     });
-    assert!(again.res.is_err());
+    assert!(again.res.unwrap_err().0.contains("already exists"));
 
     let gone = run_in(&t, &state, Config::default(), |a| {
-        a.wt(&args(&["remove", "-y", "acme/alpha", "feat/login"]))
+        a.wt(&args(&["rm", "-y", "acme/alpha", "feat/login"]))
     });
     gone.res.unwrap();
     assert!(!exists(&dir));
+    assert!(
+        gone.err.contains("deleted  branch feat/login"),
+        "{}",
+        gone.err
+    );
     assert!(!exists(&root.join(".worktrees/github.com")));
 }
 
