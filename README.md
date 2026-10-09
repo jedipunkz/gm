@@ -133,9 +133,9 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 - `Enter`: go to its worktree. If none, `gh pr checkout` creates it; `gh` names the branch and, for a fork, sets where it pushes.
 - The worktree is named after the head branch.
 
-## 🧰 Commands
+## 🧰 Sub Commands
 
-| Command | Action | Flags |
+| Sub Command | Action | Flags |
 |---|---|---|
 | `gm` | Open the finder, print the chosen path | |
 | `gm get <repo>...` | Clone into the tree; an existing clone is skipped | `-u` update existing clone ¹<br>`--ssh` SSH<br>`--shallow` depth 1<br>`--no-recursive` no submodules<br>`-b <branch>` single branch<br>`-s` quiet<br>`-l` open a shell there |
