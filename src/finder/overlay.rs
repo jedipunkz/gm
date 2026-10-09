@@ -38,14 +38,14 @@ pub struct Pending {
     pub kind: Change,
     pub mode: Mode,          // the list the change belongs to
     pub repo_at: String,     // the repository that list belongs to
-    pub arg: String,         // the path to remove, the reference to create, the branch to check out
-    pub dir: String,         // where a worktree will go, or which one goes away
-    pub from: String,        // the remote branch a new branch starts at, "origin/feature"
-    pub fetch: bool,         // from has to be fetched first: only the remote has it
-    pub title: String,       // "remove", "create worktree"
+    pub arg: String, // the path to remove, the reference to create, the branch to check out or remove
+    pub dir: String, // where a worktree will go, or which one goes away
+    pub from: String, // the remote branch a new branch starts at, "origin/feature"
+    pub fetch: bool, // from has to be fetched first: only the remote has it
+    pub title: String, // "remove", "create worktree"
     pub detail: Vec<String>, // what it will do, a line each
-    pub force: bool,         // there is work in it and the user has been told
-    pub wts: Vec<Worktree>,  // the worktrees /expire removes
+    pub force: bool, // there is work in it and the user has been told
+    pub wts: Vec<Worktree>, // the worktrees /expire removes
 }
 
 impl Model {
@@ -107,9 +107,17 @@ impl Model {
                 Change::RemoveWorktree => done(
                     match tree.at(&a.repo_at) {
                         None => Err(err!("{} is not under any root", a.repo_at)),
-                        Some(r) => repo::remove_worktree_and_prune(&r, &a.dir, a.force),
+                        Some(r) => repo::remove_worktree_and_branch(&r, &a.dir, &a.arg, a.force),
                     }
-                    .map(|_| (a.dir.clone(), String::new())),
+                    .map(|gone| {
+                        // The label finishes the note: what became of the branch.
+                        let said = match (a.arg.as_str(), gone) {
+                            ("", _) => String::new(),
+                            (b, true) => format!(", deleted branch {b}"),
+                            (b, false) => format!(", kept branch {b}: not merged"),
+                        };
+                        (a.dir.clone(), said)
+                    }),
                 ),
                 Change::Expire => {
                     let gone = tree.at(&a.repo_at).map(|r| repo::expire(&r, &a.wts));

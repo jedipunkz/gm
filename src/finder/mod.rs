@@ -545,8 +545,9 @@ impl Model {
                     saved.update(changed);
                 }
                 self.note = match d.kind {
-                    Change::Remove | Change::RemoveWorktree => {
-                        format!("removed {}", info::tildify(&d.path))
+                    Change::Remove => format!("removed {}", info::tildify(&d.path)),
+                    Change::RemoveWorktree => {
+                        format!("removed {}{}", info::tildify(&d.path), d.label)
                     }
                     Change::Create | Change::AddWorktree => {
                         format!("created {}", info::tildify(&d.path))
@@ -804,7 +805,7 @@ impl Model {
                 ("enter".into(), "jump"),
                 (wt, "worktrees"),
                 ("esc".into(), esc),
-                (rm, "remote"),
+                (rm, "browse"),
                 (br, "branches"),
                 (pr, "prs"),
             ],
@@ -812,7 +813,7 @@ impl Model {
                 mv,
                 ("enter".into(), "jump"),
                 (format!("{wt}/g/esc"), "repos"),
-                (rm, "remote"),
+                (rm, "browse"),
                 (br, "branches"),
                 (pr, "prs"),
             ],
@@ -820,7 +821,7 @@ impl Model {
                 mv,
                 ("enter".into(), "check out"),
                 (format!("{br}/g/esc"), "repos"),
-                (rm, "remote"),
+                (rm, "browse"),
                 (wt, "worktrees"),
                 (pr, "prs"),
             ],
@@ -828,7 +829,7 @@ impl Model {
                 mv,
                 ("enter".into(), "check out"),
                 (format!("{pr}/g/esc"), "repos"),
-                (rm, "remote"),
+                (rm, "browse"),
                 (wt, "worktrees"),
                 (br, "branches"),
             ],

@@ -400,7 +400,7 @@ fn worktree_key_is_configurable() {
 fn remote_key_in_hints() {
     let root = TempDir::new();
     let m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
-    assert!(line_text(&m.help_line(120)).contains("ctrl-alt-b remote"));
+    assert!(line_text(&m.help_line(120)).contains("ctrl-alt-b browse"));
 }
 
 // The hints under the prompt name the keys for the list that is up, the key
@@ -1831,14 +1831,22 @@ fn worktree_create_and_remove() {
     // A worktree must not show up as a repository.
     assert_eq!(repo::find_repos(&root.path()), vec![r.path()]);
 
-    // Now take it away.
+    // Now take it away, and its branch: it holds nothing HEAD lacks.
+    m.open_worktrees(); // the rows that come from git carry their branch
+    m.cursor = 0;
     run_slash(&mut m, "/remove");
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
+    assert!(view_text(&m).contains("branch feat/login goes too"));
     let cmds = m.update(ch('y'));
     feed(&mut m, cmds);
     assert!(!exists(&dir));
+    assert!(!repo::branch_exists(&r.path(), "feat/login"));
     assert_eq!(rows(&m).len(), 1);
-    assert!(m.note.contains("removed"), "{:?}", m.note);
+    assert!(
+        m.note.ends_with(", deleted branch feat/login"),
+        "{:?}",
+        m.note
+    );
 }
 
 // /expire acts on the whole list, not the selected row: the panel names every

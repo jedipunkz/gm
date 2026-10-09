@@ -348,12 +348,15 @@ pub fn prune_empty_parents(root: &str, mut dir: String) {
     }
 }
 
-/// remove_worktree_and_prune takes a checkout away, then removes any empty
-/// directories it leaves under the root's worktree directory.
-pub fn remove_worktree_and_prune(r: &Repo, dir: &str, force: bool) -> Result<()> {
+/// remove_worktree_and_branch takes a checkout away, removes any empty
+/// directories it leaves under the root's worktree directory, and then its
+/// branch where git branch -d allows: a branch not merged stays, so force
+/// never reaches the commits. It answers whether the branch went. An empty
+/// branch is a detached HEAD, which has none.
+pub fn remove_worktree_and_branch(r: &Repo, dir: &str, branch: &str, force: bool) -> Result<bool> {
     remove_worktree(&r.path(), dir, force)?;
     prune_empty_parents(&paths::join(&r.root, WORKTREE_ROOT), paths::dir(dir));
-    Ok(())
+    Ok(!branch.is_empty() && git_quiet(&["-C", &r.path(), "branch", "-d", "--", branch]).is_ok())
 }
 
 /// remove_all is os.RemoveAll: what is not there is already removed.
@@ -437,21 +440,17 @@ pub struct Expiry {
     pub failed: Vec<String>,
 }
 
-/// expire removes the worktrees in wts and then each one's branch. Neither is
-/// forced, so git keeps whatever would lose work: a worktree with changes in
-/// it, and a branch not merged (git branch -d).
+/// expire removes the worktrees in wts and each one's merged branch. The
+/// worktree is not forced either, so git keeps one with changes in it.
 pub fn expire(r: &Repo, wts: &[Worktree]) -> Expiry {
     let mut done = Expiry::default();
     for w in wts {
-        if let Err(e) = remove_worktree_and_prune(r, &w.path, false) {
-            done.failed.push(format!("{}: {e}", w.label()));
-            continue;
-        }
-        done.removed.push(w.path.clone());
-        if !w.branch.is_empty()
-            && git_quiet(&["-C", &r.path(), "branch", "-d", "--", &w.branch]).is_ok()
-        {
-            done.branches += 1;
+        match remove_worktree_and_branch(r, &w.path, &w.branch, false) {
+            Err(e) => done.failed.push(format!("{}: {e}", w.label())),
+            Ok(gone) => {
+                done.removed.push(w.path.clone());
+                done.branches += usize::from(gone);
+            }
         }
     }
     done
@@ -884,6 +883,36 @@ mod tests {
         // The date is what ranks the checkouts in the details pane, so an
         // undated worktree would silently sort to the bottom.
         assert!(got[0].committed_at > 0);
+    }
+
+    // A branch with commits nothing else has stays when its worktree goes,
+    // however the worktree was removed.
+    #[test]
+    fn remove_worktree_keeps_an_unmerged_branch() {
+        let base = TempDir::new();
+        let r = Repo {
+            root: base.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&r.path());
+        let dir = Tree {
+            roots: vec![base.path()],
+        }
+        .worktree_dir(&r, "work");
+        add_worktree(
+            &paths::join(&r.root, WORKTREE_ROOT),
+            &r.path(),
+            &dir,
+            "work",
+        )
+        .unwrap();
+        crate::testutil::git(&dir, &["commit", "-q", "--allow-empty", "-m", "only here"]);
+
+        assert_eq!(
+            remove_worktree_and_branch(&r, &dir, "work", true),
+            Ok(false)
+        );
+        assert!(!exists(&dir) && branch_exists(&r.path(), "work"));
     }
 
     #[test]

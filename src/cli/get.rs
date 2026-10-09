@@ -71,7 +71,7 @@ impl App<'_> {
                 usage: "update the repository if it is already cloned",
             },
             Flag {
-                names: &["p"],
+                names: &["ssh"],
                 value: None,
                 usage: "clone via SSH",
             },
@@ -108,7 +108,7 @@ impl App<'_> {
 
         let mut last = String::new();
         for reference in &p.args {
-            let u = repo::normalize_url(reference, p.on("p"))?;
+            let u = repo::normalize_url(reference, p.on("ssh"))?;
             let rel = repo::rel_path_of(&u);
             // One repository under two roots is a real setup (a work laptop
             // and a private one, say), so cloning or updating "the" one needs
@@ -178,15 +178,17 @@ impl App<'_> {
 
     pub(super) fn create(&mut self, args: &[String]) -> Result<()> {
         let flags = [Flag {
-            names: &["p"],
+            names: &["ssh"],
             value: None,
             usage: "set the origin remote to its SSH URL",
         }];
         let p = parse(self, "gm create", &flags, args)?;
         let [reference] = p.args.as_slice() else {
-            return Err("usage: gm create [-p] <repo>|<user>/<repo>|<host>/<user>/<repo>".into());
+            return Err(
+                "usage: gm create [--ssh] <repo>|<user>/<repo>|<host>/<user>/<repo>".into(),
+            );
         };
-        let r = self.tree.create(reference, p.on("p"))?;
+        let r = self.tree.create(reference, p.on("ssh"))?;
         self.bump(&r.path());
         writeln!(self.out, "{}", r.path())?;
         Ok(())
@@ -201,8 +203,9 @@ impl App<'_> {
     /// create and remove, spelled out, no abbreviations.
     pub(super) fn wt(&mut self, args: &[String]) -> Result<()> {
         match args.first().map(String::as_str) {
-            Some("create") => self.wt_create(&args[1..]),
-            Some("remove") => self.wt_remove(&args[1..]),
+            // The aliases are gm's own: gm new and gm rm.
+            Some("create" | "new") => self.wt_create(&args[1..]),
+            Some("remove" | "rm") => self.wt_remove(&args[1..]),
             Some("expire") => self.wt_expire(&args[1..]),
             _ => Err(WT_USAGE.into()),
         }
@@ -264,14 +267,20 @@ impl App<'_> {
         // Asking git which worktrees there are answers two questions at once:
         // is this one of them, and is it the main one — which is the
         // repository itself and must never be removed this way.
-        if !repo::other_worktrees(&r)
-            .iter()
-            .any(|w| repo::same_path(&w.path, &dir))
-        {
+        let Some(w) = repo::other_worktrees(&r)
+            .into_iter()
+            .find(|w| repo::same_path(&w.path, &dir))
+        else {
             return Err(err!("{} has no worktree for {branch}", r.rel));
-        }
+        };
+        // The branch git has checked out there, which is not the name given
+        // for a fork's pull request.
+        let also = match w.branch.as_str() {
+            "" => String::new(),
+            b => format!(" and branch {b} if merged"),
+        };
         if p.on("dry-run") {
-            writeln!(self.err, "would remove {dir}")?;
+            writeln!(self.err, "would remove {dir}{also}")?;
             return Ok(());
         }
         // Work in the worktree is lost with it, so it is said before the
@@ -280,12 +289,20 @@ impl App<'_> {
         if dirty {
             writeln!(self.err, "warning: {dir} has uncommitted changes")?;
         }
-        if !p.on("y") && !self.confirm(&format!("remove {dir}?")) {
+        if !p.on("y") && !self.confirm(&format!("remove {dir}{also}?")) {
             writeln!(self.err, "skipped")?;
             return Ok(());
         }
-        repo::remove_worktree_and_prune(&r, &dir, dirty)?;
+        let gone = repo::remove_worktree_and_branch(&r, &dir, &w.branch, dirty)?;
         writeln!(self.err, "removed  {dir}")?;
+        if !w.branch.is_empty() {
+            let what = if gone {
+                "deleted "
+            } else {
+                "kept     (not merged)"
+            };
+            writeln!(self.err, "{what} branch {}", w.branch)?;
+        }
         Ok(())
     }
 

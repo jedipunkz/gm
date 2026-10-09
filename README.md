@@ -78,7 +78,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 |---|---|
 | `/help` | Command list (`q` / `Esc` closes) |
 | `/get [flags] <repo>` | Close the finder, run [`gm get`](#-commands) in the terminal (progress, passphrase), go to the clone |
-| `/remote` | = `Ctrl-Alt-B` |
+| `/browse` | = `Ctrl-Alt-B` |
 | `/worktrees` `/branches` `/prs` | = `Ctrl-W` `Ctrl-L` `Ctrl-J`. In that list already: nothing |
 
 #### Repository list
@@ -97,7 +97,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | Command | Action |
 |---|---|
 | `/create <branch>` | Check the branch out as a worktree; a new branch starts from `HEAD` |
-| `/remove` | Remove the selected worktree; the main worktree is refused |
+| `/remove` | Remove the selected worktree, then its branch if `git branch -d` allows; the main worktree is refused |
 | `/expire <days>d` | Remove every worktree whose HEAD has not moved for that long (its reflog says when), then its branch if `git branch -d` allows. The whole list, not the selected row: the panel names each one. Uncommitted changes keep a worktree |
 | `/dirty` `/unpushed` | Refused |
 
@@ -138,13 +138,13 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | Command | Action | Flags |
 |---|---|---|
 | `gm` | Open the finder, print the chosen path | |
-| `gm get <repo>...` | Clone into the tree; an existing clone is skipped | `-u` update existing clone ¹<br>`-p` SSH<br>`--shallow` depth 1<br>`--no-recursive` no submodules<br>`-b <branch>` single branch<br>`-s` quiet<br>`-l` open a shell there |
+| `gm get <repo>...` | Clone into the tree; an existing clone is skipped | `-u` update existing clone ¹<br>`--ssh` SSH<br>`--shallow` depth 1<br>`--no-recursive` no submodules<br>`-b <branch>` single branch<br>`-s` quiet<br>`-l` open a shell there |
 | `gm list [<query>]` | List repositories | `-p` full paths<br>`-e` exact match<br>`--unique` shortest unambiguous name |
 | `gm status` | List unfinished work in repositories and worktrees ² | `--dirty` uncommitted only<br>`--unpushed` unpushed only<br>`-a` include clean ones<br>`-p` full paths |
-| `gm create <repo>` | `git init` with `origin` set, print the path | `-p` SSH `origin` |
+| `gm create <repo>` | `git init` with `origin` set, print the path | `--ssh` SSH `origin` |
 | `gm remove <repo>...` | Remove a repository and its worktrees, prune empty parents. Alias `gm rm` | `--dry-run`<br>`-y` no prompt |
-| `gm wt create <repo> <branch>` | Add a worktree, print its path: `cd (gm wt create gm feat/login)` | |
-| `gm wt remove <repo> <branch>` | Remove a worktree; warns about uncommitted work | `-y` no prompt |
+| `gm wt create <repo> <branch>` | Add a worktree, print its path: `cd (gm wt create gm feat/login)`. Alias `gm wt new` | |
+| `gm wt remove <repo> <branch>` | Remove a worktree, then its branch if `git branch -d` allows; warns about uncommitted work. Alias `gm wt rm` | `--dry-run`<br>`-y` no prompt |
 | `gm wt expire <repo> <days>d` | Same as `/expire`: `gm wt expire gm 30d` | `--dry-run`<br>`-y` no prompt |
 | `gm migrate <dir>...` | Move an existing clone into the tree by its `origin` | `--dry-run`<br>`-y` no prompt<br>`-r` search the directories for clones |
 | `gm root` | Print the root | `--all` every root |

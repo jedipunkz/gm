@@ -96,12 +96,12 @@ const COMMANDS: { name: string; arg: string; what: string }[] = [
   { name: "/worktrees", arg: "", what: "list the worktrees of the selected repository" },
   { name: "/branches", arg: "", what: "list the branches of the selected repository" },
   { name: "/prs", arg: "", what: "list the open pull requests of the repository" },
-  { name: "/remote", arg: "", what: "open the selected repository's remote in a browser" },
+  { name: "/browse", arg: "", what: "open the selected repository's remote in a browser" },
   { name: "/dirty", arg: "", what: "show only repositories with uncommitted work" },
   { name: "/unpushed", arg: "", what: "show only repositories with unpushed commits" },
 ];
 
-// A command is the whole input, or follows the query after ";": "gm;/remote".
+// A command is the whole input, or follows the query after ";": "gm;/browse".
 function splitInput(s: string): [query: string, cmd: string, ok: boolean] {
   if (s.trimStart().startsWith("/")) return ["", s, true];
   const i = s.indexOf(";");
@@ -309,13 +309,13 @@ export function mount(root: HTMLElement) {
 
     const hints =
       st.mode === "worktrees"
-        ? [hintKey("↑↓ ctrl-p/n", "move"), hintKey("enter", "jump"), hintKey("ctrl-w/g/esc", "repos", "back"), hintKey("ctrl-alt-b", "remote", "remote"), hintKey("ctrl-l", "branches"), hintKey("ctrl-j", "prs")]
+        ? [hintKey("↑↓ ctrl-p/n", "move"), hintKey("enter", "jump"), hintKey("ctrl-w/g/esc", "repos", "back"), hintKey("ctrl-alt-b", "browse", "remote"), hintKey("ctrl-l", "branches"), hintKey("ctrl-j", "prs")]
         : [
             hintKey("↑↓ ctrl-p/n", "move"),
             hintKey("enter", "jump"),
             hintKey("ctrl-w", "worktrees", "worktrees"),
             hintKey("esc", out, "esc"),
-            hintKey("ctrl-alt-b", "remote", "remote"),
+            hintKey("ctrl-alt-b", "browse", "remote"),
             hintKey("ctrl-l", "branches"),
             hintKey("ctrl-j", "prs"),
           ];
@@ -451,7 +451,7 @@ export function mount(root: HTMLElement) {
       case "/worktrees":
         openWorktrees();
         break;
-      case "/remote":
+      case "/browse":
         remote();
         break;
       case "/branches":
