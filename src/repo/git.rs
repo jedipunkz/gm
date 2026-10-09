@@ -363,6 +363,7 @@ pub struct Worktree {
     pub head: String,   // commit hash
     pub bare: bool,
     pub committed_at: i64, // unix seconds of the branch tip; 0 when unknown
+    pub used_at: i64,      // unix seconds HEAD last moved in it, from its reflog; 0 when unknown
 }
 
 impl Worktree {
@@ -387,10 +388,55 @@ pub fn worktrees(dir: &str) -> Result<Vec<Worktree>> {
     let out = git_in(dir, &["worktree", "list", "--porcelain"])?;
     let mut list = parse_worktrees(&out);
     let dates = branch_dates(dir, &list);
+    let used = used_times(dir);
     for w in &mut list {
         w.committed_at = dates.get(&w.branch).copied().unwrap_or(0);
+        w.used_at = used
+            .iter()
+            .find(|(p, _)| super::same_path(p, &w.path))
+            .map_or(0, |&(_, t)| t);
     }
     Ok(list)
+}
+
+/// used_times is when HEAD last moved in each linked worktree of the
+/// repository at dir — its creation, a checkout, a commit — keyed by the
+/// worktree's path. It reads the reflog git keeps for each one beside the
+/// repository, so a worktree whose own .git link is broken still has a time.
+/// The main worktree is not among them.
+fn used_times(dir: &str) -> Vec<(String, i64)> {
+    let Ok(common) = git_in(
+        dir,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    ) else {
+        return vec![];
+    };
+    let Ok(admins) = std::fs::read_dir(paths::join(&common, "worktrees")) else {
+        return vec![];
+    };
+    admins
+        .flatten()
+        .filter_map(|e| {
+            let admin = e.path().to_string_lossy().into_owned();
+            let read = |name| std::fs::read_to_string(paths::join(&admin, name)).ok();
+            // gitdir names the worktree's .git file; worktree.useRelativePaths
+            // writes it relative to this directory.
+            let gitdir = read("gitdir")?;
+            let gitdir = match gitdir.trim() {
+                p if p.starts_with('/') => p.to_string(),
+                p => paths::join(&admin, p),
+            };
+            let at = reflog_time(read("logs/HEAD")?.lines().last()?)?;
+            Some((paths::dir(&gitdir), at))
+        })
+        .collect()
+}
+
+/// reflog_time reads the time off one reflog line:
+/// "<old> <new> Name <email> <unix seconds> <zone>\t<message>".
+fn reflog_time(line: &str) -> Option<i64> {
+    let head = line.split('\t').next()?;
+    head.split_whitespace().rev().nth(1)?.parse().ok()
 }
 
 /// branch_dates is when each checkout's branch was last committed to. One

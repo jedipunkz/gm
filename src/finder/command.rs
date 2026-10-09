@@ -176,6 +176,12 @@ pub const COMMANDS: &[Command] = &[
         },
     },
     Command {
+        name: "/expire",
+        arg: "<days>d",
+        what: "remove the worktrees idle that long",
+        run: |m, arg| m.confirm_expire(arg),
+    },
+    Command {
         name: "/worktrees",
         arg: "",
         what: "list the worktrees of the selected repository",

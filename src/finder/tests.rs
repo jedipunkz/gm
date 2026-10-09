@@ -1841,6 +1841,68 @@ fn worktree_create_and_remove() {
     assert!(m.note.contains("removed"), "{:?}", m.note);
 }
 
+// /expire acts on the whole list, not the selected row: the panel names every
+// worktree that goes and the one kept for its work, and yes takes them off the
+// list. The reflog is made to read old; git does the rest for real.
+#[test]
+fn expire_removes_the_idle_worktrees() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let tree = Tree {
+        roots: vec![root.path()],
+    };
+    let wt_root = paths::join(&r.root, repo::WORKTREE_ROOT);
+    for b in ["old/a", "old/b", "busy"] {
+        repo::add_worktree(&wt_root, &r.path(), &tree.worktree_dir(&r, b), b).unwrap();
+    }
+    let busy = tree.worktree_dir(&r, "busy");
+    let mut m = new_model(std::slice::from_ref(&r), "");
+    (m.w, m.h) = (90, 24);
+    m.worktrees_of = Arc::new(|dir| {
+        let mut wts = repo::worktrees(dir)?;
+        for w in wts.iter_mut().filter(|w| w.used_at > 0) {
+            w.used_at = 1;
+        }
+        Ok(wts)
+    });
+    let dirty = busy.clone();
+    m.changed_of = Arc::new(move |p| usize::from(repo::same_path(p, &dirty)));
+    m.open_worktrees();
+    assert_eq!(rows(&m).len(), 4);
+
+    run_slash(&mut m, "/expire 30d");
+    assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
+    let view = view_text(&m);
+    for want in [
+        "remove 2 worktrees",
+        "old/a",
+        "old/b",
+        "kept, uncommitted changes: busy",
+    ] {
+        assert!(view.contains(want), "{want:?}:\n{view}");
+    }
+
+    let cmds = m.update(ch('y'));
+    feed(&mut m, cmds);
+    assert_eq!(m.note, "removed 2 worktrees, 2 branches");
+    assert_eq!(rows(&m).len(), 2);
+    assert!(exists(&busy));
+    assert!(!exists(&tree.worktree_dir(&r, "old/a")));
+}
+
+#[test]
+fn expire_belongs_to_the_worktree_list() {
+    let root = TempDir::new();
+    let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
+    run_slash(&mut m, "/expire 30d");
+    assert_eq!(m.over, Overlay::None);
+    assert!(m.note.contains("worktree list"), "{:?}", m.note);
+}
+
 #[test]
 fn worktree_create_refuses_a_duplicate() {
     let root = TempDir::new();

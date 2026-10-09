@@ -72,7 +72,7 @@ const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "wt",
         aliases: &[],
-        usage: "wt <create|remove> [-y] <repo> <branch>",
+        usage: "wt <create|remove> [-y] <repo> <branch> | wt expire [--dry-run] [-y] <repo> <days>d",
         run: |a, args| a.wt(args),
     },
     Cmd {

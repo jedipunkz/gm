@@ -203,6 +203,7 @@ impl App<'_> {
         match args.first().map(String::as_str) {
             Some("create") => self.wt_create(&args[1..]),
             Some("remove") => self.wt_remove(&args[1..]),
+            Some("expire") => self.wt_expire(&args[1..]),
             _ => Err(WT_USAGE.into()),
         }
     }
@@ -285,6 +286,68 @@ impl App<'_> {
         }
         repo::remove_worktree_and_prune(&r, &dir, dirty)?;
         writeln!(self.err, "removed  {dir}")?;
+        Ok(())
+    }
+
+    /// wt_expire removes the worktrees of a repository that have sat idle for
+    /// an age, "30d", and their branches where git -d allows. One with changes
+    /// in it is named and kept.
+    fn wt_expire(&mut self, args: &[String]) -> Result<()> {
+        let flags = [
+            Flag {
+                names: &["dry-run"],
+                value: None,
+                usage: "show what would be removed",
+            },
+            Flag {
+                names: &["y"],
+                value: None,
+                usage: "skip the confirmation prompt",
+            },
+        ];
+        let p = parse(self, "gm wt expire", &flags, args)?;
+        let [query, age] = p.args.as_slice() else {
+            return Err(WT_USAGE.into());
+        };
+        let days = repo::parse_days(age)?;
+        let r = self.tree.resolve(query)?;
+        let (dirty, clean): (Vec<_>, Vec<_>) =
+            repo::expired(&r.path(), &repo::worktrees(&r.path())?, days, repo::now())
+                .into_iter()
+                .partition(|w| repo::changed_files(&w.path) > 0);
+        for w in &dirty {
+            writeln!(self.err, "keep     {} (uncommitted changes)", w.path)?;
+        }
+        if clean.is_empty() {
+            writeln!(self.err, "no worktree of {} idle for {days} days", r.rel)?;
+            return Ok(());
+        }
+        let verb = if p.on("dry-run") {
+            "would remove"
+        } else {
+            "remove"
+        };
+        for w in &clean {
+            writeln!(self.err, "{verb} {}", w.path)?;
+        }
+        if p.on("dry-run") {
+            return Ok(());
+        }
+        let what = crate::plural(clean.len(), "worktree", "worktrees");
+        if !p.on("y") && !self.confirm(&format!("remove {what} and their merged branches?")) {
+            writeln!(self.err, "skipped")?;
+            return Ok(());
+        }
+        let done = repo::expire(&r, &clean);
+        for f in &done.failed {
+            writeln!(self.err, "failed   {f}")?;
+        }
+        writeln!(
+            self.err,
+            "removed  {}, {}",
+            crate::plural(done.removed.len(), "worktree", "worktrees"),
+            crate::plural(done.branches, "branch", "branches")
+        )?;
         Ok(())
     }
 
@@ -438,7 +501,7 @@ enum Plan {
     Problem(String), // why it cannot move, phrased to follow the path
 }
 
-const WT_USAGE: &str = "usage: gm wt <create|remove> [-y] <repo> <branch>";
+const WT_USAGE: &str = "usage: gm wt <create|remove> [-y] <repo> <branch>\n       gm wt expire [--dry-run] [-y] <repo> <days>d";
 
 /// look_in drops the user into a shell inside the repository just cloned.
 fn look_in(dir: &str) -> Result<()> {

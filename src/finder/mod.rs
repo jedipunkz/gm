@@ -173,6 +173,7 @@ pub struct Done {
     path: String,
     busy_tag: u64,
     err: Option<Error>,
+    gone: Vec<String>, // the paths /expire removed
 }
 
 /// Msg is everything update answers to.
@@ -552,6 +553,14 @@ impl Model {
                     }
                     _ => unreachable!(),
                 };
+            }
+            Change::Expire => {
+                if self.mode == d.mode && self.repo_at == d.repo_at {
+                    self.all.retain(|it| !d.gone.contains(&it.path));
+                    self.view_stale = true;
+                    self.filter();
+                }
+                self.note = d.label;
             }
             Change::CheckOut | Change::CheckOutPr => {
                 self.result = Outcome {
