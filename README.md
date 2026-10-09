@@ -14,10 +14,12 @@ built-in fuzzy finder.
 
 ## ✨ Features
 
-- Clones land in one `host/user/repo` tree.
-- `Ctrl-G` jumps to any clone or worktree.
-- Branches and pull requests open as worktrees.
-
+- One `host/user/repo` tree for every clone; an existing ghq tree works as is.
+- `Ctrl-G` opens a fuzzy finder, ranked by match then frecency, and `cd`s to the pick.
+- Branches and pull requests open as worktrees, created on demand.
+- Create, remove and expire repositories and worktrees without leaving the finder.
+- `gm status` and `/dirty` `/unpushed` find uncommitted or unpushed work.
+- Ten themes; finder keys are configurable.
 
 
 ## 🚀 Quick start
