@@ -48,7 +48,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | [`gh`](https://cli.github.com/), logged in, with `gh pr checkout --worktree` | Pull request list |
 | True-color terminal | Themes |
 
-## 🔎 Finder
+## 🔮 Finder
 
 | List | Open | Rows | `Enter` |
 |---|---|---|---|
