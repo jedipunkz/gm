@@ -129,8 +129,15 @@ pub const COMMANDS: &[Command] = &[
                     m.note = "that is the repository itself, not a worktree of it".into();
                     return vec![];
                 }
+                if !it.branch.name.is_empty() {
+                    detail.push(format!(
+                        "branch {} goes too if git branch -d allows",
+                        it.branch.name
+                    ));
+                }
                 return m.confirm(Pending {
                     kind: Change::RemoveWorktree,
+                    arg: it.branch.name.clone(),
                     dir: it.path.clone(),
                     title: format!("remove worktree {}", it.label),
                     detail,

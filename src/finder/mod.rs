@@ -545,8 +545,9 @@ impl Model {
                     saved.update(changed);
                 }
                 self.note = match d.kind {
-                    Change::Remove | Change::RemoveWorktree => {
-                        format!("removed {}", info::tildify(&d.path))
+                    Change::Remove => format!("removed {}", info::tildify(&d.path)),
+                    Change::RemoveWorktree => {
+                        format!("removed {}{}", info::tildify(&d.path), d.label)
                     }
                     Change::Create | Change::AddWorktree => {
                         format!("created {}", info::tildify(&d.path))

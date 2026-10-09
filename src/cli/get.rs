@@ -264,14 +264,20 @@ impl App<'_> {
         // Asking git which worktrees there are answers two questions at once:
         // is this one of them, and is it the main one — which is the
         // repository itself and must never be removed this way.
-        if !repo::other_worktrees(&r)
-            .iter()
-            .any(|w| repo::same_path(&w.path, &dir))
-        {
+        let Some(w) = repo::other_worktrees(&r)
+            .into_iter()
+            .find(|w| repo::same_path(&w.path, &dir))
+        else {
             return Err(err!("{} has no worktree for {branch}", r.rel));
-        }
+        };
+        // The branch git has checked out there, which is not the name given
+        // for a fork's pull request.
+        let also = match w.branch.as_str() {
+            "" => String::new(),
+            b => format!(" and branch {b} if merged"),
+        };
         if p.on("dry-run") {
-            writeln!(self.err, "would remove {dir}")?;
+            writeln!(self.err, "would remove {dir}{also}")?;
             return Ok(());
         }
         // Work in the worktree is lost with it, so it is said before the
@@ -280,12 +286,20 @@ impl App<'_> {
         if dirty {
             writeln!(self.err, "warning: {dir} has uncommitted changes")?;
         }
-        if !p.on("y") && !self.confirm(&format!("remove {dir}?")) {
+        if !p.on("y") && !self.confirm(&format!("remove {dir}{also}?")) {
             writeln!(self.err, "skipped")?;
             return Ok(());
         }
-        repo::remove_worktree_and_prune(&r, &dir, dirty)?;
+        let gone = repo::remove_worktree_and_branch(&r, &dir, &w.branch, dirty)?;
         writeln!(self.err, "removed  {dir}")?;
+        if !w.branch.is_empty() {
+            let what = if gone {
+                "deleted "
+            } else {
+                "kept     (not merged)"
+            };
+            writeln!(self.err, "{what} branch {}", w.branch)?;
+        }
         Ok(())
     }
 

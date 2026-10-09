@@ -65,6 +65,11 @@ impl Model {
         let items = wts.iter().rev().map(|w| Item {
             label: w.label(),
             path: w.path.clone(),
+            // What /remove deletes along with the worktree, if merged.
+            branch: crate::repo::Branch {
+                name: w.branch.clone(),
+                ..Default::default()
+            },
             ..Default::default()
         });
         self.replace_list(Mode::Worktrees, &it, items.collect());
