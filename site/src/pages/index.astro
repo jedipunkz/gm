@@ -134,6 +134,7 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
   <main id="top">
     <section class="hero">
       <div class="container">
+        <img class="hero-icon" src={`${import.meta.env.BASE_URL.replace(/\/?$/, "/")}icon.png`} alt="gm icon" width="160" height="160" />
         <p class="eyebrow">ghq-style repository manager · built-in fuzzy finder · written in Rust</p>
         <h1>Jump to any repository.<br /><span class="grad">Or any of its worktrees.</span></h1>
         <p class="lead hero-lead">
@@ -467,6 +468,12 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
     background:
       radial-gradient(60% 50% at 50% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
       var(--bg);
+  }
+  .hero-icon {
+    display: block;
+    width: 160px;
+    height: auto;
+    margin: 0 auto 20px;
   }
   .hero h1 {
     font-size: clamp(2.3rem, 6vw, 4.1rem);
