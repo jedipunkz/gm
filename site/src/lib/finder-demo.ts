@@ -92,6 +92,7 @@ const COMMANDS: { name: string; arg: string; what: string }[] = [
   { name: "/create", arg: "<repo>|<branch>", what: "create a repository, or a worktree" },
   { name: "/get", arg: "<repo>", what: "clone a repository, then go there" },
   { name: "/remove", arg: "", what: "remove the selected repository or worktree" },
+  { name: "/expire", arg: "<days>d", what: "remove the worktrees idle that long" },
   { name: "/worktrees", arg: "", what: "list the worktrees of the selected repository" },
   { name: "/branches", arg: "", what: "list the branches of the selected repository" },
   { name: "/prs", arg: "", what: "list the open pull requests of the repository" },
