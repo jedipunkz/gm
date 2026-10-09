@@ -78,7 +78,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 |---|---|
 | `/help` | Command list (`q` / `Esc` closes) |
 | `/get [flags] <repo>` | Close the finder, run [`gm get`](#-commands) in the terminal (progress, passphrase), go to the clone |
-| `/remote` | = `Ctrl-Alt-B` |
+| `/browse` | = `Ctrl-Alt-B` |
 | `/worktrees` `/branches` `/prs` | = `Ctrl-W` `Ctrl-L` `Ctrl-J`. In that list already: nothing |
 
 #### Repository list

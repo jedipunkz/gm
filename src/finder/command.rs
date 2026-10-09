@@ -225,7 +225,7 @@ pub const COMMANDS: &[Command] = &[
         },
     },
     Command {
-        name: "/remote",
+        name: "/browse",
         arg: "",
         what: "open the selected repository's remote in a browser",
         run: |m, _| m.open_remote().into_iter().collect(),

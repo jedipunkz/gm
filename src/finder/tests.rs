@@ -400,7 +400,7 @@ fn worktree_key_is_configurable() {
 fn remote_key_in_hints() {
     let root = TempDir::new();
     let m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
-    assert!(line_text(&m.help_line(120)).contains("ctrl-alt-b remote"));
+    assert!(line_text(&m.help_line(120)).contains("ctrl-alt-b browse"));
 }
 
 // The hints under the prompt name the keys for the list that is up, the key
