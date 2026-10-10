@@ -1,0 +1,26 @@
+---
+// A reference table. A cell's `backticked` runs are drawn as code, so the
+// rows can stay plain strings in the page's data.
+interface Props {
+  head: string[];
+  rows: string[][];
+}
+const { head, rows } = Astro.props;
+---
+
+<div class="table-wrap">
+  <table>
+    <thead><tr>{head.map((h) => <th>{h}</th>)}</tr></thead>
+    <tbody>
+      {
+        rows.map((row) => (
+          <tr>
+            {row.map((cell) => (
+              <td>{cell.split("`").map((t, i) => (i % 2 ? <code>{t}</code> : t))}</td>
+            ))}
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>

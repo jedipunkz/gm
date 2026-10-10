@@ -1,0 +1,727 @@
+---
+// The reference: every command, flag, key, setting and file gm has, as the
+// source in src/ implements them. The home page shows what gm is; this page
+// answers what exactly a given piece of it does.
+import Base from "../layouts/Base.astro";
+import Code from "../components/Code.astro";
+import RefTable from "../components/RefTable.astro";
+import { loadThemes } from "../lib/themes";
+
+const themes = loadThemes();
+const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+
+const toc = [
+  ["cli", "Command line", [
+    ["synopsis", "Synopsis"],
+    ["flags", "Flag syntax"],
+    ["exit", "Exit status and output"],
+  ]],
+  ["commands", "Subcommands", [
+    ["cmd-gm", "gm"],
+    ["cmd-get", "gm get"],
+    ["cmd-list", "gm list"],
+    ["cmd-status", "gm status"],
+    ["cmd-create", "gm create"],
+    ["cmd-remove", "gm remove"],
+    ["cmd-wt", "gm wt"],
+    ["cmd-migrate", "gm migrate"],
+    ["cmd-root", "gm root"],
+    ["cmd-shell", "gm shell"],
+    ["cmd-version", "gm version / help"],
+  ]],
+  ["refs", "Repository references", []],
+  ["layout", "Directory layout", []],
+  ["finder", "Finder", [
+    ["lists", "Lists"],
+    ["keys", "Keys"],
+    ["editing", "Text editing"],
+    ["slash", "Slash commands"],
+    ["panels", "Panels"],
+    ["details", "Details pane"],
+    ["network", "Network calls"],
+  ]],
+  ["config", "Configuration", [
+    ["settings", "Settings"],
+    ["root", "Root resolution"],
+    ["themes", "Themes"],
+    ["chords", "Key bindings"],
+  ]],
+  ["ranking", "Ranking", []],
+  ["files", "Files and environment", []],
+] as const;
+
+const synopsis = `gm                                   open the finder, print the chosen path
+gm get [flags] <repo>...             alias: gm clone
+gm list [flags] [<query>]            alias: gm ls
+gm status [flags]
+gm create [--ssh] <repo>             alias: gm new
+gm remove [--dry-run] [-y] <repo>... alias: gm rm
+gm wt create <repo> <branch>         alias: gm wt new
+gm wt remove [--dry-run] [-y] <repo> <branch>     alias: gm wt rm
+gm wt expire [--dry-run] [-y] <repo> <days>d
+gm migrate [--dry-run] [-y] [-r] <directory>...
+gm root [--all]
+gm shell <fish|zsh|bash>
+gm version | -v | --version
+gm help | -h | --help`;
+
+const getFlags = [
+  ["`-u`, `--update`", "Update a repository that is already cloned instead of skipping it"],
+  ["`--ssh`", "Clone over SSH: an `https` reference becomes `ssh://git@host/...`"],
+  ["`--shallow`", "Shallow clone: `git clone --depth 1`"],
+  ["`--no-recursive`", "Do not clone submodules (by default `--recursive` is passed); with `-u`, do not update them"],
+  ["`-b <branch>`, `--branch <branch>`", "Clone that branch only: `--branch <branch> --single-branch`"],
+  ["`-s`, `--silent`", "Pass `--quiet` to `git clone`"],
+  ["`-l`, `--look`", "After the last repository, start `$SHELL` (else `/bin/sh`) inside it, with `GM_LOOK` set to its path"],
+];
+
+const getMessages = [
+  ["`clone    <url> -> <path>`", "Not cloned yet: `git clone` runs. On failure, the empty `host/user` directories it made are removed"],
+  ["`exists   <path>`", "Already cloned and no `-u`: nothing is fetched. The visit is still recorded"],
+  ["`update   <path>`", "`-u`: `git remote update --prune`, then the checked-out branch is advanced (below)"],
+  ["`ff       <path>: N commits`", "`-u`: the checked-out branch was fast-forwarded onto its upstream"],
+  ["`skip     <path>: dirty`", "`-u`: the working tree has changes, so the branch is not moved"],
+  ["`skip     <path>: diverged (...)`", "`-u`: a fast-forward is impossible; nothing is merged"],
+];
+
+const listFlags = [
+  ["`-p`, `--full-path`", "Print absolute paths"],
+  ["`-e`, `--exact`", "The query must equal the repository name, `user/repo`, or the whole `host/user/repo`"],
+  ["`--unique`", "Print each repository as the shortest trailing path no other repository in the whole tree shares: `ghq`, else `x-motemen/ghq`, else the full path"],
+];
+
+const statusFlags = [
+  ["`--dirty`", "Only rows with uncommitted changes"],
+  ["`--unpushed`", "Only rows with unpushed commits. Combined with `--dirty`, a row must have both"],
+  ["`-a`", "Include rows that are clean and in sync"],
+  ["`-p`, `--full-path`", "Print absolute paths instead of `host/user/repo`"],
+];
+
+const statusWords = [
+  ["`N changed files`", "Uncommitted changes, untracked files included"],
+  ["`N unpushed`", "Commits on local branches that no remote-tracking ref has"],
+  ["`N ahead`", "Shown only when there is no unpushed count: commits ahead of the upstream"],
+  ["`N behind`", "Commits the upstream has that the branch does not, as of the last fetch"],
+  ["`no upstream`", "The checked-out branch tracks nothing. Never a reason to list a row on its own"],
+  ["`clean`", "Nothing of the above (only printed with `-a`)"],
+];
+
+const dryYes = [
+  ["`--dry-run`", "Print what would happen and change nothing"],
+  ["`-y`", "Do not ask for confirmation"],
+];
+
+const migrateFlags = [
+  ...dryYes,
+  ["`-r`, `--recursive`", "Treat each argument as a directory to search: every repository under it that is not already under a root is a candidate"],
+];
+
+const migrateOutcomes = [
+  ["`in place <dir>`", "Already where gm would put it"],
+  ["`would move <src> -> <dst>`", "`--dry-run`; followed by the worktrees that would be repaired"],
+  ["`moved    <src> -> <dst>`", "Moved; `rename(2)`, or `mv` across file systems. The new path goes to stdout"],
+  ["`repaired N worktrees: ...`", "Worktrees of the repository now point at the new place (`git worktree repair`)"],
+  ["error, or `skip <dir>: <why>` with `-r`", "Not a repository; is a worktree or submodule (`.git` is a file); has no `origin`; `origin` cannot be read; the destination already exists"],
+];
+
+const refs = [
+  ["`https://github.com/u/r`", "as is", "`github.com/u/r`"],
+  ["`git@github.com:u/r.git`", "`ssh://git@github.com/u/r.git`", "`github.com/u/r`"],
+  ["`ssh://git@host/u/r.git`", "as is", "`host/u/r`"],
+  ["`example.com/u/r`", "`https://example.com/u/r`", "`example.com/u/r`"],
+  ["`u/r`", "`https://github.com/u/r`", "`github.com/u/r`"],
+  ["`r`", "`https://github.com/<you>/r`", "`github.com/<you>/r`"],
+];
+
+const lists = [
+  ["Repositories", "`gm`, `Ctrl-G` in the shell", "Every repository under every root", "Go there"],
+  ["Worktrees", "`Ctrl-W`", "Worktrees of the selected repository; the main one at the bottom", "Go there"],
+  ["Branches", "`Ctrl-L`", "Local branches, and remote branches with no local namesake; newest at the bottom", "Go to its worktree; create it first if there is none"],
+  ["Pull requests", "`Ctrl-J`", "Open pull requests of the selected repository, newest at the bottom, drafts marked `[draft]`", "Go to its worktree; `gh pr checkout --worktree` creates it if there is none"],
+];
+
+const keys = [
+  ["any character", "Filter", "Filter"],
+  ["`↑` / `Ctrl-P`", "Move up", "Move up"],
+  ["`↓` / `Ctrl-N`", "Move down", "Move down"],
+  ["`PgUp` / `PgDn`", "Move one screen", "Move one screen"],
+  ["`Enter`", "Print the path and exit; with a command typed, run it", "Worktree: print its path. Branch, pull request: check out as a worktree if needed, print its path. With a command typed, run it"],
+  ["`Ctrl-W` / `Ctrl-L` / `Ctrl-J`", "Open the worktree / branch / pull request list of the selected repository", "The current list's own key goes back to the repositories; another list's key opens that list"],
+  ["`Ctrl-Alt-B`", "Open the selected repository's remote in a browser", "Same, for the repository the list belongs to"],
+  ["`Ctrl-G`", "Clear the query, then the `/dirty` `/unpushed` filters; never quits", "Back to the repositories"],
+  ["`Esc`", "Clear the query, then the filters, then quit", "Back to the repositories"],
+  ["`Ctrl-C`", "Quit, print nothing", "Quit, print nothing"],
+  ["`Tab`", "Accept the command completion shown after the cursor", "Same"],
+];
+
+const editing = [
+  ["`←` / `Ctrl-B`, `→` / `Ctrl-F`", "Move one character"],
+  ["`Home` / `Ctrl-A`, `End` / `Ctrl-E`", "Move to the start / end"],
+  ["`Alt-←` / `Ctrl-←` / `Alt-B`, `Alt-→` / `Ctrl-→` / `Alt-F`", "Move one word"],
+  ["`Backspace` / `Ctrl-H`, `Delete` / `Ctrl-D`", "Delete one character before / at the cursor"],
+  ["`Alt-Backspace`", "Delete the word before the cursor (`Ctrl-W` does too, but only once `worktree_key` is moved off it)"],
+  ["`Alt-Delete` / `Alt-D`", "Delete the word after the cursor"],
+  ["`Ctrl-U`, `Ctrl-K`", "Delete to the start / to the end"],
+  ["paste", "Inserted at the cursor; control characters, newlines included, are dropped"],
+];
+
+const slash = [
+  ["`/help`", "Show the command list", "✓", "✓", "✓", "✓"],
+  ["`/get [flags] <repo>`", "Close the finder, run `gm get` with these arguments on the terminal, print the last repository's path", "✓", "✓", "✓", "✓"],
+  ["`/create <repo>`", "Create a repository with `origin` set; it joins the list, selected", "✓", "—", "—", "—"],
+  ["`/create <branch>`", "Check the branch out as a worktree; a new branch starts from `HEAD`", "—", "✓", "✓", "✓"],
+  ["`/remove`", "Remove the selected repository with its worktrees, or the selected worktree and then its branch if `git branch -d` allows. The main worktree is refused", "✓", "✓", "refused", "refused"],
+  ["`/expire <days>d`", "Remove every worktree of the repository whose `HEAD` has not moved for that long, and their merged branches", "refused", "✓", "refused", "refused"],
+  ["`/dirty`", "Toggle: only repositories with uncommitted changes", "✓", "refused", "refused", "refused"],
+  ["`/unpushed`", "Toggle: only repositories with unpushed commits. With `/dirty`, both must hold", "✓", "refused", "refused", "refused"],
+  ["`/worktrees` `/branches` `/prs`", "Same as `Ctrl-W` `Ctrl-L` `Ctrl-J`; nothing when that list is already open", "✓", "✓", "✓", "✓"],
+  ["`/browse`", "Same as `Ctrl-Alt-B`", "✓", "✓", "✓", "✓"],
+];
+
+const panels = [
+  ["Confirmation (`/create`, `/remove`, `/expire`)", "`y` `Y` go ahead", "`n` `N` `q` `Esc` `Ctrl-C` cancel; the line under the prompt says `cancelled`"],
+  ["Help (`/help`)", "—", "`q` `Esc` `Ctrl-C` `Enter` close"],
+];
+
+const details = [
+  ["`repository` / `worktree` / `branch` / `pull request`", "The selected row"],
+  ["`repository`", "In the other lists: the repository the list belongs to"],
+  ["`author`, `branch`", "Pull request list: its author, and its head branch (`owner:branch` for a fork)"],
+  ["`path`", "With `~` for the home directory"],
+  ["`remote`", "Repository list: `origin`'s URL"],
+  ["`branch`, `status`", "The checked-out branch; `N changed` or `clean`"],
+  ["`visits`", "Repository list: count and time of the last visit, or `never`"],
+  ["`worktrees`", "Repository list, when there are any: the newest three, by their branch's last commit"],
+  ["`last N commits`", "The last three commits, `git log --oneline --decorate` style. Drawn last, so a short terminal clips these first"],
+];
+
+const network = [
+  ["`git ls-remote` (branch list)", "20 s", "Branches the last fetch missed join the top of the list when it answers; a remote that needs a password is skipped and named"],
+  ["`git fetch` (branch checkout)", "5 min", "Only the branch picked, `--no-tags`"],
+  ["`gh pr list`", "30 s", "Newest 100 open pull requests; a full page says the rest are not shown"],
+  ["`gh pr checkout --worktree`", "5 min", "Empty directories it made are removed again if it fails"],
+];
+
+const settings = [
+  ["`root`", "string, or list of strings", "see Root resolution", "Where repositories live. A list is searched in order; the first is where new ones are cloned"],
+  ["`theme`", "string", "`tokyonight`", "The finder's palette. An unknown name is an error listing the valid ones"],
+  ["`launch_key`", "chord", "`ctrl-g`", "The shell key `gm shell` binds to open gm"],
+  ["`worktree_key`", "chord", "`ctrl-w`", "Finder: open / close the worktree list"],
+  ["`branch_key`", "chord", "`ctrl-l`", "Finder: open / close the branch list"],
+  ["`pr_key`", "chord", "`ctrl-j`", "Finder: open / close the pull request list"],
+  ["`remote_key`", "chord", "`ctrl-alt-b`", "Finder: open the remote in a browser"],
+];
+
+const toml = `root         = "~/ghq"         # or ["~/ghq", "~/src"], searched in order
+theme        = "tokyonight"
+launch_key   = "ctrl-g"
+worktree_key = "ctrl-w"
+branch_key   = "ctrl-l"
+pr_key       = "ctrl-j"
+remote_key   = "ctrl-alt-b"`;
+
+const rootOrder = [
+  ["1", "`$GM_ROOT`", "Colon-separated; empty entries ignored"],
+  ["2", "`root` in `gm.toml`", "String or list"],
+  ["3", "`git config --get-all gm.root`", "Every value, in order"],
+  ["4", "`$GHQ_ROOT`", "Colon-separated; empty entries ignored"],
+  ["5", "`git config --get-all ghq.root`", "Every value, in order"],
+  ["6", "`~/ghq`", "The default"],
+];
+
+const chordSyntax = [
+  ["Ctrl (required)", "`ctrl-` `ctrl+` `c-` `^`"],
+  ["Alt (optional)", "`alt-` `alt+` `a-` `meta-` `meta+` `m-`"],
+  ["Shift (optional)", "`shift-` `shift+` `s-`"],
+  ["Key", "One letter `a`–`z`"],
+];
+
+const chordRules = [
+  ["`launch_key`", "A plain Ctrl chord: no `alt`, no `shift`. Not `ctrl-m` `ctrl-i` `ctrl-j`: a terminal sends them as Enter, Tab and line feed"],
+  ["`worktree_key` `branch_key` `pr_key` `remote_key`", "Not the same chord as another of the four. Not `ctrl-m` `ctrl-i`, with or without modifiers (`ctrl-j` is allowed: raw mode delivers it). As plain chords, not `ctrl-c` (quit), `ctrl-n` (down), `ctrl-p` (up), `ctrl-g` (back out)"],
+];
+
+const reach = [
+  ["`ctrl-<letter>`", "Every terminal"],
+  ["`ctrl-alt-<letter>`", "Nearly every terminal: Alt is sent as an ESC prefix"],
+  ["`ctrl-shift-<letter>`", "Only with the Kitty keyboard protocol (Ghostty, kitty, WezTerm, foot, recent Alacritty). Elsewhere it arrives as `ctrl-<letter>`"],
+];
+
+const weights = [
+  ["Character inside the repository name", "+10"],
+  ["Character inside the user name", "+3"],
+  ["Character inside the host", "−4"],
+  ["Character starts a word (after `/` `-` `_` `.`, outside the host)", "+8"],
+  ["Character follows the previous match", "+6"],
+  ["Gap between two matched characters", "−3, and −1 per skipped character up to 20"],
+  ["Every matched character is in the repository name", "+25"],
+];
+
+const frecency = [
+  ["within the last hour", "visits × 4"],
+  ["within the last day", "visits × 2"],
+  ["within the last week", "visits × 0.5"],
+  ["older", "visits × 0.25"],
+];
+
+const files = [
+  ["`$XDG_CONFIG_HOME/gm/gm.toml`", "Settings; `~/.config/gm/gm.toml` when `XDG_CONFIG_HOME` is unset. Optional"],
+  ["`$XDG_STATE_HOME/gm/frecency.json`", "Visit log; `~/.local/state/gm/frecency.json` when `XDG_STATE_HOME` is unset. A missing or corrupt log is an empty one; delete it to reset"],
+  ["`<root>/.worktrees/`", "Worktrees, mirroring the repository paths"],
+];
+
+const envs = [
+  ["`GM_ROOT`", "Roots, colon-separated; overrides everything else"],
+  ["`GHQ_ROOT`", "Roots, colon-separated; used when no gm setting is present"],
+  ["`XDG_CONFIG_HOME`, `XDG_STATE_HOME`", "Where `gm.toml` and the visit log live"],
+  ["`HOME`", "Expands `~`; gm refuses to run without it"],
+  ["`USER`", "Account for a one-word `<repo>` when `git config github.user` is unset"],
+  ["`SHELL`", "The shell `gm get -l` starts (`/bin/sh` when unset)"],
+  ["`GM_LOOK`", "Set by `gm get -l` in the shell it starts: the repository's path"],
+  ["`WSL_DISTRO_NAME`", "Marks WSL (so does `microsoft` in the kernel release), where the browser is opened with `wslview` or `explorer.exe`"],
+];
+
+const gitConfig = [
+  ["`gm.root`", "Roots (multi-valued)"],
+  ["`ghq.root`", "Roots (multi-valued), read when no gm setting is present"],
+  ["`github.user`", "Account for a one-word `<repo>`"],
+];
+---
+
+<Base
+  title="gm docs — reference"
+  description="Reference for gm: every subcommand and flag, finder keys and slash commands, gm.toml settings, ranking, files and environment variables."
+  current="docs"
+>
+  <main class="container docs">
+    <aside class="toc" aria-label="On this page">
+      <p class="toc-title">Reference</p>
+      <ol>
+        {
+          toc.map(([id, name, sub]) => (
+            <li>
+              <a href={`#${id}`}>{name}</a>
+              {sub.length > 0 && (
+                <ol>
+                  {sub.map(([sid, sname]) => (
+                    <li>
+                      <a href={`#${sid}`}>{sname}</a>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </li>
+          ))
+        }
+      </ol>
+    </aside>
+
+    <article class="doc">
+      <p class="eyebrow">Docs</p>
+      <h1>Reference</h1>
+      <p class="lead">
+        What every command, flag, key and setting does, as the source implements it. For a first install, see
+        <a href={`${base}#install`}>Install</a>.
+      </p>
+
+      <h2 id="cli">Command line</h2>
+
+      <h3 id="synopsis">Synopsis</h3>
+      <Code code={synopsis} />
+
+      <h3 id="flags">Flag syntax</h3>
+      <ul>
+        <li>Flags come before the arguments. The first argument that is not a flag ends them, and so does <code>--</code>.</li>
+        <li><code>-name</code> and <code>--name</code> are the same flag. A value follows as the next argument or after <code>=</code>: <code>-b main</code>, <code>--branch=main</code>.</li>
+        <li>A switch also takes <code>=true</code> / <code>=false</code> (<code>1 t T TRUE True</code>, <code>0 f F FALSE False</code>).</li>
+        <li><code>-h</code> or <code>--help</code> after a subcommand prints its flags and exits 0. An unknown flag prints <code>flag provided but not defined: -x</code> with the flags and exits 2.</li>
+      </ul>
+
+      <h3 id="exit">Exit status and output</h3>
+      <RefTable
+        head={["Status", "When"]}
+        rows={[
+          ["`0`", "Success, including quitting the finder and answering `n` to a prompt"],
+          ["`1`", "An error. It is printed on stderr as `gm: <message>`"],
+          ["`2`", "Wrong usage: an unknown subcommand prints the usage, an unknown flag the flags"],
+        ]}
+      />
+      <p>
+        Paths a script needs go to stdout: the finder's choice, <code>gm create</code>, <code>gm wt create</code>,
+        <code>gm migrate</code>. Progress, warnings and prompts go to stderr. Every prompt reads <code>[y/N]</code>: only
+        <code>y</code> or <code>yes</code> (any case) goes ahead, and a closed stdin answers no. <code>gm help</code> and
+        <code>gm version</code> work even when <code>gm.toml</code> cannot be read.
+      </p>
+
+      <h2 id="commands">Subcommands</h2>
+
+      <h3 id="cmd-gm">gm</h3>
+      <p>
+        Opens the <a href="#finder">finder</a> on the repositories under every root and prints the chosen path. Quitting
+        prints nothing. A visit is recorded for the chosen repository or worktree. With no repository under any root it
+        fails with <code>no repositories under &lt;root&gt;; try `gm get &lt;repo&gt;`</code>.
+      </p>
+
+      <h3 id="cmd-get">gm get <code>[flags] &lt;repo&gt;...</code></h3>
+      <p>
+        Clones each <a href="#refs"><code>&lt;repo&gt;</code></a> to <code>&lt;primary root&gt;/host/user/repo</code>, with
+        submodules. A repository already cloned under exactly one root is that one; under two or more roots it is an error
+        naming them, since gm will not pick one. Alias <code>gm clone</code>.
+      </p>
+      <RefTable head={["Flag", "Effect"]} rows={getFlags} />
+      <RefTable head={["stderr line", "Meaning"]} rows={getMessages} />
+      <p>
+        With <code>-u</code>, a detached <code>HEAD</code> or a branch without an upstream is fetched but not moved, and
+        says nothing. After a fast-forward, submodules are updated with <code>git submodule update --init --recursive</code>
+        when <code>.gitmodules</code> exists and <code>--no-recursive</code> was not given.
+      </p>
+
+      <h3 id="cmd-list">gm list <code>[flags] [&lt;query&gt;]</code></h3>
+      <p>
+        Prints the repositories as <code>host/user/repo</code>, sorted. Several query words are joined with a space. Without
+        <code>-e</code>, a repository matches when its <code>host/user/repo</code> contains the query (case-sensitive).
+        Alias <code>gm ls</code>.
+      </p>
+      <RefTable head={["Flag", "Effect"]} rows={listFlags} />
+
+      <h3 id="cmd-status">gm status <code>[flags]</code></h3>
+      <p>
+        Lists unfinished work in every repository and every worktree under <code>&lt;root&gt;/.worktrees</code>: a row is
+        unfinished when it has uncommitted changes or unpushed commits. It never fetches, so it is fast and works offline;
+        <code>behind</code> is as old as the last fetch. Each line is the name, padded, then a summary.
+      </p>
+      <RefTable head={["Flag", "Effect"]} rows={statusFlags} />
+      <RefTable head={["Summary word", "Meaning"]} rows={statusWords} />
+
+      <h3 id="cmd-create">gm create <code>[--ssh] &lt;repo&gt;</code></h3>
+      <p>
+        Makes the directory under the primary root, runs <code>git init</code> and <code>git remote add origin
+        &lt;url&gt;</code>, then prints the path. <code>--ssh</code> sets <code>origin</code> to the SSH URL. Refused when the
+        repository exists under any root or the directory is not empty; if a step fails, what was made is removed. Alias
+        <code>gm new</code>.
+      </p>
+
+      <h3 id="cmd-remove">gm remove <code>[--dry-run] [-y] &lt;repo&gt;...</code></h3>
+      <p>
+        Removes each repository, every worktree checked out of it, and the empty directories left above them. Alias
+        <code>gm rm</code>. A query first matches exactly (name, <code>user/repo</code>, <code>host/user/repo</code> or the
+        path), else by substring; more than one hit is an error listing them.
+      </p>
+      <RefTable head={["Flag", "Effect"]} rows={dryYes} />
+      <p>
+        Before asking <code>remove &lt;path&gt;?</code> it warns about uncommitted changes in the repository, names the
+        worktrees that go with it and the changed files in each (they are removed with <code>--force</code>), and names
+        anything else in its worktree directory that would go too.
+      </p>
+
+      <h3 id="cmd-wt">gm wt <code>create | remove | expire</code></h3>
+      <p>
+        The finder's worktree actions for scripts. A worktree of <code>&lt;repo&gt;</code> for <code>&lt;branch&gt;</code>
+        lives at <code>&lt;root&gt;/.worktrees/host/user/repo/&lt;branch&gt;</code>.
+      </p>
+      <RefTable
+        head={["Command", "Flags", "Effect"]}
+        rows={[
+          ["`gm wt create <repo> <branch>` (alias `new`)", "none", "Check the branch out at that path, starting it from `HEAD` if it does not exist. Refused if the path exists. stderr: `created  <repo> (new branch|existing branch)`; stdout: the path"],
+          ["`gm wt remove <repo> <branch>` (alias `rm`)", "`--dry-run` `-y`", "Remove that worktree (never the main one), warning about uncommitted changes first, then delete its branch if `git branch -d` allows: `deleted  branch <b>` or `kept     (not merged) branch <b>`"],
+          ["`gm wt expire <repo> <days>d`", "`--dry-run` `-y`", "Remove every worktree whose `HEAD` has not moved for that many days (by its reflog), and each one's merged branch. One with uncommitted changes is kept (`keep ... (uncommitted changes)`); so are the main worktree and one without a reflog. `<days>` is a positive integer: `30d`"],
+        ]}
+      />
+
+      <h3 id="cmd-migrate">gm migrate <code>[--dry-run] [-y] [-r] &lt;directory&gt;...</code></h3>
+      <p>
+        Moves existing clones into the tree, to the path their <code>origin</code> remote says, asking
+        <code>move &lt;src&gt; -&gt; &lt;dst&gt;?</code> for each. Worktrees of a moved repository are repaired; those kept
+        inside its directory move with it. A directory named on the command line that cannot move is an error; one found by
+        <code>-r</code> is skipped.
+      </p>
+      <RefTable head={["Flag", "Effect"]} rows={migrateFlags} />
+      <RefTable head={["Output", "Meaning"]} rows={migrateOutcomes} />
+
+      <h3 id="cmd-root">gm root <code>[--all]</code></h3>
+      <p>Prints the primary root, the one new repositories go to. <code>--all</code> prints every root, one per line, in order.</p>
+
+      <h3 id="cmd-shell">gm shell <code>&lt;fish|zsh|bash&gt;</code></h3>
+      <p>
+        Prints the key binding for <code>launch_key</code> (default <code>Ctrl-G</code>): it runs <code>gm</code> and
+        <code>cd</code>s to the printed path. In fish it is bound in insert mode too, for vi key bindings.
+      </p>
+      <RefTable
+        head={["Shell", "Add to"]}
+        rows={[
+          ["fish", "`gm shell fish | source` in `~/.config/fish/config.fish`"],
+          ["zsh", "`eval \"$(gm shell zsh)\"` in `~/.zshrc`"],
+          ["bash", "`eval \"$(gm shell bash)\"` in `~/.bashrc`"],
+        ]}
+      />
+      <p>After changing <code>launch_key</code>, re-run the line or restart the shell.</p>
+
+      <h3 id="cmd-version">gm version / gm help</h3>
+      <p>
+        <code>gm version</code> (<code>-v</code>, <code>--version</code>) prints <code>gm &lt;version&gt;</code>; a build
+        without a release version says <code>dev</code>. <code>gm help</code> (<code>-h</code>, <code>--help</code>) prints the
+        usage.
+      </p>
+
+      <h2 id="refs">Repository references</h2>
+      <p>
+        Wherever a command takes <code>&lt;repo&gt;</code> to clone or create, it is turned into a URL, and the URL's
+        <code>host/path</code>, without <code>.git</code>, is the directory under the root.
+      </p>
+      <RefTable head={["Written as", "URL", "Directory"]} rows={refs} />
+      <ul>
+        <li><code>&lt;you&gt;</code> is <code>git config github.user</code>, else <code>$USER</code>.</li>
+        <li>A host needs a dot and a top-level label of letters, optionally a port: <code>example.com</code>, <code>git.example.com:8443</code>.</li>
+        <li><code>--ssh</code> turns an <code>https</code> URL into <code>ssh://git@host/...</code>.</li>
+        <li>Refused: an empty reference, a <code>.</code> or <code>..</code> path segment, and a space or control character anywhere in the host or path.</li>
+      </ul>
+      <p>
+        Commands that act on a repository already cloned (<code>remove</code>, <code>wt</code>) take a query instead, matched
+        as in <a href="#cmd-remove"><code>gm remove</code></a>.
+      </p>
+
+      <h2 id="layout">Directory layout</h2>
+      <Code
+        code={`~/ghq/github.com/jedipunkz/gm/                            repository
+~/ghq/.worktrees/github.com/jedipunkz/gm/feat/login       worktree of branch feat/login
+~/ghq/.worktrees/github.com/jedipunkz/gm/.forks/bob/main  worktree of a pull request from bob's fork`}
+      />
+      <ul>
+        <li>A repository is a directory holding <code>.git</code>, <code>.hg</code> or <code>.svn</code>. The walk never descends into a repository or into a directory whose name starts with a dot.</li>
+        <li>So <code>.worktrees</code> is never listed as repositories, and does not get in the way of <code>gm migrate</code>.</li>
+        <li>A pull request from the same repository is filed under its head branch. One from a fork goes under <code>.forks/&lt;owner&gt;/</code>: no branch name has a component starting with a dot, so a fork's <code>main</code> cannot collide with <code>main</code> or <code>bob/main</code>.</li>
+        <li>Mercurial and Subversion working copies are listed, but gm only clones with git.</li>
+      </ul>
+
+      <h2 id="finder">Finder</h2>
+      <p>
+        The list hangs from the prompt at the bottom: the best match is the last row, next to the cursor. The details pane is
+        on the right, and the line under the prompt shows the keys, or a note, or a spinner with what gm is waiting on and
+        for how long.
+      </p>
+
+      <h3 id="lists">Lists</h3>
+      <RefTable head={["List", "Opened by", "Rows", "Enter"]} rows={lists} />
+      <p>
+        Every list but the repositories belongs to the repository selected when it was opened. Going back restores the
+        repository list's query, cursor and highlights. <code>#42</code> in the pull request list finds number 42: the
+        number leads each row. Picking a remote branch makes a local branch that tracks it, fetching it first if the last
+        fetch did not bring it.
+      </p>
+
+      <h3 id="keys">Keys</h3>
+      <RefTable head={["Key", "Repository list", "Other lists"]} rows={keys} />
+      <p><code>Ctrl-W</code> <code>Ctrl-L</code> <code>Ctrl-J</code> <code>Ctrl-Alt-B</code> are the defaults of <a href="#chords">configurable keys</a>.</p>
+
+      <h3 id="editing">Text editing</h3>
+      <RefTable head={["Key", "Effect"]} rows={editing} />
+
+      <h3 id="slash">Slash commands</h3>
+      <ul>
+        <li>A <code>/</code> at the start of an empty box types a command; elsewhere a slash keeps filtering, so <code>acme/alpha</code> is a query.</li>
+        <li>To act on a search result, end the query with <code>;</code> and type the command: <code>gm;/remove</code>. Or <code>Esc</code> empties the box and keeps the selection.</li>
+        <li>The rest of the command name is shown after the cursor; <code>Tab</code> accepts it. <code>Enter</code> runs the command.</li>
+        <li>An unknown command, or one missing its argument, leaves a note under the prompt and does nothing.</li>
+      </ul>
+      <RefTable head={["Command", "Action", "Repos", "Worktrees", "Branches", "PRs"]} rows={slash} />
+
+      <h3 id="panels">Panels</h3>
+      <p>
+        <code>/create</code>, <code>/remove</code> and <code>/expire</code> ask first, in a panel over the list that names
+        what will happen, including uncommitted changes that would be lost. While a panel is up, every other key is ignored.
+      </p>
+      <RefTable head={["Panel", "Accept", "Close"]} rows={panels} />
+
+      <h3 id="details">Details pane</h3>
+      <p>Each field's label sits above its value. Git details load once the cursor rests on a row for 100 ms.</p>
+      <RefTable head={["Field", "Shows"]} rows={details} />
+
+      <h3 id="network">Network calls</h3>
+      <p>
+        Calls that reach a remote run with a deadline and cannot prompt: <code>GIT_TERMINAL_PROMPT=0</code>, ssh with
+        <code>BatchMode=yes</code>, <code>GH_PROMPT_DISABLED=1</code>, stdin closed. When the deadline passes, the process
+        group is killed and the error says what ran and for how long. The branch list uses git's own credentials and never
+        <code>gh</code>; the pull request list needs <a href="https://cli.github.com/"><code>gh</code></a>, logged in.
+      </p>
+      <RefTable head={["Call", "Deadline", "Notes"]} rows={network} />
+      <p>
+        The browser is <code>open</code> on macOS, <code>wslview</code> or <code>explorer.exe</code> on WSL, and
+        <code>xdg-open</code> elsewhere. The remote is turned into an <code>https</code> URL first, without the port.
+      </p>
+
+      <h2 id="config">Configuration</h2>
+
+      <h3 id="settings">Settings</h3>
+      <p>
+        <code>$XDG_CONFIG_HOME/gm/gm.toml</code>, else <code>~/.config/gm/gm.toml</code>. The file is optional. A file that
+        cannot be parsed, a key gm does not know, or a value of the wrong type is an error naming the file, never a setting
+        half ignored. An empty string means the default.
+      </p>
+      <RefTable head={["Key", "Type", "Default", "Meaning"]} rows={settings} />
+      <Code code={toml} label="gm.toml" />
+
+      <h3 id="root">Root resolution</h3>
+      <p>The first source that is set wins; the sources after it are not read.</p>
+      <RefTable head={["#", "Source", "Notes"]} rows={rootOrder} />
+      <ul>
+        <li><code>~</code> and <code>~/...</code> expand to <code>$HOME</code>. Every root must then be absolute, or gm refuses to run.</li>
+        <li>Duplicates are dropped. An empty <code>root</code> string or list is an error.</li>
+        <li>The first root is the primary one: <code>get</code>, <code>create</code> and <code>migrate</code> put repositories there. Every root is listed and searched.</li>
+      </ul>
+
+      <h3 id="themes">Themes</h3>
+      <p>{themes.map((t, i) => <>{i > 0 && " "}<code>{t.name}</code></>)}</p>
+      <p>The default is <code>tokyonight</code>. The palettes are shown on the <a href={`${base}#themes`}>home page</a>.</p>
+
+      <h3 id="chords">Key bindings</h3>
+      <p>
+        A chord is Ctrl, optionally Alt and Shift in any order, and one letter. Case does not matter:
+        <code>ctrl-alt-b</code>, <code>Ctrl+Alt+B</code>, <code>c-a-b</code>, <code>^meta-b</code> and
+        <code>ctrl-shift-alt-b</code> are all accepted. An invalid chord is an error, never a silent no-op.
+      </p>
+      <RefTable head={["Part", "Spellings"]} rows={chordSyntax} />
+      <RefTable head={["Setting", "Refused"]} rows={chordRules} />
+      <RefTable head={["Chord", "Reaches gm"]} rows={reach} />
+      <p>
+        Avoid chords the shell or terminal keeps for itself: <code>ctrl-r</code> (history search), <code>ctrl-c</code>
+        <code>ctrl-d</code> <code>ctrl-z</code> (signals).
+      </p>
+
+      <h2 id="ranking">Ranking</h2>
+      <ol>
+        <li>A repository is a candidate when its <code>host/user/repo</code> holds the query's characters in order, ignoring case.</li>
+        <li>Where they matched is the literal substring if the query occurs as one; otherwise the fuzzy matcher's positions.</li>
+        <li>Those positions are scored with the weights below. The highest score goes to the bottom row.</li>
+        <li>Equal scores are ordered by frecency. With no query, the list is ordered by frecency alone, highest at the bottom.</li>
+      </ol>
+      <RefTable head={["Matched character", "Score"]} rows={weights} />
+      <p>Frecency is the visit count weighted by how long ago the last visit was:</p>
+      <RefTable head={["Last visit", "Frecency"]} rows={frecency} />
+      <p>
+        A visit is recorded when the finder chooses a row, and when <code>get</code>, <code>create</code>,
+        <code>migrate</code> or <code>wt create</code> fetches, makes or moves a repository.
+      </p>
+
+      <h2 id="files">Files and environment</h2>
+      <RefTable head={["File", "Purpose"]} rows={files} />
+      <RefTable head={["Variable", "Effect"]} rows={envs} />
+      <RefTable head={["git config", "Effect"]} rows={gitConfig} />
+      <p>Requirements: macOS or Linux (WSL2 included), <code>git</code> on <code>$PATH</code>, <code>gh</code> for the pull request list, and a true-color terminal for the themes.</p>
+    </article>
+  </main>
+</Base>
+
+<style>
+  .docs {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 48px;
+    padding-top: 48px;
+    padding-bottom: 96px;
+  }
+  @media (max-width: 900px) {
+    .docs {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 24px;
+    }
+  }
+  .toc {
+    position: sticky;
+    top: 84px;
+    align-self: start;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    font-size: 0.88rem;
+  }
+  @media (max-width: 900px) {
+    .toc {
+      position: static;
+      max-height: none;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 16px 20px;
+    }
+  }
+  .toc-title {
+    font: 600 0.75rem var(--font-mono);
+    color: var(--faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 10px;
+  }
+  .toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .toc li {
+    margin: 4px 0;
+  }
+  .toc ol ol {
+    padding-left: 12px;
+    border-left: 1px solid var(--line);
+    margin: 4px 0 10px;
+  }
+  .toc a {
+    color: var(--muted);
+  }
+  .toc a:hover {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .doc {
+    min-width: 0;
+  }
+  .doc h1 {
+    font-size: clamp(2rem, 4.5vw, 2.8rem);
+    letter-spacing: -0.03em;
+    margin-bottom: 14px;
+  }
+  .doc h2 {
+    font-size: 1.7rem;
+    margin: 72px 0 18px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+  }
+  .doc h3 {
+    font-size: 1.15rem;
+    margin: 40px 0 12px;
+  }
+  .doc h3 code {
+    font-size: 0.85em;
+    color: var(--muted);
+  }
+  .doc p,
+  .doc ul,
+  .doc ol {
+    color: var(--muted);
+    max-width: 780px;
+  }
+  .doc > p,
+  .doc > ul,
+  .doc > ol {
+    margin: 12px 0;
+  }
+  .doc ul,
+  .doc ol {
+    padding-left: 1.3em;
+  }
+  .doc li + li {
+    margin-top: 6px;
+  }
+  .doc li::marker {
+    color: var(--accent);
+  }
+  .doc > :global(.table-wrap),
+  .doc > :global(.code) {
+    margin: 16px 0;
+  }
+  .doc :global(td) {
+    color: var(--muted);
+  }
+  .doc :global(td:first-child) {
+    color: var(--text);
+  }
+</style>

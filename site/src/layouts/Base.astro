@@ -4,15 +4,30 @@ import "../styles/global.css";
 interface Props {
   title: string;
   description: string;
+  // Which nav tab is the page itself, so it is marked as the current one.
+  current?: "home" | "docs";
 }
-const { title, description } = Astro.props;
+const { title, description, current = "home" } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+const REPO = "https://github.com/jedipunkz/gm";
 
 // The card networks show when the site is linked. Both have to be absolute:
 // a relative og:image is ignored by most of them. See og/card.html for where
 // the picture comes from.
-const canonical = new URL(base, Astro.site);
+//
+// The canonical is the page's own URL in its slashed form, the one the
+// sitemap lists.
+const canonical = new URL(Astro.url.pathname.replace(/\/?$/, "/"), Astro.site);
 const ogImage = new URL(`${base}og.png`, Astro.site);
+
+// The section links point at the home page, so they work from every page.
+const sections = [
+  ["features", "Features"],
+  ["install", "Install"],
+  ["usage", "Usage"],
+  ["config", "Config"],
+  ["ranking", "Ranking"],
+];
 ---
 
 <!doctype html>
@@ -47,6 +62,126 @@ const ogImage = new URL(`${base}og.png`, Astro.site);
     />
   </head>
   <body>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="logo" href={base} aria-label="gm home"><span class="logo-mark">❯</span>gm</a>
+        <nav aria-label="Sections">
+          {sections.map(([id, name]) => <a href={`${base}#${id}`}>{name}</a>)}
+          <a class="tab" href={`${base}docs/`} aria-current={current === "docs" ? "page" : undefined}>Docs</a>
+        </nav>
+        <a class="gh" href={REPO} aria-label="gm on GitHub">
+          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </header>
+
     <slot />
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <span><span class="logo-mark">❯</span> gm · MIT License</span>
+        <span>
+          <a href={`${base}docs/`}>Docs</a> · <a href={REPO}>Source</a> · <a href={`${REPO}/releases`}>Releases</a> ·
+          <a href="https://github.com/jedipunkz/homebrew-gm">Homebrew tap</a>
+        </span>
+      </div>
+    </footer>
   </body>
 </html>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: saturate(160%) blur(12px);
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    height: 60px;
+  }
+  .logo {
+    font: 700 1.15rem var(--font-mono);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .logo:hover {
+    text-decoration: none;
+  }
+  .logo-mark {
+    color: var(--accent);
+    font-family: var(--font-mono);
+  }
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin-left: auto;
+    font-size: 0.9rem;
+  }
+  nav a {
+    color: var(--muted);
+  }
+  nav a:hover {
+    color: var(--text);
+    text-decoration: none;
+  }
+  .tab {
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 3px 10px;
+  }
+  .tab[aria-current="page"] {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+    background: var(--accent-soft);
+  }
+  .gh {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text);
+    font-size: 0.88rem;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    padding: 5px 12px;
+  }
+  .gh:hover {
+    text-decoration: none;
+    border-color: var(--faint);
+  }
+  /* On a phone the section links go, but the Docs tab stays: it is the only
+     way to the reference. */
+  @media (max-width: 720px) {
+    nav {
+      gap: 0;
+    }
+    nav a:not(.tab) {
+      display: none;
+    }
+    .nav-inner {
+      gap: 12px;
+    }
+  }
+
+  .footer {
+    border-top: 1px solid var(--line);
+    padding: 28px 0 40px;
+    color: var(--faint);
+    font-size: 0.88rem;
+  }
+  .footer-inner {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+</style>
