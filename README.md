@@ -43,25 +43,20 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 
 | Requirement | When |
 |---|---|
-| macOS / Linux (not Windows: the finder and git plumbing are Unix only) | Always |
+| macOS / Linux (Include WSL2) | Always |
 | `git` on `$PATH` | Always |
 | [`gh`](https://cli.github.com/), logged in, with `gh pr checkout --worktree` | Pull request list |
 | True-color terminal | Themes |
 
 ## 🔮 Finder
 
-| List | Open | Rows | `Enter` |
+| List | Default Open Key | Rows | `Enter` |
 |---|---|---|---|
 | Repositories | `gm` / `Ctrl-G` | Clones under the roots | Go there |
 | Worktrees | `Ctrl-W` | Worktrees of the selected repository | Go there |
 | Branches | `Ctrl-L` | Branches of the selected repository | Go to its worktree, created if missing |
 | Pull requests | `Ctrl-J` | Open pull requests of the selected repository | Go to its worktree, created if missing |
 
-- "Go there" prints the path and exits; the shell binding `cd`s.
-- The best match is the bottom row, next to the prompt. In the worktree list it is the main worktree.
-- Details pane: path, remote, branch, working-tree status, visit count, last three commits (with branch and tag decorations).
-- Hint line: the current list's keys (your chords), what `Esc` does next, and a spinner with elapsed seconds while git or GitHub works. The finder stays usable meanwhile.
-- The repository list keeps its query, cursor and highlights when you return. The other lists are rebuilt each time.
 
 ### Keys
 
@@ -76,7 +71,6 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `Esc` | Clear query, then filter, then quit | Back to repositories |
 | `Ctrl-C` | Quit, print nothing | Same |
 
-- Other keys edit text (`Ctrl-A`, `Ctrl-E`, `Ctrl-U`, …). `Ctrl-W` does not delete a word.
 - `Ctrl-W`, `Ctrl-L`, `Ctrl-J`, `Ctrl-Alt-B` are configurable: see [Key bindings](#key-bindings).
 
 ### Slash commands
@@ -85,7 +79,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 - To act on a search result: `gm;/remove` (query, `;`, command). Or `Esc` empties the box, keeping the selection.
 - `/create` and `/remove` ask `y` / `n` in a panel, warn about uncommitted changes that would be lost, and run without leaving the finder.
 
-#### Every list
+#### In Every list
 
 | Command | Action |
 |---|---|
@@ -94,7 +88,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `/browse` | = `Ctrl-Alt-B` |
 | `/worktrees` `/branches` `/prs` | = `Ctrl-W` `Ctrl-L` `Ctrl-J`. In that list already: nothing |
 
-#### Repository list
+#### In Repository list
 
 | Command | Action |
 |---|---|
@@ -105,7 +99,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 
 - `/dirty` and `/unpushed` together keep repositories matching both. One background status scan serves both. `Esc` clears the query, then the filters.
 
-#### Worktree list
+#### In Worktree list
 
 | Command | Action |
 |---|---|
@@ -114,7 +108,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `/expire <days>d` | Remove every worktree whose HEAD has not moved for that long (its reflog says when), then its branch if `git branch -d` allows. The whole list, not the selected row: the panel names each one. Uncommitted changes keep a worktree |
 | `/dirty` `/unpushed` | Refused |
 
-#### Branch list, pull request list
+#### In Branch list, pull request list
 
 | Command | Action |
 |---|---|
@@ -176,7 +170,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 `~/.config/gm/gm.toml` (or `$XDG_CONFIG_HOME/gm/gm.toml`), optional. A parse error or an unknown key is an error.
 
 ```toml
-root         = "~/ghq"         # or ["~/ghq", "~/src"], searched in order
+root         = "~/ghq"         # or ["~/ghq", "~/gm"], searched in order
 theme        = "tokyonight"
 launch_key   = "ctrl-g"        # shell: open gm
 worktree_key = "ctrl-w"        # finder: worktree list
