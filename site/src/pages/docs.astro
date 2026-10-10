@@ -1,7 +1,7 @@
 ---
-// The reference, ordered by what a reader comes looking for: a task first,
-// then the finder they use every day, then the commands, where things go, and
-// what can be configured. The home page shows what gm is; this page answers
+// The reference, ordered by what a reader comes looking for: the finder they
+// use every day, then the commands, where things go, and what can be
+// configured. The home page shows what gm is; this page answers
 // how to do a given thing with it.
 import Base from "../layouts/Base.astro";
 import Code from "../components/Code.astro";
@@ -12,12 +12,10 @@ const themes = loadThemes();
 const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
 const toc = [
-  ["tasks", "Common tasks", []],
   ["finder", "Finder", [
     ["lists", "Lists"],
     ["keys", "Keys"],
     ["slash", "Slash commands"],
-    ["editing", "Text editing"],
   ]],
   ["commands", "Commands", [
     ["cmd-get", "gm get"],
@@ -43,20 +41,6 @@ const toc = [
   ["ranking", "Ranking", []],
   ["env", "Requirements and environment", []],
 ] as const;
-
-const tasks = [
-  ["Jump to a repository", "`Ctrl-G` in the shell, type part of its name, `Enter`"],
-  ["Clone a repository", "`gm get user/repo`, or `/get user/repo` in the finder"],
-  ["Update a clone", "`gm get -u <repo>`: fetches, then fast-forwards only if the tree is clean"],
-  ["Work on a branch in its own worktree", "Finder: `Ctrl-L`, pick the branch, `Enter`. New branch: `/create <branch>`"],
-  ["Check out a pull request", "Finder: `Ctrl-J`, pick it, `Enter` (needs `gh`)"],
-  ["Find uncommitted or unpushed work", "`gm status`, or `/dirty` `/unpushed` in the finder"],
-  ["Clean up old worktrees", "`/expire 30d` in the worktree list, or `gm wt expire <repo> 30d`"],
-  ["Remove a repository", "`gm remove <repo>`, or `/remove` in the finder"],
-  ["Start a new repository", "`gm create <repo>`, or `/create <repo>` in the finder"],
-  ["Move existing clones into the tree", "`gm migrate -r ~/src` (try `--dry-run` first)"],
-  ["Open the remote in a browser", "`Ctrl-Alt-B`, or `/browse`"],
-];
 
 const lists = [
   ["Repositories", "`Ctrl-G` in the shell, or `gm`", "Every repository under every root", "Go there"],
@@ -86,15 +70,6 @@ const slash = [
   ["`/dirty` `/unpushed`", "Toggle a filter: only repositories with uncommitted changes / unpushed commits. Both on: both must hold", "Repositories"],
   ["`/worktrees` `/branches` `/prs` `/browse`", "Same as `Ctrl-W` `Ctrl-L` `Ctrl-J` `Ctrl-Alt-B`", "All"],
   ["`/help`", "Show the command list", "All"],
-];
-
-const editing = [
-  ["`Ctrl-A` `Ctrl-E` / `Home` `End`", "Start / end of the line"],
-  ["`Ctrl-B` `Ctrl-F` / `←` `→`", "One character"],
-  ["`Alt-B` `Alt-F` / `Ctrl-←` `Ctrl-→`", "One word"],
-  ["`Ctrl-H` `Ctrl-D` / `Backspace` `Delete`", "Delete a character before / at the cursor"],
-  ["`Alt-Backspace`, `Alt-D`", "Delete a word before / after the cursor"],
-  ["`Ctrl-U`, `Ctrl-K`", "Delete to the start / end"],
 ];
 
 const commands = [
@@ -196,7 +171,7 @@ const envs = [
 
 <Base
   title="gm docs — reference"
-  description="Reference for gm: common tasks, finder keys and slash commands, subcommands, where repositories go, gm.toml settings and environment."
+  description="Reference for gm: finder keys and slash commands, subcommands, where repositories go, gm.toml settings and environment."
   current="docs"
 >
   <main class="container docs">
@@ -230,9 +205,6 @@ const envs = [
         <a href={`${base}#install`}>Install</a>.
       </p>
 
-      <h2 id="tasks">Common tasks</h2>
-      <RefTable head={["To", "Do"]} rows={tasks} />
-
       <h2 id="finder">Finder</h2>
       <p>
         <code>Ctrl-G</code> in the shell (after <a href="#cmd-other"><code>gm shell</code></a>) or <code>gm</code> opens it.
@@ -259,14 +231,6 @@ const envs = [
         <li><code>/create</code>, <code>/remove</code> and <code>/expire</code> show what will happen, uncommitted changes included, and ask first: <code>y</code> goes ahead, <code>n</code> or <code>Esc</code> cancels.</li>
       </ul>
       <RefTable head={["Command", "Action", "Works in"]} rows={slash} />
-
-      <h3 id="editing">Text editing</h3>
-      <p>Emacs-style keys edit the query. Pasted text is inserted with newlines dropped.</p>
-      <RefTable head={["Key", "Moves / deletes"]} rows={editing} />
-      <p>
-        <code>Ctrl-W</code> opens the worktree list instead of deleting a word; use <code>Alt-Backspace</code>, or move
-        <code>worktree_key</code> elsewhere.
-      </p>
 
       <h2 id="commands">Commands</h2>
       <RefTable head={["Command", "Does"]} rows={commands} />
@@ -374,7 +338,7 @@ const envs = [
         <code>~/.config/gm/gm.toml</code>, optional. Every key is optional too. A typo, an unknown key or a wrong type is an
         error naming the file, so a setting is never silently ignored.
       </p>
-      <Code code={toml} label="gm.toml" />
+      <Code code={toml} label="gm.toml" lang="toml" />
       <RefTable head={["Key", "Default", "Meaning"]} rows={settings} />
 
       <h3 id="root">Roots</h3>

@@ -174,9 +174,9 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
           <li>
             <div class="step-head"><span class="step-n">1</span><h3>Install the binary</h3></div>
             <p class="step-text">Homebrew on macOS or Linux downloads a prebuilt binary; no Rust needed.</p>
-            <Code code="brew install jedipunkz/gm/gm" />
+            <Code code="brew install jedipunkz/gm/gm" lang="sh" />
             <p class="step-text">Or build from source with Rust 1.95 or newer:</p>
-            <Code code="cargo install --locked --git https://github.com/jedipunkz/gm" />
+            <Code code="cargo install --locked --git https://github.com/jedipunkz/gm" lang="sh" />
           </li>
           <li>
             <div class="step-head"><span class="step-n">2</span><h3>Bind it to your shell</h3></div>
@@ -185,7 +185,7 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
               that into a <code>cd</code> on <kbd>Ctrl</kbd>+<kbd>G</kbd>.
             </p>
             <div class="shells">
-              {shells.map((s) => <Code code={s.line} label={`${s.name} — ${s.file}`} />)}
+              {shells.map((s) => <Code code={s.line} label={`${s.name} — ${s.file}`} lang={s.name === "fish" ? "fish" : "sh"} />)}
             </div>
           </li>
           <li>
@@ -193,7 +193,7 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
             <p class="step-text">
               Clones land under the root; press <kbd>Ctrl</kbd>+<kbd>G</kbd> anywhere to jump.
             </p>
-            <Code code={"gm get jedipunkz/gm\n# then press Ctrl-G and type gm"} copy="gm get jedipunkz/gm" />
+            <Code code={"gm get jedipunkz/gm\n# then press Ctrl-G and type gm"} copy="gm get jedipunkz/gm" lang="sh" />
           </li>
         </ol>
         <p class="aside">
@@ -289,7 +289,7 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
           that holds a key gm does not know, is an error rather than a file half ignored.
         </p>
         <div class="split">
-          <Code code={toml} label="gm.toml" />
+          <Code code={toml} label="gm.toml" lang="toml" />
           <div>
             <h3 class="h3">Root resolution order</h3>
             <p class="muted">The first one set wins, so an existing ghq tree works untouched.</p>
