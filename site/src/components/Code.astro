@@ -1,17 +1,28 @@
 ---
 // A code block with a copy button. The copied text is `copy` when given,
-// otherwise the block itself.
+// otherwise the block itself. With `lang`, Shiki colors it at build time; the
+// colors follow the light / dark scheme through its CSS variables, so the
+// block keeps the site's own background.
+import { Code as Shiki } from "astro:components";
+
 interface Props {
   code: string;
   copy?: string;
   label?: string;
+  lang?: "sh" | "fish" | "toml";
 }
-const { code, copy, label } = Astro.props;
+const { code, copy, label, lang } = Astro.props;
 ---
 
 <div class="code">
   {label && <div class="code-label">{label}</div>}
-  <pre><code>{code}</code></pre>
+  {
+    lang ? (
+      <Shiki code={code} lang={lang} themes={{ light: "github-light", dark: "tokyo-night" }} defaultColor={false} />
+    ) : (
+      <pre><code>{code}</code></pre>
+    )
+  }
   <button type="button" class="copy" data-copy={copy ?? code} aria-label="Copy to clipboard">Copy</button>
 </div>
 
@@ -27,6 +38,14 @@ const { code, copy, label } = Astro.props;
   }
   pre {
     padding-right: 78px;
+  }
+  .code :global(.astro-code span) {
+    color: var(--shiki-dark);
+  }
+  @media (prefers-color-scheme: light) {
+    .code :global(.astro-code span) {
+      color: var(--shiki-light);
+    }
   }
   .copy {
     position: absolute;
