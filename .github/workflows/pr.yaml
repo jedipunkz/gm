@@ -84,6 +84,17 @@ jobs:
           EOF
           cat coverage.env >> "${GITHUB_ENV}"
 
+      # The floor lives in its own file so lowering it is a deliberate,
+      # reviewable diff rather than a one-character edit in here.
+      - name: check the floor
+        id: floor
+        run: |
+          floor="$(cat .github/coverage-threshold)"
+          echo "floor=${floor}" >> "${GITHUB_OUTPUT}"
+          lines="${COVERAGE_LINES%%|*}"
+          python3 -c "import sys; sys.exit(0 if float('$lines') >= float('$floor') else 1)" \
+            || { echo "line coverage ${lines} is below the floor ${floor} — raise it or lower the floor deliberately in .github/coverage-threshold"; exit 1; }
+
       # One comment, updated in place: a growing stack of coverage comments
       # on every push would drown the review it belongs to. The marker names
       # ours; it is patched when it is there, created when it is not.
@@ -102,6 +113,8 @@ jobs:
               "| --- | --- |",
               "| " + lines[0] + "% (" + lines[1] + "/" + lines[2] + ") | "
                 + funcs[0] + "% (" + funcs[1] + "/" + funcs[2] + ") |",
+              "",
+              "Floor: " + "${{ steps.floor.outputs.floor }}" + "% — comment-removed if it is absent",
               "",
               "[run](" + run + ")",
             ].join("\n");
