@@ -187,10 +187,17 @@ impl App<'_> {
         Ok(())
     }
 
+    /// history opens the visit log with the tree it prunes against.
+    fn history(&self) -> History {
+        let mut h = History::open(&self.state);
+        h.tree = self.tree.clone();
+        h
+    }
+
     /// bump records a visit. Losing one is not worth failing the command
     /// that made it.
     fn bump(&self, path: &str) {
-        let _ = History::open(&self.state).bump(path);
+        let _ = self.history().bump(path);
     }
 
     /// confirm asks before anything destructive. A closed stdin answers "no".
@@ -351,7 +358,7 @@ impl App<'_> {
             pr: config::parse_chord(&self.cfg.pr_key, finder::DEFAULT_PR_KEY)?,
             remote: config::parse_chord(&self.cfg.remote_key, finder::DEFAULT_REMOTE_KEY)?,
         };
-        let mut hist = History::open(&self.state);
+        let mut hist = self.history();
         let res = finder::run(&self.tree, &repos, &hist, &theme, keys)?;
         self.act(res, &mut hist)
     }
