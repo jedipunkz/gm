@@ -42,3 +42,88 @@ jobs:
 
       - name: cargo test
         run: cargo test --locked
+
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      # lcov over the whole workspace is what the totals are read from: one
+      # file, four counters, and no dependence on the summary table's widths.
+      # Branch totals are not collected, so they are not reported.
+      - name: cargo llvm-cov
+        run: cargo llvm-cov --locked --lcov --output-path lcov.info
+
+      - name: summarize
+        run: |
+          python3 - > coverage.env <<'EOF'
+          counters = ("LH:", "LF:", "FNH:", "FNF:")
+          got = dict.fromkeys(counters, 0)
+          for line in open("lcov.info"):
+              for k in counters:
+                  if line.startswith(k):
+                      got[k] += int(line.strip()[len(k):])
+          lh, lf, fnh, fnf = (got[k] for k in counters)
+          def pct(hit, total):
+              return 100.0 * hit / total if total > 0 else 100.0
+          print(f"COVERAGE_LINES={pct(lh, lf):.2f}|{lh}|{lf}")
+          print(f"COVERAGE_FUNCS={pct(fnh, fnf):.2f}|{fnh}|{fnf}")
+          EOF
+          cat coverage.env >> "${GITHUB_ENV}"
+
+      # One comment, updated in place: a growing stack of coverage comments
+      # on every push would drown the review it belongs to. The marker names
+      # ours; it is patched when it is there, created when it is not.
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const those = (env) => (env || "").split("|");
+            const lines = those(process.env.COVERAGE_LINES);
+            const funcs = those(process.env.COVERAGE_FUNCS);
+            const marker = "<!-- gm-coverage -->";
+            const run = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const body = marker + "\n" + [
+              "## Test coverage (cargo-llvm-cov)",
+              "",
+              "| lines | functions |",
+              "| --- | --- |",
+              "| " + lines[0] + "% (" + lines[1] + "/" + lines[2] + ") | "
+                + funcs[0] + "% (" + funcs[1] + "/" + funcs[2] + ") |",
+              "",
+              "[run](" + run + ")",
+            ].join("\n");
+            const comments = await github.paginate(
+              github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+            const previous = comments.find((c) => (c.body || "").startsWith(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
