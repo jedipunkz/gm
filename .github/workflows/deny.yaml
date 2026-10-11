@@ -1,0 +1,38 @@
+# Dependency hygiene is a second gate the tests cannot be: the advisory
+# database grows on its own schedule, so this checks Cargo's answers against
+# RustSec, the license allow-list, and the crate sources on every dependency
+# touching pull request, and once a week so staleness is caught without one.
+name: cargo-deny
+
+on:
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - deny.toml
+      - .github/workflows/deny.yaml
+  schedule:
+    - cron: "0 12 * * 1"
+
+permissions:
+  contents: read
+
+# A new push makes the previous run's answer irrelevant.
+concurrency:
+  group: deny-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: cargo deny check
+        run: cargo deny check advisories licenses sources
