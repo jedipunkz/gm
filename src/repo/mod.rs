@@ -290,7 +290,14 @@ fn walk(dir: &str, top: bool, found: &mut Vec<String>) {
         .collect();
     names.sort();
     for n in names {
-        walk(&paths::join(dir, &n), false, found);
+        // dir is already clean and a directory name never holds a slash or
+        // dots, so the child needs no cleaning pass of its own.
+        let child = if dir.ends_with('/') {
+            format!("{dir}{n}")
+        } else {
+            format!("{dir}/{n}")
+        };
+        walk(&child, false, found);
     }
 }
 
@@ -310,15 +317,22 @@ pub fn matches(rel: &str, query: &str, exact: bool) -> bool {
 
 /// shortest_unique gives each repository the shortest trailing path that no
 /// other repository in the set shares ("ghq", else "x-motemen/ghq", else the
-/// full path).
+/// full path). Suffixes are counted as slices of rel, so only the keys a map
+/// has not seen yet cost a fresh string.
 pub fn shortest_unique(repos: &[Repo]) -> Vec<String> {
     let mut rel_count = std::collections::HashMap::<String, usize>::new();
     let mut count = std::collections::HashMap::<String, usize>::new();
     for r in repos {
         *rel_count.entry(r.rel.clone()).or_default() += 1;
-        let parts: Vec<&str> = r.rel.split('/').collect();
-        for i in 0..parts.len() {
-            *count.entry(parts[i..].join("/")).or_default() += 1;
+        let starts: Vec<usize> = std::iter::once(0)
+            .chain(r.rel.match_indices('/').map(|(i, _)| i + 1))
+            .collect();
+        for s in starts {
+            if let Some(c) = count.get_mut(&r.rel[s..]) {
+                *c += 1;
+            } else {
+                count.insert(r.rel[s..].to_string(), 1);
+            }
         }
     }
     repos
@@ -327,11 +341,17 @@ pub fn shortest_unique(repos: &[Repo]) -> Vec<String> {
             if rel_count[&r.rel] > 1 {
                 return r.path();
             }
-            let parts: Vec<&str> = r.rel.split('/').collect();
-            (0..parts.len())
+            // The suffixes are rel's trailing parts, shortest first: the name,
+            // then name and user, up to the whole path.
+            let starts: Vec<usize> = std::iter::once(0)
+                .chain(r.rel.match_indices('/').map(|(i, _)| i + 1))
+                .collect();
+            starts
+                .iter()
+                .map(|&s| &r.rel[s..])
                 .rev()
-                .map(|j| parts[j..].join("/"))
-                .find(|s| count[s] == 1)
+                .find(|&suffix| count[suffix] == 1)
+                .map(str::to_string)
                 .unwrap_or_else(|| r.rel.clone())
         })
         .collect()

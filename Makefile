@@ -1,6 +1,6 @@
 BIN := gm
 
-.PHONY: all build install test lint fmt check clean
+.PHONY: all build install test lint fmt check bench clean
 
 all: build
 
@@ -22,6 +22,9 @@ fmt:
 
 check: lint test
 	cargo fmt --check
+
+bench:
+	cargo bench --bench perf
 
 clean:
 	cargo clean
