@@ -213,7 +213,7 @@ impl App<'_> {
 
     /// wt_create checks a branch out beside the repository and prints where,
     /// so a script can cd into it the way it can with gm create.
-    fn wt_create(&mut self, args: &[String]) -> Result<()> {
+    pub(super) fn wt_create(&mut self, args: &[String]) -> Result<()> {
         let p = parse(self, "gm wt create", &[], args)?;
         let [query, branch] = p.args.as_slice() else {
             return Err(WT_USAGE.into());
