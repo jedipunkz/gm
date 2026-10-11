@@ -2079,6 +2079,30 @@ fn branches_command() {
     assert_eq!(m.mode, Mode::Branches);
 }
 
+// A branch the query names whole outranks a longer one that only carries the
+// same characters inside another name: "main" answers "main", while
+// "fix/mainline" is a different branch. The named branch rests under the
+// cursor, where Enter means it.
+#[test]
+fn branch_query_prefers_the_named_branch() {
+    let root = TempDir::new();
+    let (mut m, _) = branch_model(&root);
+    m.update(key("ctrl+l"));
+    // A branch made after main, the way a feature branch arrives later: newer,
+    // so without the tie-break it would take main's place at the bottom.
+    m.all.push(Item {
+        label: "fix/mainline".into(),
+        branch: Branch {
+            name: "fix/mainline".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    set_query(&mut m, "main");
+    assert_eq!(rows(&m).join(" "), "fix/mainline main");
+    assert_eq!(label(&m), "main");
+}
+
 // A worktree is made for a branch that has none, against real git, and the
 // finder is left for it once git is done.
 #[test]

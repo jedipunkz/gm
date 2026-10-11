@@ -63,10 +63,21 @@ impl Model {
                 self.matched.insert(mt.index, char_indexes(rel, &pos));
             }
             // Ascending, so the strongest match lands at the bottom; frecency
-            // breaks ties between equally good matches.
+            // breaks ties between equally good matches. The branch list has
+            // none to speak of, so a longer name that only carries the query
+            // inside it would stay even with the branch it names: "main"
+            // ranks above "fix/foo-main" by being the shorter match.
+            let branches = self.mode == Mode::Branches;
             scored.sort_by(|a, b| {
                 a.1.total_cmp(&b.1)
                     .then(self.all[a.0].score.total_cmp(&self.all[b.0].score))
+                    .then_with(|| {
+                        if branches {
+                            self.all[b.0].label.len().cmp(&self.all[a.0].label.len())
+                        } else {
+                            std::cmp::Ordering::Equal
+                        }
+                    })
             });
             scored.into_iter().map(|(i, _)| i).collect()
         };
