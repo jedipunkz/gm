@@ -160,7 +160,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `gm wt expire <repo> <days>d` | Same as `/expire`: `gm wt expire gm 30d` | `--dry-run`<br>`-y` no prompt |
 | `gm migrate <dir>...` | Move an existing clone into the tree by its `origin` | `--dry-run`<br>`-y` no prompt<br>`-r` search the directories for clones |
 | `gm root` | Print the root | `--all` every root |
-| `gm shell <fish\|zsh\|bash>` | Print the `Ctrl-G` binding | |
+| `gm shell <fish\|zsh\|bash>` | Print the `launch_key` binding (`Ctrl-G` by default) | |
 | `gm version` / `gm help` | Print the version / usage | |
 
 1. Fetches, then fast-forwards the checked-out branch if the working tree is clean (dirty or diverged: reported, left as is), then updates submodules.

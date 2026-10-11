@@ -42,7 +42,7 @@ const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "get",
         aliases: &["clone"],
-        usage: "get [-u] [--ssh] [--shallow] [-b <branch>] [-s] [-l] <repo>...",
+        usage: "get [-u] [--ssh] [--shallow] [--no-recursive] [-b <branch>] [-s] [-l] <repo>...",
         run: |a, args| a.get(args),
     },
     Cmd {
@@ -72,7 +72,7 @@ const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "wt",
         aliases: &[],
-        usage: "wt <create|remove> [-y] <repo> <branch> | wt expire [--dry-run] [-y] <repo> <days>d",
+        usage: "wt create <repo> <branch> | wt remove [--dry-run] [-y] <repo> <branch> | wt expire [--dry-run] [-y] <repo> <days>d",
         run: |a, args| a.wt(args),
     },
     Cmd {
@@ -96,7 +96,7 @@ const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "shell",
         aliases: &[],
-        usage: "shell <fish|zsh|bash>          print the Ctrl-G key binding",
+        usage: "shell <fish|zsh|bash>          print the launch_key binding (Ctrl-G by default)",
         run: |a, args| a.shell(args),
     },
 ];
@@ -218,9 +218,10 @@ pub fn usage() -> String {
     b.push_str(
         "
 <repo> is a URL, host/user/repo, user/repo, or just repo.
-The root is $GM_ROOT, ~/.config/gm/gm.toml, git config gm.root,
-$GHQ_ROOT, git config ghq.root, or ~/ghq.
-The finder's colors come from theme in ~/.config/gm/gm.toml.
+The root is $GM_ROOT, gm.toml, git config gm.root, $GHQ_ROOT,
+git config ghq.root, or ~/ghq.
+The finder's colors come from theme in gm.toml.
+gm.toml is $XDG_CONFIG_HOME/gm/gm.toml, or ~/.config/gm/gm.toml.
 ",
     );
     b

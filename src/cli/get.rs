@@ -518,7 +518,7 @@ enum Plan {
     Problem(String), // why it cannot move, phrased to follow the path
 }
 
-const WT_USAGE: &str = "usage: gm wt <create|remove> [-y] <repo> <branch>\n       gm wt expire [--dry-run] [-y] <repo> <days>d";
+const WT_USAGE: &str = "usage: gm wt create <repo> <branch>\n       gm wt remove [--dry-run] [-y] <repo> <branch>\n       gm wt expire [--dry-run] [-y] <repo> <days>d";
 
 /// look_in drops the user into a shell inside the repository just cloned.
 fn look_in(dir: &str) -> Result<()> {
