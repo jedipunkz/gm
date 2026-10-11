@@ -191,6 +191,7 @@ pub enum Msg {
     RemoteBranches(RemoteBranches), // what the remotes have that was not fetched
     Prs(Prs),                       // gh's answer about one repository
     RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
+    RepoState(String, repo::State), // one repository scanned again after a change
 }
 
 /// RemoteBranches carries what the remotes of one repository have that the
@@ -338,7 +339,9 @@ impl Model {
             branches_of: Arc::new(repo::branches),
             remote_branches_of: Arc::new(repo::remote_branches),
             prs_of: Arc::new(repo::pull_requests),
-            state_scan_of: Arc::new(repo::status_map),
+            state_scan_of: Arc::new(|ps: &[String]| {
+                repo::status_map(ps, repo::status_with_worktrees)
+            }),
             changed_of: Arc::new(repo::changed_files),
             open_url: Arc::new(|u| {
                 let _ = browse::open_url(u);
@@ -407,7 +410,9 @@ impl Model {
             Msg::RemoteBranches(r) => self.add_remote_branches(r),
             Msg::Prs(p) => self.show_prs(p),
             Msg::RepoStates(tag, states) => {
-                self.repo_states = Some(states);
+                // Merged, not replaced: a repository scanned again while this
+                // scan ran may be one it never heard of.
+                self.repo_states.get_or_insert_default().extend(states);
                 self.scanning_states = false;
                 self.note.clear();
                 self.finish_busy(tag);
@@ -415,6 +420,19 @@ impl Model {
                     if self.mode == Mode::Repos {
                         self.filter();
                         self.cursor = self.view.len().saturating_sub(1);
+                        return self.load_status().into_iter().collect();
+                    }
+                    if let Some(saved) = self.saved.as_mut() {
+                        saved.mark_stale();
+                    }
+                }
+                vec![]
+            }
+            Msg::RepoState(path, state) => {
+                self.repo_states.get_or_insert_default().insert(path, state);
+                if self.dirty_only || self.unpushed_only {
+                    if self.mode == Mode::Repos {
+                        self.filter(); // the selection stays where it was
                         return self.load_status().into_iter().collect();
                     }
                     if let Some(saved) = self.saved.as_mut() {
@@ -453,6 +471,13 @@ impl Model {
             self.status.remove(status_path);
             self.probing.remove(status_path);
         }
+        // A repository made, or whose worktrees changed, is scanned again once
+        // the status filters have scanned at all: otherwise they would answer
+        // for it as it was, or not at all.
+        let rescan = (!status_path.is_empty()
+            && d.kind != Change::Remove
+            && (self.repo_states.is_some() || self.scanning_states))
+            .then(|| self.rescan_repo_state(status_path));
 
         match d.kind {
             Change::Remove | Change::RemoveWorktree | Change::Create | Change::AddWorktree => {
@@ -572,7 +597,7 @@ impl Model {
             }
             Change::None => {}
         }
-        self.load_status().into_iter().collect()
+        rescan.into_iter().chain(self.load_status()).collect()
     }
 
     fn key(&mut self, k: Key) -> Vec<Cmd> {

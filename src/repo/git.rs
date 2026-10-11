@@ -563,16 +563,32 @@ fn unpushed_commits(dir: &str) -> usize {
     .unwrap_or(0)
 }
 
-/// status_map reads every path, a few at a time: git is the slow part and the
-/// disk is shared, so more workers than this buys nothing.
-pub fn status_map(paths: &[String]) -> HashMap<String, State> {
+/// status_with_worktrees is status_of with the work in the repository's other
+/// checkouts folded in, because a worktree is where work in progress lives:
+/// their changed files and their commits ahead count as the repository's.
+/// unpushed already covers every branch, and branch stays the main checkout's.
+pub fn status_with_worktrees(dir: &str) -> State {
+    let mut s = status_of(dir);
+    for w in super::other_worktrees_of(dir) {
+        let t = git_in(&w.path, &["status", "--porcelain", "-b"])
+            .map(|out| parse_status(&out))
+            .unwrap_or_default();
+        s.dirty += t.dirty;
+        s.ahead += t.ahead;
+    }
+    s
+}
+
+/// status_map reads every path with of, a few at a time: git is the slow part
+/// and the disk is shared, so more workers than this buys nothing.
+pub fn status_map(paths: &[String], of: fn(&str) -> State) -> HashMap<String, State> {
     let out = Mutex::new(HashMap::with_capacity(paths.len()));
     let next = AtomicUsize::new(0);
     std::thread::scope(|s| {
         for _ in 0..STATUS_WORKERS.min(paths.len()) {
             s.spawn(|| {
                 while let Some(p) = paths.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let st = status_of(p);
+                    let st = of(p);
                     out.lock().unwrap().insert(p.clone(), st);
                 }
             });
@@ -1017,12 +1033,34 @@ detached
         let plain = dir.join("plain");
         mkdir(&plain);
 
-        let got = status_map(&[clean.clone(), dirty.clone(), plain.clone()]);
+        let got = status_map(&[clean.clone(), dirty.clone(), plain.clone()], status_of);
         assert_eq!(got.len(), 3, "{got:?}");
         assert!(got[&dirty].dirty > 0);
         assert_eq!(got[&clean].dirty, 0);
         assert_eq!(got[&plain].dirty, 0);
-        assert!(status_map(&[]).is_empty());
+        assert!(status_map(&[], status_of).is_empty());
+    }
+
+    // The bug where /dirty hid a repository whose only work was in one of its
+    // worktrees.
+    #[test]
+    fn status_with_worktrees_counts_the_work_in_them() {
+        let base = TempDir::new();
+        let r = Repo {
+            root: base.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&r.path());
+        let tree = Tree {
+            roots: vec![base.path()],
+        };
+        let login = tree.worktree_dir(&r, "feat/login");
+        add_worktree(&base.join(WORKTREE_ROOT), &r.path(), &login, "feat/login").unwrap();
+        assert_eq!(status_with_worktrees(&r.path()).dirty, 0);
+
+        write(&paths::join(&login, "wip.txt"), "wip\n");
+        assert_eq!(status_of(&r.path()).dirty, 0);
+        assert_eq!(status_with_worktrees(&r.path()).dirty, 1);
     }
 
     #[test]

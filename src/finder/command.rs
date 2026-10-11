@@ -297,19 +297,21 @@ impl Model {
             }
         };
 
-        if enabled && self.repo_states.is_none() && !self.scanning_states {
+        // Switching a filter on asks git again, so work done in another
+        // terminal since the last scan shows up. The last answer filters the
+        // list until the new one lands; with none yet, every row stays.
+        let scan = if enabled && !self.scanning_states {
             self.scanning_states = true;
             let (busy_tag, busy) = self.start_busy("checking repository status…");
-            return vec![busy, self.scan_repo_states(busy_tag)];
+            vec![busy, self.scan_repo_states(busy_tag)]
+        } else {
+            vec![] // off, or the other filter already started the shared scan
+        };
+        if !enabled || self.repo_states.is_some() {
+            self.filter();
+            self.cursor = self.view.len().saturating_sub(1);
         }
-
-        if enabled && self.repo_states.is_none() {
-            return vec![]; // the other filter already started the shared scan
-        }
-
-        self.filter();
-        self.cursor = self.view.len().saturating_sub(1);
-        vec![]
+        scan
     }
 
     /// leave_with closes the finder and hands the work to gm, which runs it on
