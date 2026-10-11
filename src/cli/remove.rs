@@ -34,10 +34,6 @@ impl App<'_> {
     /// remove_one deletes one repository, warning first when there is work in
     /// it and asking before anything is lost.
     fn remove_one(&mut self, r: &Repo, dry_run: bool, yes: bool) -> Result<()> {
-        if dry_run {
-            writeln!(self.err, "would remove {}", r.path())?;
-            return Ok(());
-        }
         if repo::is_dirty(&r.path()).unwrap_or(false) {
             writeln!(self.err, "warning: {} has uncommitted changes", r.rel)?;
         }
@@ -54,6 +50,11 @@ impl App<'_> {
                 "warning: also removed, not a worktree: {}",
                 strays.join(", ")
             )?;
+        }
+        // The warnings are what a dry run is for, so it stops only after them.
+        if dry_run {
+            writeln!(self.err, "would remove {}", r.path())?;
+            return Ok(());
         }
         if !yes && !self.confirm(&format!("remove {}?", r.path())) {
             writeln!(self.err, "skipped")?;
