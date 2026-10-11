@@ -264,4 +264,23 @@ mod tests {
             "grandchild outlived the timed-out gh process"
         );
     }
+
+    // gh answering with a failure says what gh said, in the same shape the
+    // rest of gm's errors take.
+    #[test]
+    fn pull_requests_say_what_gh_said() {
+        let tmp = TempDir::new();
+        let gh = script(&tmp.path(), "#!/bin/sh\necho 'not logged in' >&2\nexit 1\n");
+        let repo = tmp.join("repo");
+        git_repo(&repo);
+        let e = pull_requests_with(OsStr::new(&gh), Duration::from_secs(10), &repo).unwrap_err();
+        assert!(e.0.contains("not logged in"), "{e}");
+
+        // A gh that is not there at all is named as the thing to install.
+        let e = gh_missing(std::io::Error::new(std::io::ErrorKind::NotFound, "no gh"));
+        assert!(
+            e.0.contains("gh is not installed"),
+            "the missing program was not named:\n{e}"
+        );
+    }
 }

@@ -710,6 +710,62 @@ fn migrate_recursive() {
 // repository alone leaves every checkout answering "not a git repository".
 // Both kinds are repaired: one elsewhere, and one kept inside the
 // repository's directory, which moves with it.
+// The dry run names where a repository and its checkouts would go, and a
+// destination already taken is fatal for a named directory but only a skip
+// under -r.
+#[test]
+fn migrate_dry_run_and_a_taken_destination() {
+    let base = TempDir::new();
+    let root = base.join("tree");
+    mkdir(&root);
+    let src = init_repo(&base.join("src/alpha"), "https://github.com/acme/alpha");
+    let outside = base.join("wt/login");
+    git(&src, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    repo::add_worktree(&base.path(), &src, &outside, "feat/login").unwrap();
+    let norepo = base.join("src/norepo");
+    mkdir(&norepo);
+
+    let r = run_in(&tree(&root), "", Config::default(), |a| {
+        a.migrate(&args(&["--dry-run", &src]))
+    });
+    r.res.unwrap();
+    let dst = paths::join(&root, "github.com/acme/alpha");
+    assert!(
+        r.err.contains(&format!("would move {src} -> {dst}")),
+        "{}",
+        r.err
+    );
+    assert!(
+        r.err.contains("and repair its 1 worktree: feat/login"),
+        "{}",
+        r.err
+    );
+    assert!(exists(&src) && !exists(&dst), "the dry run moved nothing");
+    // A destination already on disk is fatal for a named directory.
+    mkdir(&dst);
+    let r = run_in(&tree(&root), "", Config::default(), |a| {
+        a.migrate(&args(&[&src]))
+    });
+    let e = r.res.expect_err("a taken destination must stop the move");
+    assert!(e.0.contains("which already exists"), "{e}");
+
+    // Under -r the taken destination is only a skip on a candidate; the
+    // search turns up repositories only, so the empty directory is silent.
+    let r = run_in(&tree(&root), "", Config::default(), |a| {
+        a.migrate(&args(&["--dry-run", "-r", &base.join("src")]))
+    });
+    r.res.unwrap();
+    assert!(
+        r.err.contains(&format!(
+            "skip     {src}: would move to {dst}, which already exists"
+        )),
+        "the taken destination was not skipped:\n{}",
+        r.err
+    );
+    // A directory that is not a repository is not a candidate at all.
+    assert!(!r.err.contains("norepo"), "{}", r.err);
+}
+
 #[test]
 fn migrate_repairs_the_worktrees() {
     let base = TempDir::new();
@@ -1168,6 +1224,278 @@ fn retarget_worktree(repo_dir: &str, dir: &str) {
     );
 }
 
+// age_worktrees writes an epoch reflog line into every worktree's HEAD log,
+// so gm reads all of them as idle since the epoch. The log's last line is
+// where git's own writing shows up, so this line goes last.
+fn age_worktrees(repo_dir: &str) {
+    let admin = paths::join(repo_dir, ".git/worktrees");
+    for e in std::fs::read_dir(&admin).unwrap() {
+        let log = paths::join(
+            &paths::join(&admin, &e.unwrap().file_name().to_string_lossy()),
+            "logs/HEAD",
+        );
+        let line = "0000000000000000000000000000000000000000 0000000000000000000000000000000000000000 t t 1 +0000\taged\n";
+        let old = std::fs::read_to_string(&log).unwrap_or_default();
+        write(&log, &format!("{old}{line}"));
+    }
+}
+
+#[test]
+fn wt_expire_removes_the_idle_and_keeps_the_busy() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let t = tree(&root.path());
+    let wt_root = paths::join(&r.root, repo::WORKTREE_ROOT);
+    for b in ["old/a", "old/b", "busy"] {
+        repo::add_worktree(&wt_root, &r.path(), &t.worktree_dir(&r, b), b).unwrap();
+    }
+    write(
+        &paths::join(&t.worktree_dir(&r, "busy"), "wip.txt"),
+        "wip\n",
+    );
+    age_worktrees(&r.path());
+    let old_a = t.worktree_dir(&r, "old/a");
+    let old_b = t.worktree_dir(&r, "old/b");
+    let busy = t.worktree_dir(&r, "busy");
+
+    // The dry run names everything and touches nothing.
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["expire", "--dry-run", "acme/alpha", "30d"]))
+    });
+    res.res.unwrap();
+    // git reports the resolved paths, which on macOS is /private/var where
+    // the tree was walked as /var, so the expectations are resolved too.
+    let seen = |w: &str, dir: &str, after: &str| {
+        let mut line = format!(
+            "{w}{}",
+            std::fs::canonicalize(dir).unwrap().to_string_lossy()
+        );
+        line.push_str(after);
+        assert!(res.err.contains(&line), "{line:?}:\n{}", res.err);
+    };
+    seen("keep     ", &busy, " (uncommitted changes)");
+    seen("would remove ", &old_a, "");
+    seen("would remove ", &old_b, "");
+    assert!(exists(&old_a) && exists(&busy));
+
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["expire", "-y", "acme/alpha", "30d"]))
+    });
+    res.res.unwrap();
+    assert!(
+        res.err.contains("removed  2 worktrees, 2 branches"),
+        "{}",
+        res.err
+    );
+    assert!(!exists(&old_a) && !exists(&old_b) && exists(&busy));
+    assert!(
+        repo::git_in(&r.path(), &["show-ref", "--verify", "refs/heads/old/a"]).is_err(),
+        "the branch went with the worktree"
+    );
+
+    // What is left is busy, so there is nothing idle left to remove.
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["expire", "acme/alpha", "30d"]))
+    });
+    res.res.unwrap();
+    assert!(
+        res.err
+            .contains(&format!("no worktree of {} idle for 30 days", r.rel)),
+        "{}",
+        res.err
+    );
+}
+
+#[test]
+fn wt_expire_reports_the_verb_errors() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let t = tree(&root.path());
+    let u = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["expire", "acme/alpha"]))
+    });
+    assert!(u.res.unwrap_err().0.contains("gm wt expire"), "{}", u.err);
+    let age = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["expire", "acme/alpha", "30x"]))
+    });
+    assert!(
+        age.res.unwrap_err().0.contains("is not an age"),
+        "{}",
+        age.err
+    );
+}
+
+// A branch whose work holds commits that are nowhere else stays: the worktree
+// goes, and the refusal is named.
+#[test]
+fn wt_remove_keeps_an_unmerged_branch() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let t = tree(&root.path());
+
+    // A branch that already exists is checked out where it is, not started.
+    let pub_ = "feat/public";
+    git(&r.path(), &["branch", pub_]);
+    let made = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["create", "acme/alpha", pub_]))
+    });
+    made.res.unwrap();
+    assert!(made.err.contains("existing branch"), "{}", made.err);
+
+    let login = t.worktree_dir(&r, "feat/login");
+    let made = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["create", "acme/alpha", "feat/login"]))
+    });
+    made.res.unwrap();
+    assert!(made.err.contains("new branch"), "{}", made.err);
+
+    // A commit the branch holds is work nobody else has, so -d refuses.
+    write(&paths::join(&login, "work.txt"), "wip\n");
+    git(&login, &["add", "work.txt"]);
+    git(&login, &["commit", "-q", "-m", "wip"]);
+
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["remove", "-y", "acme/alpha", "feat/login"]))
+    });
+    res.res.unwrap();
+    assert!(
+        res.err.contains("kept     (not merged) branch feat/login"),
+        "{}",
+        res.err
+    );
+    // The other checkout was never asked to go.
+    assert!(!exists(&login) && exists(&t.worktree_dir(&r, pub_)));
+}
+
+// The clone flags are read the way help words them: shallow, one branch,
+// silent.
+#[test]
+fn get_takes_the_clone_flavours() {
+    let tmp = TempDir::new();
+    let origin = tmp.join("origin.git");
+    git(
+        &tmp.path(),
+        &["init", "-q", "--bare", "-b", "main", &origin],
+    );
+    // A second branch, so -b has something to check out.
+    let w = tmp.join("w");
+    git(&tmp.path(), &["clone", "-q", &origin, &w]);
+    git(&w, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(&w, &["push", "-q", "origin", "HEAD:feature", "HEAD:main"]);
+    let reference = format!("file://localhost{origin}");
+
+    let root = tmp.join("root");
+    let res = run_in(&tree(&root), "", Config::default(), |a| {
+        a.get(&args(&[
+            "--shallow",
+            "-b",
+            "feature",
+            "-s",
+            "--no-recursive",
+            &reference,
+        ]))
+    });
+    res.res.unwrap();
+    let dst = repo::rel_path_of(&repo::normalize_url(&reference, false).unwrap());
+    let dst = paths::join(&root, &dst);
+    assert!(
+        exists(&paths::join(&dst, ".git/shallow")),
+        "not a shallow clone"
+    );
+    assert_eq!(
+        repo::git_in(&dst, &["branch", "--show-current"]).unwrap(),
+        "feature"
+    );
+}
+
+// A command without its argument says what it needs.
+#[test]
+fn reference_commands_report_their_usage() {
+    let root = TempDir::new();
+    let get = run_in(&tree(&root.path()), "", Config::default(), |a| a.get(&[]));
+    assert!(
+        get.res.unwrap_err().0.contains("usage: gm get"),
+        "{}",
+        get.err
+    );
+    let create = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.create(&[])
+    });
+    assert!(
+        create.res.unwrap_err().0.contains("usage: gm create"),
+        "{}",
+        create.err
+    );
+}
+
+// version is a command as well as a flag: the same answer either way, from
+// the table's own dispatcher.
+#[test]
+fn plain_dispatch_prints_the_version() {
+    let root = TempDir::new();
+    let r = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.dispatch(&args(&["version"]))
+    });
+    r.res.unwrap();
+    assert!(r.out.contains("gm "), "{}", r.out);
+    // An unknown word folds back into the usage, asking for exit status 2.
+    let u = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.dispatch(&args(&["no-such-command"]))
+    });
+    assert_eq!(exit_code(&u.res.unwrap_err()), Some(2));
+}
+
+// The exit a caller sees when gm ends without a message of its own.
+#[test]
+fn exit_code_matches_the_special_errors() {
+    assert_eq!(exit_code(&USAGE_ERROR.into()), Some(2));
+    assert_eq!(exit_code(&HELP.into()), Some(0));
+    assert_eq!(exit_code(&"gm.toml: unknown key".into()), None);
+}
+
+// gm root answers with the primary root, and with --all with every root in
+// the order the config names them.
+#[test]
+fn root_prints_the_roots() {
+    let root = TempDir::new();
+    let (r1, r2) = (root.join("r1"), root.join("r2"));
+    let t = Tree {
+        roots: vec![r1.clone(), r2.clone()],
+    };
+    let res = run_in(&t, "", Config::default(), |a| a.root(&[]));
+    res.res.unwrap();
+    assert_eq!(res.out.trim(), r1.to_string());
+    let res = run_in(&t, "", Config::default(), |a| a.root(&args(&["--all"])));
+    res.res.unwrap();
+    assert_eq!(res.out.trim(), format!("{r1}\n{r2}"));
+}
+
+// gm list without a flag prints the names it sorts by, one per line.
+#[test]
+fn list_prints_the_rel_paths() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let res = run_in(&tree(&root.path()), "", Config::default(), |a| a.list(&[]));
+    res.res.unwrap();
+    assert_eq!(res.out.trim(), "github.com/acme/alpha", "{}", res.out);
+}
+
 #[test]
 fn wt_remove_dry_run_names_uncommitted_work() {
     let root = TempDir::new();
@@ -1194,7 +1522,13 @@ fn wt_remove_dry_run_names_uncommitted_work() {
 #[test]
 fn wt_usage() {
     let root = TempDir::new();
-    for a in [&[][..], &["add"], &["create", "only-one-arg"]] {
+    for a in [
+        &[][..],
+        &["add"],
+        &["create", "only-one-arg"],
+        &["remove", "only-one-arg"],
+        &["expire", "only-one-arg"],
+    ] {
         let r = run_in(&tree(&root.path()), "", Config::default(), |app| {
             app.wt(&args(a))
         });

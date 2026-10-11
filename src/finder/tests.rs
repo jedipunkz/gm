@@ -91,6 +91,96 @@ fn is_quit(cmds: &[Cmd]) -> bool {
     cmds.iter().any(|c| matches!(c, Cmd::Quit))
 }
 
+// A repository answering again while the dirty filter is on folds away only
+// when it has nothing left to show: the scan followed every worktree, so the
+// row keeping its work in is not dropped.
+#[test]
+fn repo_state_folds_a_clean_answer_away() {
+    let root = TempDir::new();
+    let (mut m, rs) = dirty_model(&root);
+    let cmds = run_slash(&mut m, "/dirty");
+    feed(&mut m, cmds);
+
+    // Charlie answers once more and it is clean; its row folds away.
+    let gone = rs[2].path();
+    m.update(Msg::RepoState(gone.clone(), repo::State::default()));
+    assert!(
+        !rows(&m).contains(&"github.com/acme/charlie".to_string()),
+        "{:?}",
+        rows(&m)
+    );
+
+    // Alpha answers again and it still holds work; its row stays.
+    let alpha = rs[0].path();
+    m.update(Msg::RepoState(
+        alpha.clone(),
+        repo::State {
+            dirty: 1,
+            ..Default::default()
+        },
+    ));
+    assert!(
+        rows(&m).contains(&"github.com/acme/alpha".to_string()),
+        "{:?}",
+        rows(&m)
+    );
+}
+
+// Text pasted from the terminal belongs to the box the finder shows.
+#[test]
+fn paste_fills_the_query() {
+    let root = TempDir::new();
+    let rs = repos(&root.path(), &["github.com/acme/alpha"]);
+    let mut m = new_model(&rs, "");
+    m.update(Msg::Paste("alb".into()));
+    assert_eq!(m.input.value(), "alb", "the paste went nowhere");
+}
+
+// The command-line paths either branch has to answer: /create with a bad
+// reference notes what was wrong, /remove refuses where it does not apply
+// and with nothing selected, and a mode command already there is nothing to
+// do.
+#[test]
+fn slash_commands_answer_their_own_edges() {
+    let root = TempDir::new();
+    let rs = repos(&root.path(), &["github.com/acme/alpha"]);
+    crate::testutil::git_repo(&rs[0].path());
+    let mut m = new_model(&rs, "");
+
+    run_slash(&mut m, "/create --ssh");
+    assert_eq!(m.note, "/create --ssh needs a repository", "{}", m.note);
+    run_slash(&mut m, "/create https://ho\u{7}st/x");
+    assert!(m.note.contains("invalid character"), "{}", m.note);
+
+    // Branch mode: /remove applies to repositories and worktrees.
+    let cmds = run_slash(&mut m, "/branches");
+    feed(&mut m, cmds);
+    assert_eq!(m.mode, Mode::Branches, "{:?}", m.note);
+    run_slash(&mut m, "/remove");
+    assert_eq!(
+        m.note, "/remove applies to repositories and worktrees",
+        "{}",
+        m.note
+    );
+
+    // Repos mode with nothing at all to select: the note says so. filter()
+    // during the run rebuilds the view, so the only things to look at have
+    // to be gone.
+    m.mode = Mode::Repos;
+    m.all.clear();
+    run_slash(&mut m, "/remove");
+    assert_eq!(m.note, "nothing is selected", "{}", m.note);
+
+    // The mode commands, asked for the mode they are already in, have
+    // nothing to do.
+    m.mode = Mode::Worktrees;
+    assert!(run_slash(&mut m, "/worktrees").is_empty());
+    m.mode = Mode::Branches;
+    assert!(run_slash(&mut m, "/branches").is_empty());
+    m.mode = Mode::Prs;
+    assert!(run_slash(&mut m, "/prs").is_empty());
+}
+
 /// answer runs the commands the way the loop would and returns the message
 /// that carries the work's result. The spinner's ticks and the details pane's
 /// probes, which only redraw, are skipped.

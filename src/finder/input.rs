@@ -229,4 +229,74 @@ mod tests {
         e.set_suggestions(vec!["/help".into()]);
         assert_eq!(e.completion(), None);
     }
+
+    // The keys a word editor answers to: cutting at the cursor, jumping by
+    // word, and a key nothing answers to changing nothing.
+    #[test]
+    fn cuts_and_jumps_by_word() {
+        let mut i = typed("a b c");
+        // alt+d at the end has nothing ahead, so nothing goes.
+        i.update(&Key::named("alt+d"));
+        assert_eq!(i.value(), "a b c");
+        i.update(&Key::named("ctrl+a"));
+        // From the start, the word ahead is cut off.
+        i.update(&Key::named("alt+d"));
+        assert_eq!(i.value(), " b c");
+        i.update(&Key::named("ctrl+e"));
+        // ctrl+w takes the word before the cursor, separators with it.
+        i.update(&Key::named("ctrl+w"));
+        assert_eq!(i.value(), " b ");
+        // alt+b lands at the start of the word behind the cursor: from a
+        // clean value, what the tail is worth is then cut away.
+        let mut j = typed("a b");
+        j.update(&Key::named("alt+b"));
+        j.update(&Key::named("ctrl+k"));
+        assert_eq!(j.value(), "a ");
+    }
+
+    // paste lays text over the one line there is, without the control
+    // characters a copy could pick up with it, and matches again.
+    #[test]
+    fn paste_keeps_printable_characters() {
+        let mut i = typed("ab");
+        i.update(&Key::named("left"));
+        // A tab or an escape is a control character; square brackets and
+        // digits are not.
+        i.paste("X\t[0m\nY");
+        assert_eq!(i.value(), "aX[0mYb");
+        i.set_suggestions(vec!["/help".into()]);
+        assert_eq!(i.completion(), None, "a match would be a mistake here");
+    }
+
+    // A key the box does not know is ignored, which an unknown name reaches.
+    #[test]
+    fn an_unknown_key_is_a_no_op() {
+        let mut i = typed("ab");
+        for k in ["ctrl+meta", "f13", "media-play", "clear"] {
+            i.update(&Key::named(k));
+            assert_eq!(i.value(), "ab", "{k} changed the box");
+        }
+    }
+
+    // The cursor is drawn over the text, and over the next character of the
+    // suggestion where there is one.
+    #[test]
+    fn view_draws_the_cursor() {
+        let mut i = typed("ab");
+        i.set_suggestions(vec!["abc".into()]);
+        i.update(&Key::named("left"));
+        let s = span_text(&i.view("> ", Style::default(), Style::default(), Style::default()));
+        assert_eq!(
+            s,
+            ["> ", "a", "b", "c"].concat(),
+            "the cursor sits on b, abc trailing"
+        );
+        i.update(&Key::named("end"));
+        let s = span_text(&i.view("> ", Style::default(), Style::default(), Style::default()));
+        assert_eq!(s, "> abc", "the cursor sits on the suggestion's next c");
+    }
+
+    fn span_text(spans: &[Span<'static>]) -> String {
+        spans.iter().map(|s| s.content.to_string()).collect()
+    }
 }
