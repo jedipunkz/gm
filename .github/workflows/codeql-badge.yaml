@@ -1,0 +1,62 @@
+# The badge is shields.io's endpoint kind, which reads a JSON file instead of
+# asking GitHub for a workflow's answer: only GitHub answers "ran", CodeQL's
+# answer - no alerts, or how many - is what wants showing. This counts the
+# open code-scanning alerts and force-pushes the badges branch, which carries
+# nothing but that file.
+name: CodeQL badge
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: write
+  security-events: read
+
+concurrency:
+  group: codeql-badge
+  cancel-in-progress: true
+
+jobs:
+  badge:
+    name: Update CodeQL badge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Resolve CodeQL status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh api "repos/$REPO/code-scanning/alerts?state=open&per_page=1" >/dev/null 2>&1; then
+            count=$(gh api "repos/$REPO/code-scanning/alerts?state=open&per_page=1" \
+                --paginate --jq 'length' | awk '{s += $1} END {print s + 0}')
+            if [ "$count" -gt 0 ]; then
+              message="$count alert(s)"
+              color=critical
+            else
+              message="no alerts"
+              color=brightgreen
+            fi
+          else
+            message="unavailable"
+            color=inactive
+          fi
+          jq -n --arg m "$message" --arg c "$color" \
+            '{schemaVersion: 1, label: "CodeQL", message: $m, color: $c}' > /tmp/codeql.json
+          cat /tmp/codeql.json
+
+      - name: Publish badge
+        run: |
+          git checkout --orphan badges
+          git rm -rf --quiet .
+          cp /tmp/codeql.json codeql.json
+          git add codeql.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update CodeQL badge"
+          git push origin badges --force

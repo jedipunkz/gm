@@ -4,6 +4,7 @@
 
 <p>
   <a href="https://github.com/jedipunkz/gm/actions/workflows/release.yaml"><img src="https://img.shields.io/github/actions/workflow/status/jedipunkz/gm/release.yaml?branch=main&label=ci&style=flat-square" alt="CI status"></a>
+  <a href="https://github.com/jedipunkz/gm/security/code-scanning"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jedipunkz/gm/badges/codeql.json&style=flat-square" alt="CodeQL status"></a>
   <a href="https://github.com/jedipunkz/gm/releases/latest"><img src="https://img.shields.io/github/v/release/jedipunkz/gm?style=flat-square" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/built_with-Rust-dea584?style=flat-square&logo=rust" alt="Built with Rust">
 </p>
