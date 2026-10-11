@@ -342,4 +342,23 @@ mod tests {
         let mid_word = match_score("#123 tfix here", &[6, 7, 8]);
         assert!(after_space > mid_word, "{after_space} <= {mid_word}");
     }
+
+    // Edge paths the callers reach with an empty query or an unhittable text:
+    // nothing to rank is zero, and a query with nothing to search finds
+    // nothing.
+    #[test]
+    fn empty_inputs_answer_empty() {
+        assert_eq!(match_score("github.com/x/y", &[]), 0.0);
+        assert_eq!(
+            substring_match("github.com/x/y", ""),
+            Some(Vec::new()),
+            "the costliest false hit is none at all"
+        );
+        assert_eq!(
+            substring_match("", "zz"),
+            Option::<Vec<usize>>::None,
+            "an empty text cannot hold a query"
+        );
+        assert!(find("", &["github.com/x/y"]).is_empty());
+    }
 }

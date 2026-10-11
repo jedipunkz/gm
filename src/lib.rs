@@ -157,6 +157,25 @@ pub mod paths {
             );
             assert_eq!(dir("/a/b/c"), "/a/b");
             assert_eq!(dir("/a"), "/");
+            // join with an empty side falls to the other; the clean versions
+            // of each.
+            assert_eq!(join("", "a/b"), clean("a/b"));
+            assert_eq!(join("a/b", ""), clean("a/b"));
+            assert_eq!(dir("noslash"), ".");
+        }
+
+        #[test]
+        fn abs_makes_a_path_absolute() {
+            let wd = std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            assert_eq!(abs("/a/b").unwrap(), "/a/b", "an absolute path stays");
+            assert_eq!(
+                abs("a/b").unwrap(),
+                format!("{}/a/b", wd.trim_end_matches('/'))
+            );
+            assert!(abs("a/b/../c").unwrap().ends_with("/c"));
         }
     }
 }

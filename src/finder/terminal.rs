@@ -172,5 +172,39 @@ mod tests {
             key_of(KeyCode::Char('Y'), KeyModifiers::SHIFT),
             Some(Key::char('Y'))
         );
+        // Every name the finder's key map can answer to is spelled here, so a
+        // terminal's report never hides behind an untested branch.
+        for (c, m, want) in [
+            (KeyCode::Enter, KeyModifiers::NONE, "enter"),
+            (KeyCode::Tab, KeyModifiers::NONE, "tab"),
+            (
+                // BackTab is tab with the shift flag on, whatever the terminal
+                // also said.
+                KeyCode::BackTab,
+                KeyModifiers::SHIFT,
+                "shift+tab",
+            ),
+            (KeyCode::Backspace, KeyModifiers::NONE, "backspace"),
+            (KeyCode::Delete, KeyModifiers::NONE, "delete"),
+            (KeyCode::Up, KeyModifiers::NONE, "up"),
+            (KeyCode::Down, KeyModifiers::NONE, "down"),
+            (KeyCode::Left, KeyModifiers::ALT, "alt+left"),
+            (KeyCode::Right, KeyModifiers::NONE, "right"),
+            (KeyCode::Home, KeyModifiers::NONE, "home"),
+            (KeyCode::End, KeyModifiers::NONE, "end"),
+            (KeyCode::PageUp, KeyModifiers::NONE, "pgup"),
+            (KeyCode::PageDown, KeyModifiers::NONE, "pgdown"),
+            (KeyCode::F(12), KeyModifiers::NONE, "f12"),
+            (
+                KeyCode::Char('M'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                "ctrl+shift+m",
+            ),
+            (KeyCode::Char('x'), KeyModifiers::ALT, "alt+x"),
+        ] {
+            assert_eq!(k(c, m), want, "{c:?} with {m:?}");
+        }
+        // A key the finder has no name for is dropped rather than invented.
+        assert_eq!(key_of(KeyCode::Null, KeyModifiers::NONE), None);
     }
 }
