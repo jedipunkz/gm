@@ -1937,7 +1937,7 @@ fn empty_lists_are_named() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     m.branches_of = Arc::new(|_| Ok(vec![]));
-    m.open_branches();
+    open_branches(&mut m);
     assert!(m.mode == Mode::Repos, "{:?}", m.note);
     assert!(
         m.note.contains("no branches in github.com/acme/alpha"),
@@ -2195,6 +2195,15 @@ fn branch_model(root: &TempDir) -> (Model, Repo) {
     (m, r)
 }
 
+/// open_branches presses the branch key and hands the finder git's answer,
+/// returning what it asked next: the remotes, for what the last fetch did not
+/// bring.
+fn open_branches(m: &mut Model) -> Vec<Cmd> {
+    let cmds = m.update(key("ctrl+l"));
+    assert_eq!(m.mode, Mode::Repos, "the list changed before git answered");
+    feed(m, cmds)
+}
+
 // The newest branch rests under the cursor, a remote-only branch reads as the
 // remote's, Enter on a branch that is already checked out goes there, and the
 // key toggles the list off.
@@ -2203,6 +2212,8 @@ fn branch_mode() {
     let root = TempDir::new();
     let (mut m, r) = branch_model(&root);
     let cmds = m.update(key("ctrl+l"));
+    assert!(m.busy.contains("branches of"), "{:?}", m.busy);
+    let cmds = feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Branches);
     assert_eq!(rows(&m).join(" "), "origin/feat/login fix/timeout main");
     feed(&mut m, cmds);
@@ -2235,11 +2246,25 @@ fn branch_mode() {
     assert!(m.mode == Mode::Repos && !is_quit(&cmds));
 }
 
+// git is asked off the UI thread, and an answer about a repository the
+// cursor has left is dropped rather than replacing the list it is on.
+#[test]
+fn branch_mode_drops_a_stale_answer() {
+    let root = TempDir::new();
+    let (mut m, _) = branch_model(&root);
+    let cmds = m.update(key("ctrl+l"));
+    set_query(&mut m, "nothing matches this");
+    feed(&mut m, cmds);
+    assert_eq!(m.mode, Mode::Repos);
+    assert_eq!(m.busy, "", "the wait outlived its answer");
+}
+
 #[test]
 fn branches_command() {
     let root = TempDir::new();
     let (mut m, _) = branch_model(&root);
-    run_slash(&mut m, "/branches");
+    let cmds = run_slash(&mut m, "/branches");
+    feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Branches);
 }
 
@@ -2251,7 +2276,7 @@ fn branches_command() {
 fn branch_query_prefers_the_named_branch() {
     let root = TempDir::new();
     let (mut m, _) = branch_model(&root);
-    m.update(key("ctrl+l"));
+    open_branches(&mut m);
     // A branch made after main, the way a feature branch arrives later: newer,
     // so without the tie-break it would take main's place at the bottom.
     m.all.push(Item {
@@ -2280,7 +2305,7 @@ fn branch_check_out() {
     git(&r.path(), &["branch", "fix/timeout"]);
 
     let mut m = new_model(std::slice::from_ref(&r), "");
-    m.update(key("ctrl+l"));
+    open_branches(&mut m);
     typed(&mut m, "timeout");
     assert_eq!(label(&m), "fix/timeout");
     let cmds = m.update(key("enter"));
@@ -2318,7 +2343,7 @@ fn add_worktree_updates_branch_row_and_invalidates_status() {
             ..Default::default()
         },
     );
-    m.update(key("ctrl+l"));
+    open_branches(&mut m);
     m.busy.clear(); // this test does not run the remote-branch task
     set_query(&mut m, "timeout");
     assert_eq!(label(&m), "fix/timeout");
@@ -2393,7 +2418,7 @@ fn create_updates_saved_repository_list_only() {
 fn remote_branches_join_the_list() {
     let root = TempDir::new();
     let (mut m, _) = branch_model(&root);
-    let cmds = m.update(key("ctrl+l"));
+    let cmds = open_branches(&mut m);
     assert!(m.busy.contains("asking the remotes"), "{:?}", m.busy);
     let before = label(&m);
     let Some(Msg::RemoteBranches(msg)) = answer(cmds) else {
@@ -2433,7 +2458,7 @@ fn remote_branches_say_why_not() {
             Some("origin: Could not read from remote repository.".into()),
         )
     });
-    let cmds = m.update(key("ctrl+l"));
+    let cmds = open_branches(&mut m);
     feed(&mut m, cmds);
     assert!(
         m.view.len() == 3 && m.note.contains("origin: Could not read"),
@@ -2443,7 +2468,7 @@ fn remote_branches_say_why_not() {
     );
 
     let (mut m, _) = branch_model(&root);
-    let cmds = m.update(key("ctrl+l"));
+    let cmds = open_branches(&mut m);
     m.update(key("ctrl+l"));
     feed(&mut m, cmds);
     assert!(m.mode == Mode::Repos && m.view.len() == 1);
@@ -2466,7 +2491,7 @@ fn unfetched_branch_check_out() {
     git(&upstream, &["branch", "feat/new"]);
 
     let mut m = new_model(std::slice::from_ref(&r), "");
-    let cmds = m.update(key("ctrl+l"));
+    let cmds = open_branches(&mut m);
     feed(&mut m, cmds);
     typed(&mut m, "new");
     assert_eq!(label(&m), "origin/feat/new", "{:?}", rows(&m));
@@ -2825,7 +2850,7 @@ fn stale_busy_answers_do_not_clear_newer_work() {
             "acme",
         )])
     });
-    let remote_cmds = m.update(key("ctrl+l"));
+    let remote_cmds = open_branches(&mut m);
     let Some(Msg::RemoteBranches(remote)) = answer(remote_cmds) else {
         panic!("no answer from the remotes")
     };
@@ -2856,7 +2881,7 @@ fn stale_busy_answers_do_not_clear_newer_work() {
     let Some(Msg::Prs(prs)) = answer(pr_cmds) else {
         panic!("no answer from gh")
     };
-    let remote_cmds = m.update(key("ctrl+l"));
+    let remote_cmds = open_branches(&mut m);
     let Some(Msg::RemoteBranches(remote)) = answer(remote_cmds) else {
         panic!("no answer from the remotes")
     };

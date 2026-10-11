@@ -189,6 +189,7 @@ pub enum Msg {
     Spin(u64),                      // the spinner's next frame, with its tag
     Done(Done),                     // a confirmed change has been carried out
     Worktrees(Worktrees),           // git's worktree list for one repository
+    Branches(Branches),             // git's branch list for one repository
     RemoteBranches(RemoteBranches), // what the remotes have that was not fetched
     Prs(Prs),                       // gh's answer about one repository
     RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
@@ -200,6 +201,15 @@ pub struct Worktrees {
     path: String, // the repository it was asked about
     busy_tag: u64,
     wts: Result<Vec<Worktree>>,
+}
+
+/// Branches carries git's branch list for one repository, and where each
+/// branch that is checked out is.
+pub struct Branches {
+    path: String, // the repository it was asked about
+    busy_tag: u64,
+    branches: Result<Vec<Branch>>,
+    at: HashMap<String, String>, // branch name -> worktree path
 }
 
 /// RemoteBranches carries what the remotes of one repository have that the
@@ -416,6 +426,7 @@ impl Model {
             }
             Msg::Done(d) => self.done(d),
             Msg::Worktrees(w) => self.show_worktrees(w),
+            Msg::Branches(b) => self.show_branches(b),
             Msg::RemoteBranches(r) => self.add_remote_branches(r),
             Msg::Prs(p) => self.show_prs(p),
             Msg::RepoStates(tag, states) => {
