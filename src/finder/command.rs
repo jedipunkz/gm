@@ -67,7 +67,19 @@ pub const COMMANDS: &[Command] = &[
             if m.mode != Mode::Repos {
                 return m.confirm_worktree(arg);
             }
-            let u = match repo::normalize_url(arg, false) {
+            // The flag gm create takes, spelled the same, so a user who
+            // pushes over SSH does not fix the remote after every /create.
+            let (ssh, arg) = match arg.strip_prefix("--ssh") {
+                Some(rest) if rest.is_empty() || rest.starts_with(char::is_whitespace) => {
+                    (true, rest.trim())
+                }
+                _ => (false, arg),
+            };
+            if arg.is_empty() {
+                m.note = "/create --ssh needs a repository".into();
+                return vec![];
+            }
+            let u = match repo::normalize_url(arg, ssh) {
                 Ok(u) => u,
                 Err(e) => {
                     m.note = e.0;
@@ -84,6 +96,7 @@ pub const COMMANDS: &[Command] = &[
             m.confirm(Pending {
                 kind: Change::Create,
                 arg: arg.into(),
+                ssh,
                 title: "create repository".into(),
                 detail: vec![tildify(&dst), format!("origin {u}")],
                 ..Default::default()

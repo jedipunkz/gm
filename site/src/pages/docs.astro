@@ -63,7 +63,7 @@ const keys = [
 
 const slash = [
   ["`/get [flags] <repo>`", "Clone (runs `gm get`) and go to it", "All"],
-  ["`/create <repo>`", "Create a new repository with `origin` set", "Repositories"],
+  ["`/create [--ssh] <repo>`", "Create a new repository with `origin` set (`--ssh`: SSH URL)", "Repositories"],
   ["`/create <branch>`", "Check the branch out as a worktree; a new branch starts from `HEAD`", "Worktrees, branches, PRs"],
   ["`/remove`", "Remove the selected repository with its worktrees, or the selected worktree and its merged branch. Never the main worktree", "Repositories, worktrees"],
   ["`/expire <days>d`", "Remove worktrees whose `HEAD` has not moved for that long, and their merged branches", "Worktrees"],

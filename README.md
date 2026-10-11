@@ -99,7 +99,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 |---|---|
 | `/dirty` | Toggle: only repositories with uncommitted changes, in the repository or one of its worktrees |
 | `/unpushed` | Toggle: only repositories with unpushed commits, in the repository or one of its worktrees |
-| `/create <repo>` | Create a repository with `origin` set; it is added and selected |
+| `/create [--ssh] <repo>` | Create a repository with `origin` set (`--ssh`: SSH URL); it is added and selected |
 | `/remove` | Remove the selected repository and its worktrees (the panel says how many) |
 
 - `/dirty` and `/unpushed` together keep repositories matching both. One background status scan serves both, and switching either on scans again. `Esc` clears the query, then the filters.

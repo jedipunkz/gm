@@ -1274,6 +1274,34 @@ fn confirm_create() {
     assert!(m.note.contains("created"));
 }
 
+// The bug where /create always set an HTTPS origin: --ssh does what it does
+// for gm create, and is said in the panel before anything is made.
+#[test]
+fn confirm_create_over_ssh() {
+    let root = TempDir::new();
+    let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
+    (m.w, m.h) = (90, 16);
+    run_slash(&mut m, "/create --ssh");
+    assert!(m.note.contains("needs a repository"), "{:?}", m.note);
+
+    run_slash(&mut m, "/create --ssh acme/bravo");
+    assert_eq!(m.over, Overlay::Confirm);
+    assert_eq!(m.ask.arg, "acme/bravo");
+    let view = view_text(&m);
+    assert!(
+        view.contains("origin ssh://git@github.com/acme/bravo"),
+        "{view}"
+    );
+
+    let cmds = m.update(ch('y'));
+    feed(&mut m, cmds);
+    let dst = root.join("github.com/acme/bravo");
+    assert_eq!(
+        repo::git_in(&dst, &["remote", "get-url", "origin"]).unwrap(),
+        "ssh://git@github.com/acme/bravo"
+    );
+}
+
 // /create asks every root first, so the panel never offers to make a second
 // copy of a repository that lives under another one.
 #[test]

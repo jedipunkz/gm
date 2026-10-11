@@ -46,6 +46,7 @@ pub struct Pending {
     pub detail: Vec<String>, // what it will do, a line each
     pub force: bool, // there is work in it and the user has been told
     pub wts: Vec<Worktree>, // the worktrees /expire removes
+    pub ssh: bool,   // a created repository's origin is its SSH URL
 }
 
 impl Model {
@@ -75,7 +76,7 @@ impl Model {
                     None => Err(err!("{} is not under any root", a.arg)),
                     Some(r) => repo::delete(&r).map(|_| (r.path(), r.rel)),
                 }),
-                Change::Create => done(tree.create(&a.arg, false).map(|r| (r.path(), r.rel))),
+                Change::Create => done(tree.create(&a.arg, a.ssh).map(|r| (r.path(), r.rel))),
                 Change::AddWorktree | Change::CheckOut => done((|| {
                     if a.fetch {
                         let b = Branch {
