@@ -764,6 +764,36 @@ fn migrate_named_directory_still_errors() {
     assert!(r.res.unwrap_err().0.contains("has no origin remote"));
 }
 
+// A repository a secondary root already holds is in place there: a stray
+// clone of it must not become a second copy under the primary root, and
+// the placed one must not be moved to the primary root either.
+#[test]
+fn migrate_respects_the_other_roots() {
+    let base = TempDir::new();
+    let (first, second) = (base.join("r1"), base.join("r2"));
+    mkdir(&first);
+    let placed = init_repo(
+        &paths::join(&second, "github.com/acme/x"),
+        "https://github.com/acme/x",
+    );
+    let stray = init_repo(&base.join("stray/x"), "https://github.com/acme/x");
+    let t = Tree {
+        roots: vec![first.clone(), second.clone()],
+    };
+
+    let r = run_in(&t, "", Config::default(), |a| {
+        a.migrate(&args(&["--dry-run", &placed]))
+    });
+    r.res.unwrap();
+    assert!(r.err.contains(&format!("in place {placed}")), "{}", r.err);
+
+    let r = run_in(&t, "", Config::default(), |a| {
+        a.migrate(&args(&["--dry-run", &stray]))
+    });
+    let e = r.res.expect_err("a second copy of acme/x would be made").0;
+    assert!(e.contains(&placed), "{e}");
+}
+
 // Each reason a repository is listed, and the one reason it is not.
 #[test]
 fn status_finds_unfinished_work() {

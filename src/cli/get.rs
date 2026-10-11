@@ -500,10 +500,19 @@ impl App<'_> {
         let Ok(u) = repo::normalize_url(&remote, false) else {
             return Plan::Problem(format!("has an origin gm cannot read ({remote})"));
         };
-        let dst = self.tree.path_for(&repo::rel_path_of(&u));
-        if src == dst {
+        // Any root can hold the repository, not just the primary one: under
+        // another root it is in place already, and moving a stray clone of
+        // it in would make a second copy. same_path lets a root reached
+        // through a symlink still count as the root.
+        let rel = repo::rel_path_of(&u);
+        let existing = self.tree.existing_paths(&rel);
+        if existing.iter().any(|p| repo::same_path(p, src)) {
             return Plan::InPlace;
         }
+        if let Some(other) = existing.first() {
+            return Plan::Problem(format!("is already cloned at {other}"));
+        }
+        let dst = self.tree.path_for(&rel);
         if paths::exists(&dst) {
             return Plan::Problem(format!("would move to {dst}, which already exists"));
         }
