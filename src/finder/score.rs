@@ -5,18 +5,19 @@
 /// ties. Every repository path shares a long `host/user/` prefix, so a
 /// subsequence scattered across that prefix must never beat a run of
 /// characters inside the repository name itself.
-const BONUS_BOUNDARY: f64 = 8.0; // the match starts a new word (after / - _ .)
+const BONUS_BOUNDARY: f64 = 8.0; // the match starts a new word (after / - _ . space)
 const BONUS_CONSECUTIVE: f64 = 6.0; // the match continues the previous one
 const BONUS_NAME_SEG: f64 = 10.0; // the match is inside the repository name
 const BONUS_USER_SEG: f64 = 3.0; // ...or at least inside the user name
 const PENALTY_HOST_SEG: f64 = 4.0; // the host is the same for nearly every repo: noise
 const BONUS_WHOLE_IN_NAME: f64 = 25.0; // the whole query lives in the repository name
+const BONUS_NAME_IS_QUERY: f64 = 25.0; // the query spells the repository name whole
 const PENALTY_GAP_START: f64 = 3.0; // each run of skipped characters costs this...
 const PENALTY_GAP_CHAR: f64 = 1.0; // ...plus this per character skipped
 const MAX_GAP_CHARS: usize = 20; // a long path must not dominate the score
 
 fn is_boundary(c: u8) -> bool {
-    matches!(c, b'/' | b'-' | b'_' | b'.')
+    matches!(c, b'/' | b'-' | b'_' | b'.' | b' ')
 }
 
 /// match_score rates one match by where its characters landed, fzy-style:
@@ -71,8 +72,21 @@ pub fn match_score(text: &str, idx: &[usize]) -> f64 {
 
 /// substring_match returns the byte offsets of query inside text when it
 /// occurs literally. A typed substring is what the user meant, so it wins over
-/// any subsequence the fuzzy matcher would piece together from elsewhere.
+/// any subsequence the fuzzy matcher would piece together from elsewhere. A
+/// label can hold the query more than once: the occurrence match_score ranks
+/// highest wins, so "gm" lands on the repository it names, not in the user
+/// name an earlier "gm" happens to sit in.
 pub fn substring_match(text: &str, lower_query: &str) -> Option<Vec<usize>> {
+    // consider keeps the first of equally good landings, which is what the
+    // lists showed before the best landing was sought at all.
+    let mut best: Option<(f64, Vec<usize>)> = None;
+    let mut consider = |pos: Vec<usize>| {
+        let score = match_score(text, &pos);
+        if best.as_ref().is_none_or(|(s, _)| score > *s) {
+            best = Some((score, pos));
+        }
+    };
+
     if text.is_ascii() {
         // An ASCII text lowers bytewise, so the query can be found without
         // lowering the whole text into a fresh string.
@@ -80,11 +94,17 @@ pub fn substring_match(text: &str, lower_query: &str) -> Option<Vec<usize>> {
         if needle.is_empty() {
             return Some(Vec::new());
         }
-        let at = text
-            .as_bytes()
-            .windows(needle.len())
-            .position(|w| w.iter().zip(needle).all(|(a, b)| a.eq_ignore_ascii_case(b)))?;
-        return Some(lower_query.char_indices().map(|(i, _)| at + i).collect());
+        let hay = text.as_bytes();
+        for (at, window) in hay.windows(needle.len()).enumerate() {
+            if window
+                .iter()
+                .zip(needle)
+                .all(|(a, b)| a.eq_ignore_ascii_case(b))
+            {
+                consider((at..at + needle.len()).collect());
+            }
+        }
+        return best.map(|(_, pos)| pos);
     }
 
     let query: Vec<char> = lower_query.chars().collect();
@@ -92,15 +112,32 @@ pub fn substring_match(text: &str, lower_query: &str) -> Option<Vec<usize>> {
         return Some(Vec::new());
     }
     let chars: Vec<(usize, char)> = text.char_indices().collect();
-    chars
-        .windows(query.len())
-        .find(|window| {
-            window
-                .iter()
-                .zip(&query)
-                .all(|((_, candidate), query)| equal_fold(*candidate, *query))
-        })
-        .map(|window| window.iter().map(|&(offset, _)| offset).collect())
+    for window in chars.windows(query.len()) {
+        if window
+            .iter()
+            .zip(&query)
+            .all(|((_, candidate), query)| equal_fold(*candidate, *query))
+        {
+            consider(window.iter().map(|&(offset, _)| offset).collect());
+        }
+    }
+    best.map(|(_, pos)| pos)
+}
+
+/// rank scores one label the filter sorts by: where match_score put the
+/// characters, promoted when the query spells the label's own name whole.
+/// No history is needed for "gm" to mean github.com/x/gm over the
+/// repositories that merely carry "gm" inside a longer name or user.
+pub fn rank(text: &str, pos: &[usize], lower_query: &str) -> f64 {
+    let mut score = match_score(text, pos);
+    let name = text.rfind('/').map_or(0, |i| i + 1);
+    let name_of = &text[name..];
+    if name_of.eq_ignore_ascii_case(lower_query)
+        || (!name_of.is_ascii() && name_of.to_lowercase() == lower_query)
+    {
+        score += BONUS_NAME_IS_QUERY;
+    }
+    score
 }
 
 /// Match is one candidate the fuzzy matcher kept.
@@ -258,5 +295,51 @@ mod tests {
         // "a" is acme's: the literal run is substring_match's to find.
         let m = &find("ALP", &data)[0];
         assert_eq!((m.index, m.matched.as_slice()), (0, &[11, 17, 18][..]));
+    }
+
+    // The query can sit in a label more than once; "gm" in gmdev/gm belongs
+    // where it names the repository, not in the user name before it.
+    #[test]
+    fn substring_match_picks_the_meaningful_occurrence() {
+        assert_eq!(
+            substring_match("github.com/gmdev/gm", "gm").unwrap(),
+            vec![17, 18]
+        );
+        // An equal landing keeps the first, and none keeps None.
+        assert_eq!(
+            substring_match("github.com/acme/note-note", "note").unwrap(),
+            vec![16, 17, 18, 19]
+        );
+        assert_eq!(
+            substring_match("github.com/acme/alpha", "zzz"),
+            Option::<Vec<usize>>::None
+        );
+    }
+
+    // "gm" means github.com/x/gm: the repository the query names whole
+    // outranks the ones that carry it inside a longer name or a user, with
+    // no visit history to say otherwise.
+    #[test]
+    fn a_name_the_query_equals_outranks_partial_hits() {
+        let whole = "github.com/jedipunkz/gm";
+        let partial = "github.com/gmdev/tools";
+        let query = "gm";
+        assert!(
+            rank(whole, &substring_match(whole, query).unwrap(), query)
+                > rank(partial, &substring_match(partial, query).unwrap(), query)
+        );
+        // The same holds after a case fold outside ASCII.
+        let folded = "github.com/x/Tök";
+        let positions = substring_match(folded, "tök").unwrap();
+        assert!(rank(folded, &positions, "tök") > match_score(folded, &positions));
+    }
+
+    // The PR list is worded in spaces, and a query after one is at a word's
+    // start the way a query after a slash is.
+    #[test]
+    fn a_space_starts_a_word() {
+        let after_space = match_score("#123 fix here", &[5, 6, 7]);
+        let mid_word = match_score("#123 tfix here", &[6, 7, 8]);
+        assert!(after_space > mid_word, "{after_space} <= {mid_word}");
     }
 }
