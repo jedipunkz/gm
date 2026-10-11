@@ -3,7 +3,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use super::deadline::{FETCH_TIMEOUT, run_deadline};
-use super::git::{exit_error, git_message};
+use super::git::{failure, quiet_result};
 use crate::{Error, Result, err, paths};
 
 /// PullRequest is an open pull request, as much of it as a list row and the
@@ -92,7 +92,7 @@ fn pull_requests_with(gh: &OsStr, timeout: Duration, dir: &str) -> Result<Vec<Pu
         .env("GH_PROMPT_DISABLED", "1");
     let out = run_deadline(&mut cmd, timeout, "gh pr list", gh_missing)?;
     if !out.status.success() {
-        return Err(gh_failed(&out));
+        return Err(failure(&out.stderr, &out.status));
     }
     parse_pull_requests(&out.stdout)
 }
@@ -135,15 +135,7 @@ pub fn check_out_pull_request(gh: &str, repo_dir: &str, dir: &str, number: u64) 
         .current_dir(repo_dir)
         .env("GH_PROMPT_DISABLED", "1");
     let out = run_deadline(&mut cmd, GH_CHECKOUT_TIMEOUT, "gh pr checkout", gh_missing)?;
-    if out.status.success() {
-        return Ok(());
-    }
-    let mut all = out.stdout.clone();
-    all.extend_from_slice(&out.stderr);
-    match git_message(&all) {
-        msg if !msg.is_empty() => Err(Error(msg)),
-        _ => Err(exit_error(&out.status)),
-    }
+    quiet_result(out)
 }
 
 /// check_out_pull_request_in removes the empty directories it made if gh
@@ -171,14 +163,6 @@ fn gh_missing(e: std::io::Error) -> Error {
         return "gh is not installed: pull requests come from the GitHub CLI".into();
     }
     e.into()
-}
-
-/// gh_failed is what a gh that ran and failed said about it.
-fn gh_failed(out: &std::process::Output) -> Error {
-    match git_message(&out.stderr) {
-        msg if !msg.is_empty() => Error(msg),
-        _ => exit_error(&out.status),
-    }
 }
 
 #[cfg(test)]

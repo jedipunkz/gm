@@ -3,9 +3,7 @@ use std::ffi::OsStr;
 use std::time::Duration;
 
 use super::deadline::{FETCH_TIMEOUT, LIST_TIMEOUT, run_deadline};
-use super::git::{
-    Branch, exit_error, git_command_with, git_in, git_message, remotes, valid_branch,
-};
+use super::git::{Branch, failure, git_command_with, git_in, remotes, valid_branch};
 use crate::{Error, Result, err};
 
 /// git_remote runs git for a call that talks to a remote, with every way it
@@ -32,10 +30,7 @@ fn git_remote_with(program: &OsStr, timeout: Duration, dir: &str, args: &[&str])
     }
     let out = run_deadline(&mut cmd, timeout, &format!("git {}", args[0]), Error::from)?;
     if !out.status.success() {
-        return match git_message(&out.stderr) {
-            msg if !msg.is_empty() => Err(Error(msg)),
-            _ => Err(exit_error(&out.status)),
-        };
+        return Err(failure(&out.stderr, &out.status));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }

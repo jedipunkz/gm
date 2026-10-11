@@ -76,9 +76,16 @@ pub(crate) fn quiet_result(out: Output) -> Result<()> {
     }
     let mut all = out.stdout;
     all.extend_from_slice(&out.stderr);
-    match git_message(&all) {
-        msg if !msg.is_empty() => Err(Error(msg)),
-        _ => Err(exit_error(&out.status)),
+    Err(failure(&all, &out.status))
+}
+
+/// failure is what a git or gh that ran and failed said about it, out being
+/// whichever of its streams the caller trusts to hold the complaint. A process
+/// that said nothing is worded by its exit status.
+pub(crate) fn failure(out: &[u8], status: &std::process::ExitStatus) -> Error {
+    match git_message(out) {
+        msg if !msg.is_empty() => Error(msg),
+        _ => exit_error(status),
     }
 }
 
@@ -128,7 +135,7 @@ pub fn git_in(dir: &str, args: &[&str]) -> Result<String> {
         .stdin(Stdio::null())
         .output()?;
     if !out.status.success() {
-        return Err(exit_error(&out.status));
+        return Err(failure(&out.stderr, &out.status));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
@@ -1299,5 +1306,14 @@ detached
             .unwrap(),
             "origin/feat/login"
         );
+    }
+
+    // git_in once kept git's complaint to itself and said only "exit status
+    // 128": the user is told what git said instead.
+    #[test]
+    fn git_in_says_what_git_said() {
+        let tmp = TempDir::new();
+        let e = git_in(&tmp.path(), &["rev-parse", "HEAD"]).unwrap_err();
+        assert!(e.0.contains("not a git repository"), "{e}");
     }
 }
