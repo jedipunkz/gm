@@ -16,6 +16,10 @@ pub(crate) fn git_command() -> Command {
 
 /// git_command_with is git_command for a caller that supplies the executable.
 pub(crate) fn git_command_with(program: &OsStr) -> Command {
+    #[cfg(test)]
+    if program == OsStr::new("git") {
+        GIT_SPAWNS.fetch_add(1, Ordering::Relaxed);
+    }
     let command = Command::new(program);
     #[cfg(test)]
     let command = {
@@ -24,6 +28,19 @@ pub(crate) fn git_command_with(program: &OsStr) -> Command {
         command
     };
     command
+}
+
+/// GIT_SPAWNS counts the git processes started through git_command, the one
+/// gate every git spawn in production code passes. Counting is a test-build
+/// concern: the release binary carries no counter and reads no knob for it.
+#[cfg(test)]
+static GIT_SPAWNS: AtomicUsize = AtomicUsize::new(0);
+
+/// git_spawns_reset returns how many git processes have been started since
+/// the last call and counts from zero again.
+#[cfg(test)]
+pub fn git_spawns_reset() -> usize {
+    GIT_SPAWNS.swap(0, Ordering::Relaxed)
 }
 
 #[cfg(test)]
