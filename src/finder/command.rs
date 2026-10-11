@@ -187,10 +187,17 @@ pub const COMMANDS: &[Command] = &[
                     // They go with --force, so the work in each is named here
                     // or nowhere.
                     if !others.is_empty() {
+                        // A checkout outside gm's worktree directory is named
+                        // by its path, which only the question says.
+                        let dir = tree.at(&it.path).map(|r| repo::worktrees_dir(&r));
+                        let labels = match &dir {
+                            Some(d) => repo::worktree_labels_in(d, &others, |p| changed(p)),
+                            None => repo::worktree_labels(&others, |p| changed(p)),
+                        };
                         detail.push(format!(
                             "{} will go too: {}",
                             plural(others.len(), "worktree", "worktrees"),
-                            repo::worktree_labels(&others, |p| changed(p))
+                            labels
                         ));
                     }
                     if let Some(r) = tree.at(&it.path) {

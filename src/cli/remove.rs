@@ -41,7 +41,7 @@ impl App<'_> {
         // discovered afterwards.
         let wts = repo::other_worktrees(r);
         if !wts.is_empty() {
-            writeln!(self.err, "warning: {}", worktree_warning(&wts))?;
+            writeln!(self.err, "warning: {}", worktree_warning(r, &wts))?;
         }
         let strays = repo::strays(r, &wts);
         if !strays.is_empty() {
@@ -60,7 +60,16 @@ impl App<'_> {
             writeln!(self.err, "skipped")?;
             return Ok(());
         }
-        repo::delete(r)?;
+        let left = repo::delete(r)?;
+        // A checkout that git refused and the tree does not own stays where
+        // it is, and this is where that is said.
+        for p in &left {
+            writeln!(
+                self.err,
+                "warning: left in place, not under {}: {p}",
+                repo::worktrees_dir(r)
+            )?;
+        }
         writeln!(self.err, "removed  {}", r.path())?;
         Ok(())
     }
@@ -68,8 +77,9 @@ impl App<'_> {
 
 /// worktree_warning names what will be taken along with a repository, and the
 /// work in each of them: they are removed with --force, so git will not stop
-/// for it.
-fn worktree_warning(wts: &[repo::Worktree]) -> String {
+/// for it. A checkout outside gm's worktree directory is named by its path,
+/// which only the warning says.
+fn worktree_warning(r: &Repo, wts: &[repo::Worktree]) -> String {
     let what = if wts.len() == 1 {
         "worktree"
     } else {
@@ -78,6 +88,6 @@ fn worktree_warning(wts: &[repo::Worktree]) -> String {
     format!(
         "{} {what} will be removed too: {}",
         wts.len(),
-        repo::worktree_labels(wts, repo::changed_files)
+        repo::worktree_labels_in(&repo::worktrees_dir(r), wts, repo::changed_files)
     )
 }

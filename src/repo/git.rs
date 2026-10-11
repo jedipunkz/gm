@@ -352,10 +352,25 @@ pub fn changed_files(dir: &str) -> usize {
 /// would go with it: "feat/login (3 changed), fix/timeout". changed is
 /// changed_files, or what a test puts in its place.
 pub fn worktree_labels(wts: &[Worktree], changed: impl Fn(&str) -> usize) -> String {
+    worktree_labels_in("", wts, changed)
+}
+
+/// worktree_labels_in is worktree_labels with dir, gm's worktree directory for
+/// the repository: a checkout whose path is outside it is named by its path as
+/// well, because git's entry, not gm's tree, decides where it is and the
+/// warning is the only place the reader learns it.
+pub fn worktree_labels_in(dir: &str, wts: &[Worktree], changed: impl Fn(&str) -> usize) -> String {
     wts.iter()
-        .map(|w| match changed(&w.path) {
-            0 => w.label(),
-            n => format!("{} ({n} changed)", w.label()),
+        .map(|w| {
+            let where_ = if dir.is_empty() || super::is_under(&w.path, dir) {
+                String::new()
+            } else {
+                format!(" at {}", w.path)
+            };
+            match changed(&w.path) {
+                0 => format!("{}{where_}", w.label()),
+                n => format!("{}{where_} ({n} changed)", w.label()),
+            }
         })
         .collect::<Vec<_>>()
         .join(", ")
