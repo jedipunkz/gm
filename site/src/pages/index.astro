@@ -5,6 +5,7 @@ import FinderDemo from "../components/FinderDemo.astro";
 import ThemeGallery from "../components/ThemeGallery.astro";
 
 const REPO = "https://github.com/jedipunkz/gm";
+const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
 const features = [
   {
@@ -117,19 +118,31 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
   <main id="top">
     <section class="hero">
       <div class="container">
-        <p class="eyebrow">ghq-style repository manager · built-in fuzzy finder · written in Rust</p>
-        <h1>Jump to any repository.<br /><span class="grad">Or any of its worktrees.</span></h1>
-        <p class="lead hero-lead">
-          <code>gm</code> clones into one predictable <code>host/user/repo</code> tree, and <kbd>Ctrl</kbd>+<kbd>G</kbd>{" "}
-          takes you to any of them — ranked by how well they match and how often you go there.
-        </p>
-        <div class="cta">
-          <div class="install-pill">
-            <span class="dollar" aria-hidden="true">$</span>
-            <code>brew install jedipunkz/gm/gm</code>
-            <button type="button" class="pill-copy" data-copy="brew install jedipunkz/gm/gm">Copy</button>
+        <div class="hero-top">
+          <img
+            class="hero-art"
+            src={`${base}gm-pedal.webp`}
+            alt="Git Manager effects pedal illustration"
+            width="640"
+            height="722"
+            fetchpriority="high"
+          />
+          <div class="hero-copy">
+            <p class="eyebrow">ghq-style repository manager · built-in fuzzy finder · written in Rust</p>
+            <h1>Jump to any repository.<br /><span class="grad">Or any of its worktrees.</span></h1>
+            <p class="lead hero-lead">
+              <code>gm</code> clones into one predictable <code>host/user/repo</code> tree, and <kbd>Ctrl</kbd>+<kbd>G</kbd>{" "}
+              takes you to any of them — ranked by how well they match and how often you go there.
+            </p>
+            <div class="cta">
+              <div class="install-pill">
+                <span class="dollar" aria-hidden="true">$</span>
+                <code>brew install jedipunkz/gm/gm</code>
+                <button type="button" class="pill-copy" data-copy="brew install jedipunkz/gm/gm">Copy</button>
+              </div>
+              <a class="btn" href={REPO}>View on GitHub →</a>
+            </div>
           </div>
-          <a class="btn" href={REPO}>View on GitHub →</a>
         </div>
 
         <div class="demo">
@@ -392,12 +405,52 @@ const layout = `~/gm/github.com/jedipunkz/gm/            the repository
   .hero-lead {
     margin: 0 auto;
   }
+  .hero-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 8px;
+    margin-bottom: 52px;
+  }
+  .hero-art {
+    display: block;
+    width: min(240px, 60vw);
+    height: auto;
+    filter: drop-shadow(0 18px 32px rgb(0 0 0 / 0.45));
+  }
   .cta {
-    margin: 32px 0 52px;
+    margin-top: 32px;
     display: flex;
     gap: 12px;
     justify-content: center;
     flex-wrap: wrap;
+  }
+  /* Wide screens: the pedal on the left, the copy on the right, the demo
+     below across both. */
+  @media (min-width: 900px) {
+    .hero {
+      text-align: left;
+    }
+    .hero-top {
+      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+      align-items: center;
+      justify-items: stretch;
+      gap: 56px;
+    }
+    .hero-art {
+      width: 100%;
+      max-width: 380px;
+      justify-self: end;
+    }
+    .hero h1 {
+      font-size: clamp(2.3rem, 4.2vw, 3.3rem);
+    }
+    .hero-lead {
+      margin: 0;
+    }
+    .cta {
+      justify-content: flex-start;
+    }
   }
   .install-pill {
     display: inline-flex;
