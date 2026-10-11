@@ -1,0 +1,41 @@
+# CodeQL's own security analysis. It finds the classes of mistakes a
+# dependency-free Rust CLI can still make: command injection through git
+# arguments, path traversal out of the tree, resource leaks. Results land in
+# Security > Code scanning, where the README's badge reads from.
+name: CodeQL
+
+on:
+  pull_request:
+    paths:
+      - "**.rs"
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/codeql.yaml
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze (rust)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: rust
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:rust"
