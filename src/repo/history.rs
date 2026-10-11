@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::repo::Tree;
 use crate::{Result, paths};
 
 /// Visit is how often and how recently one repository was entered.
@@ -36,10 +37,12 @@ impl Visit {
 }
 
 /// History is the visit log. It holds its own file path, so a test can point
-/// it at a temporary directory instead of the user's state directory.
+/// it at a temporary directory instead of the user's state directory, and the
+/// tree, so pruning can tell a deleted repository from an unmounted root.
 #[derive(Debug, Clone, Default)]
 pub struct History {
     pub path: String,
+    pub tree: Tree,
     visits: HashMap<String, Visit>,
 }
 
@@ -61,7 +64,7 @@ impl History {
     pub fn open(path: &str) -> History {
         let mut h = History {
             path: path.to_string(),
-            visits: HashMap::new(),
+            ..History::default()
         };
         let Ok(b) = std::fs::read(path) else { return h };
         let Ok(serde_json::Value::Object(m)) = serde_json::from_slice(&b) else {
@@ -98,9 +101,15 @@ impl History {
         let v = self.visits.entry(path.to_string()).or_default();
         v.count += 1;
         v.last = now();
-        self.visits.retain(|p, _| {
-            !matches!(std::fs::metadata(p), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
-        });
+        let missing =
+            |p: &str| std::fs::metadata(p).is_err_and(|e| e.kind() == ErrorKind::NotFound);
+        // A repository under a root that is not there, an external disk that
+        // is not mounted, is unavailable rather than gone. One under no root
+        // at all, a root since dropped from the config, has nothing to tell
+        // the two apart, so a missing path is pruned as before.
+        let tree = &self.tree;
+        self.visits
+            .retain(|p, _| !missing(p) || tree.at(p).is_some_and(|r| missing(&r.root)));
         self.save()
     }
 
@@ -155,7 +164,7 @@ fn nanos() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::{TempDir, mkdir};
+    use crate::testutil::{TempDir, mkdir, write};
 
     #[test]
     fn score_ranks_recent_first() {
@@ -188,6 +197,41 @@ mod tests {
         let again = History::open(&path);
         assert_eq!(again.visit(&live).count, 1);
         assert_eq!(again.visit(&dir.join("gone")).count, 0);
+    }
+
+    // A root that is not there, an external disk that is not mounted, says
+    // nothing about the repositories on it: their entries must survive a
+    // visit elsewhere. A repository gone from a root that is there is pruned.
+    #[test]
+    fn bump_keeps_entries_under_a_missing_root() {
+        let dir = TempDir::new();
+        let path = dir.join("frecency.json");
+        let (home, ext) = (dir.join("ghq"), dir.join("ext/ghq"));
+        let (live, gone, away) = (
+            format!("{home}/github.com/o/live"),
+            format!("{home}/github.com/o/gone"),
+            format!("{ext}/github.com/o/away"),
+        );
+        mkdir(&live);
+        write(
+            &path,
+            &format!(r#"{{"{gone}":{{"count":3,"last":1}},"{away}":{{"count":5,"last":1}}}}"#),
+        );
+
+        let mut h = History::open(&path);
+        h.tree = Tree {
+            roots: vec![home, ext],
+        };
+        h.bump(&live).unwrap();
+
+        let again = History::open(&path);
+        assert_eq!(again.visit(&live).count, 1);
+        assert_eq!(
+            again.visit(&away).count,
+            5,
+            "an unmounted root's entry is pruned"
+        );
+        assert_eq!(again.visit(&gone).count, 0, "a deleted repository is kept");
     }
 
     // The window the finder holds open: a visit written by another gm after
