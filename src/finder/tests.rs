@@ -80,6 +80,13 @@ fn run_slash(m: &mut Model, name: &str) -> Vec<Cmd> {
     m.update(key("enter"))
 }
 
+/// ask_remove runs /remove and hands the finder git's account of what would
+/// be lost, which the question waits for before y does anything.
+fn ask_remove(m: &mut Model) {
+    let cmds = run_slash(m, "/remove");
+    feed(m, cmds);
+}
+
 fn is_quit(cmds: &[Cmd]) -> bool {
     cmds.iter().any(|c| matches!(c, Cmd::Quit))
 }
@@ -563,7 +570,7 @@ fn removing_the_last_repository_leaves_a_usable_finder() {
     let mut m = new_model(&rs, "");
     (m.w, m.h) = (80, 12);
 
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     let cmds = m.update(ch('y'));
     feed(&mut m, cmds);
     assert!(m.view.is_empty(), "the list still has {:?}", rows(&m));
@@ -1210,9 +1217,21 @@ fn confirm_remove() {
     let bravo = rs[1].path();
     m.changed_of = Arc::new(move |p| if p == bravo { 3 } else { 0 });
 
-    run_slash(&mut m, "/remove"); // bravo, the bottom row
+    let cmds = run_slash(&mut m, "/remove"); // bravo, the bottom row
     assert_eq!(m.over, Overlay::Confirm);
     assert_eq!(m.ask.arg, rs[1].path());
+    // The question is up before git has answered, and y waits for the
+    // answer: nobody is asked before being told what will be lost.
+    let view = view_text(&m);
+    assert!(view.contains("checking for uncommitted work"), "{view}");
+    assert!(!view.contains("y do it"), "{view}");
+    assert!(
+        m.update(ch('y')).is_empty(),
+        "y was taken before git answered"
+    );
+    assert_eq!(m.over, Overlay::Confirm);
+    feed(&mut m, cmds);
+    assert_eq!(m.busy, "");
     // Only fold-proof words are looked for on screen: where a long path breaks
     // depends on the width of the temporary directory.
     let view = view_text(&m);
@@ -1235,6 +1254,30 @@ fn confirm_remove() {
     assert!(!exists(&rs[1].path()));
     assert_eq!(rows(&m), vec!["github.com/acme/alpha"]);
     assert!(m.note.contains("removed"));
+}
+
+// An answer for a question that has since been cancelled and asked again
+// about another row is not this question's answer.
+#[test]
+fn remove_drops_a_stale_answer() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &["github.com/acme/alpha", "github.com/acme/bravo"],
+    );
+    let mut m = new_model(&rs, "");
+    (m.w, m.h) = (90, 16);
+    only_main(&mut m);
+    let bravo = rs[1].path();
+    m.changed_of = Arc::new(move |p| if p == bravo { 3 } else { 0 });
+    let stale = run_slash(&mut m, "/remove"); // bravo, the bottom row
+    m.update(ch('n'));
+    m.update(key("up"));
+    run_slash(&mut m, "/remove");
+    feed(&mut m, stale);
+    assert_eq!(m.ask.arg, rs[0].path());
+    assert!(m.ask.wait.is_some(), "the stale answer unlocked y");
+    assert!(!view_text(&m).contains("3 uncommitted"));
 }
 
 #[test]
@@ -1452,7 +1495,7 @@ fn remove_says_the_worktrees_go_too() {
             w("/tmp/wt/timeout", "fix/timeout"),
         ])
     });
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
     let view = view_text(&m);
     for want in ["2 worktrees will go too", "feat/login", "fix/timeout"] {
@@ -1481,7 +1524,7 @@ fn remove_names_the_work_in_the_worktrees() {
         ])
     });
     m.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 2 } else { 0 });
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     let view = view_text(&m);
     assert!(view.contains("feat/login (2 changed)"), "{view}");
     assert!(!view.contains("fix/timeout ("), "{view}");
@@ -1503,13 +1546,13 @@ fn remove_asks_git_rather_than_the_cache() {
 
     // Not loaded yet.
     let mut fresh = m.clone();
-    run_slash(&mut fresh, "/remove");
+    ask_remove(&mut fresh);
     assert!(fresh.status.is_empty());
     assert!(view_text(&fresh).contains("4 uncommitted changes"));
 
     // Loaded, but from before the files were changed.
     m.status.insert(rs[0].path(), Status::default());
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert!(view_text(&m).contains("4 uncommitted changes"));
 }
 
@@ -1537,7 +1580,7 @@ fn remove_worktree_forces_what_it_warned_about() {
         .iter()
         .position(|&i| m.all[i].path == "/tmp/wt/login")
         .unwrap();
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
     assert!(m.ask.force);
     assert!(view_text(&m).contains("1 uncommitted changes"));
@@ -1579,7 +1622,7 @@ fn remove_says_nothing_without_worktrees() {
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     (m.w, m.h) = (90, 18);
     only_main(&mut m);
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert!(!view_text(&m).contains("will go too"));
 }
 
@@ -1997,7 +2040,7 @@ fn worktree_create_and_remove() {
     // Now take it away, and its branch: it holds nothing HEAD lacks.
     open_worktrees(&mut m); // the rows that come from git carry their branch
     m.cursor = 0;
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
     assert!(view_text(&m).contains("branch feat/login goes too"));
     let cmds = m.update(ch('y'));

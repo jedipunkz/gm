@@ -3,7 +3,7 @@ use ratatui::text::{Line, Span};
 use super::command::COMMANDS;
 use super::info::{Seg, tildify, wrap_segs};
 use super::worktree::Mode;
-use super::{Cmd, Done, Key, Model, Msg};
+use super::{Cmd, Done, Key, Model, Msg, RemoveDetail};
 use crate::repo::{self, Branch, Worktree};
 use crate::{Error, err, paths, plural};
 
@@ -45,6 +45,7 @@ pub struct Pending {
     pub title: String, // "remove", "create worktree"
     pub detail: Vec<String>, // what it will do, a line each
     pub force: bool, // there is work in it and the user has been told
+    pub wait: Option<u64>, // the busy tag of the git status detail is waiting on; so is y
     pub wts: Vec<Worktree>, // the worktrees /expire removes
     pub ssh: bool,   // a created repository's origin is its SSH URL
 }
@@ -159,6 +160,18 @@ impl Model {
         vec![]
     }
 
+    /// fill_detail puts git's account of what /remove would lose into the
+    /// question, if it is still the one on screen, and lets y answer it.
+    pub(super) fn fill_detail(&mut self, d: RemoveDetail) -> Vec<Cmd> {
+        self.finish_busy(d.busy_tag);
+        if self.over == Overlay::Confirm && self.ask.wait == Some(d.busy_tag) {
+            self.ask.detail = d.detail;
+            self.ask.force = d.force;
+            self.ask.wait = None;
+        }
+        vec![]
+    }
+
     /// box_width is how wide a panel may be: narrow enough to leave the list
     /// visible around it, and never wider than the window.
     fn box_width(&self) -> usize {
@@ -176,13 +189,18 @@ impl Model {
             rows.extend(wrap_segs(&[Seg::new(d, st.subject)], w, "  "));
         }
         rows.push(Line::default());
-        rows.push(Line::from(vec![
-            Span::styled("y", st.ref_local),
-            Span::styled(" do it", st.subject),
-            Span::styled("   ", st.dim),
-            Span::styled("n", st.ref_local),
-            Span::styled(" cancel", st.subject),
-        ]));
+        // y is not offered until the panel can say what it would lose.
+        let mut keys = match self.ask.wait {
+            Some(_) => vec![],
+            None => vec![
+                Span::styled("y", st.ref_local),
+                Span::styled(" do it", st.subject),
+                Span::styled("   ", st.dim),
+            ],
+        };
+        keys.push(Span::styled("n", st.ref_local));
+        keys.push(Span::styled(" cancel", st.subject));
+        rows.push(Line::from(keys));
         rows
     }
 
@@ -309,7 +327,7 @@ impl Model {
             Overlay::Help if matches!(name, "q" | "esc" | "ctrl+c" | "enter") => {
                 self.over = Overlay::None
             }
-            Overlay::Confirm if matches!(name, "y" | "Y") => {
+            Overlay::Confirm if matches!(name, "y" | "Y") && self.ask.wait.is_none() => {
                 let a = std::mem::take(&mut self.ask);
                 self.over = Overlay::None;
                 let busy = match a.kind {

@@ -192,6 +192,7 @@ pub enum Msg {
     Branches(Branches),             // git's branch list for one repository
     RemoteBranches(RemoteBranches), // what the remotes have that was not fetched
     Prs(Prs),                       // gh's answer about one repository
+    RemoveDetail(RemoveDetail),     // what a /remove waiting on git would lose
     RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
     RepoState(String, repo::State), // one repository scanned again after a change
 }
@@ -226,6 +227,14 @@ pub struct Prs {
     path: String, // the repository it was asked about
     busy_tag: u64,
     prs: Result<Vec<(PullRequest, String)>>, // each with where it is checked out, if anywhere
+}
+
+/// RemoveDetail is git's account of what a /remove would lose, for the
+/// question already on screen.
+pub struct RemoveDetail {
+    busy_tag: u64,
+    detail: Vec<String>, // the question's lines, in place of "checking…"
+    force: bool,         // there is uncommitted work in it
 }
 
 /// Task is work off the UI thread; the message it returns is fed back in.
@@ -429,6 +438,7 @@ impl Model {
             Msg::Branches(b) => self.show_branches(b),
             Msg::RemoteBranches(r) => self.add_remote_branches(r),
             Msg::Prs(p) => self.show_prs(p),
+            Msg::RemoveDetail(d) => self.fill_detail(d),
             Msg::RepoStates(tag, states) => {
                 // Merged, not replaced: a repository scanned again while this
                 // scan ran may be one it never heard of.
