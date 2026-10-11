@@ -3,21 +3,20 @@
 # arguments, path traversal out of the tree, resource leaks. Results land in
 # Security > Code scanning, where the README's badge reads from.
 #
-# The paths keep a README-only push from paying for an analysis; the weekly
-# cron is there for the changes no push will announce, such as tool and query
-# upgrades arriving in the action itself.
+# A pull request's analysis files itself under refs/pull/N/merge, and only a
+# run against main answers for the default branch - so main is scanned by the
+# weekly cron, which also picks up what arrives through no commit of ours:
+# the query packs and the Rust extractor ride in with the action. The paths
+# keep a README-only pull request from paying for an analysis.
 name: CodeQL
 
 on:
   pull_request:
-    paths: &rust
+    paths:
       - "**.rs"
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/codeql.yaml
-  push:
-    branches: [main]
-    paths: *rust
   schedule:
     - cron: "17 3 * * 1"
 
