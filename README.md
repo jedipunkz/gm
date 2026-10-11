@@ -1,5 +1,5 @@
-<div align="center">
-  
+<img src="assets/gm-pedal.png" alt="Git Manager effects pedal illustration" width="200" align="left">
+
 # gm
 
 <p>
@@ -10,7 +10,11 @@
 
 A [ghq](https://github.com/x-motemen/ghq)-style repository manager with a
 built-in fuzzy finder.
-</div>
+
+`Ctrl-G`, type, `Enter`: the shell `cd`s to the repository — or to any of its
+worktrees, branches and pull requests.
+
+<br clear="left">
 
 ## ✨ Features
 
