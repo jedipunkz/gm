@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::list::Item;
-use super::{Cmd, Model};
+use super::{Cmd, Model, Msg, Worktrees};
 
 /// Mode says which list is on screen.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -38,17 +38,45 @@ impl Stash {
 }
 
 impl Model {
-    /// open_worktrees replaces the repository list with the checkouts of the
-    /// selected repository. A repository git cannot answer for is left alone:
-    /// the list simply does not change.
+    /// open_worktrees asks git for the checkouts of the selected repository,
+    /// off the UI thread: with many refs or on a network filesystem git
+    /// takes long enough to freeze the screen, with no spinner to say why.
     pub(super) fn open_worktrees(&mut self) -> Vec<Cmd> {
         let Some(it) = self.current().cloned().filter(|_| self.mode == Mode::Repos) else {
+            return vec![];
+        };
+        let (busy_tag, busy) = self.start_busy(&format!("listing the worktrees of {}…", it.label));
+        let (worktrees_of, path) = (self.worktrees_of.clone(), it.path);
+        vec![
+            busy,
+            Cmd::Task(Box::new(move || {
+                let wts = worktrees_of(&path);
+                Some(Msg::Worktrees(Worktrees {
+                    path,
+                    busy_tag,
+                    wts,
+                }))
+            })),
+        ]
+    }
+
+    /// show_worktrees replaces the repository list with git's answer, if the
+    /// repository it is about is still the one selected; otherwise the user
+    /// has moved on. A repository git cannot answer for is left alone: the
+    /// list simply does not change.
+    pub(super) fn show_worktrees(&mut self, msg: Worktrees) -> Vec<Cmd> {
+        self.finish_busy(msg.busy_tag);
+        let Some(it) = self
+            .current()
+            .cloned()
+            .filter(|it| self.mode == Mode::Repos && it.path == msg.path)
+        else {
             return vec![];
         };
         // A git error is worth saying; an empty answer is nearly unreachable
         // (the main worktree always lists), but gm is not silent about it
         // either.
-        let wts = match (self.worktrees_of)(&it.path) {
+        let wts = match msg.wts {
             Ok(wts) if !wts.is_empty() => wts,
             Err(e) => {
                 self.note = e.0;

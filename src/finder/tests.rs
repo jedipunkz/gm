@@ -80,6 +80,13 @@ fn run_slash(m: &mut Model, name: &str) -> Vec<Cmd> {
     m.update(key("enter"))
 }
 
+/// ask_remove runs /remove and hands the finder git's account of what would
+/// be lost, which the question waits for before y does anything.
+fn ask_remove(m: &mut Model) {
+    let cmds = run_slash(m, "/remove");
+    feed(m, cmds);
+}
+
 fn is_quit(cmds: &[Cmd]) -> bool {
     cmds.iter().any(|c| matches!(c, Cmd::Quit))
 }
@@ -205,6 +212,13 @@ fn dirty_model(root: &TempDir) -> (Model, Vec<Repo>) {
         .collect()
     });
     (m, rs)
+}
+
+/// open_worktrees asks for the worktree list and hands the finder git's
+/// answer.
+fn open_worktrees(m: &mut Model) {
+    let cmds = m.open_worktrees();
+    feed(m, cmds);
 }
 
 fn only_main(m: &mut Model) {
@@ -381,14 +395,16 @@ fn worktree_key_is_configurable() {
     assert!(line_text(&m.help_line(90)).contains("ctrl-t worktrees"));
     // The old default must no longer do anything.
     let mut old = m.clone();
-    old.update(key("ctrl+w"));
+    let cmds = old.update(key("ctrl+w"));
+    feed(&mut old, cmds);
     assert_eq!(
         old.mode,
         Mode::Repos,
         "ctrl-w still opened the worktree list"
     );
 
-    m.update(key("ctrl+t"));
+    let cmds = m.update(key("ctrl+t"));
+    feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);
     assert!(line_text(&m.help_line(90)).contains("ctrl-t/g/esc repos"));
     // And it toggles back off.
@@ -434,7 +450,7 @@ fn help_line() {
     // In the worktree list the same keys go back instead of out.
     let mut wm = m.clone();
     only_main(&mut wm);
-    wm.open_worktrees();
+    open_worktrees(&mut wm);
     let buf = screen(&wm);
     assert!(row_text(&buf, buf.area.height - 1).contains("ctrl-w/g/esc repos"));
 
@@ -535,7 +551,7 @@ fn esc_leaves_the_worktree_list_first() {
     only_main(&mut m);
     let cmds = run_slash(&mut m, "/dirty");
     feed(&mut m, cmds);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert_eq!(m.mode, Mode::Worktrees);
     m.update(key("esc"));
     assert_eq!(m.mode, Mode::Repos);
@@ -554,7 +570,7 @@ fn removing_the_last_repository_leaves_a_usable_finder() {
     let mut m = new_model(&rs, "");
     (m.w, m.h) = (80, 12);
 
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     let cmds = m.update(ch('y'));
     feed(&mut m, cmds);
     assert!(m.view.is_empty(), "the list still has {:?}", rows(&m));
@@ -835,7 +851,7 @@ fn unpushed_scan_filters_the_saved_repository_list_when_it_finishes_elsewhere() 
     let (mut m, _) = dirty_model(&root);
     let cmds = run_slash(&mut m, "/unpushed");
     only_main(&mut m);
-    m.open_worktrees();
+    open_worktrees(&mut m);
 
     feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);
@@ -896,7 +912,7 @@ fn dirty_filter_is_for_repositories() {
     let root = TempDir::new();
     let (mut m, _) = dirty_model(&root);
     only_main(&mut m);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/dirty");
     assert!(cmds.is_empty() && !m.dirty_only);
     assert!(m.note.contains("repository list"), "{:?}", m.note);
@@ -934,7 +950,7 @@ fn unpushed_filter_is_for_repositories() {
     let root = TempDir::new();
     let (mut m, _) = dirty_model(&root);
     only_main(&mut m);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/unpushed");
     assert!(cmds.is_empty() && !m.unpushed_only);
     assert!(m.note.contains("repository list"), "{:?}", m.note);
@@ -1201,9 +1217,21 @@ fn confirm_remove() {
     let bravo = rs[1].path();
     m.changed_of = Arc::new(move |p| if p == bravo { 3 } else { 0 });
 
-    run_slash(&mut m, "/remove"); // bravo, the bottom row
+    let cmds = run_slash(&mut m, "/remove"); // bravo, the bottom row
     assert_eq!(m.over, Overlay::Confirm);
     assert_eq!(m.ask.arg, rs[1].path());
+    // The question is up before git has answered, and y waits for the
+    // answer: nobody is asked before being told what will be lost.
+    let view = view_text(&m);
+    assert!(view.contains("checking for uncommitted work"), "{view}");
+    assert!(!view.contains("y do it"), "{view}");
+    assert!(
+        m.update(ch('y')).is_empty(),
+        "y was taken before git answered"
+    );
+    assert_eq!(m.over, Overlay::Confirm);
+    feed(&mut m, cmds);
+    assert_eq!(m.busy, "");
     // Only fold-proof words are looked for on screen: where a long path breaks
     // depends on the width of the temporary directory.
     let view = view_text(&m);
@@ -1226,6 +1254,30 @@ fn confirm_remove() {
     assert!(!exists(&rs[1].path()));
     assert_eq!(rows(&m), vec!["github.com/acme/alpha"]);
     assert!(m.note.contains("removed"));
+}
+
+// An answer for a question that has since been cancelled and asked again
+// about another row is not this question's answer.
+#[test]
+fn remove_drops_a_stale_answer() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &["github.com/acme/alpha", "github.com/acme/bravo"],
+    );
+    let mut m = new_model(&rs, "");
+    (m.w, m.h) = (90, 16);
+    only_main(&mut m);
+    let bravo = rs[1].path();
+    m.changed_of = Arc::new(move |p| if p == bravo { 3 } else { 0 });
+    let stale = run_slash(&mut m, "/remove"); // bravo, the bottom row
+    m.update(ch('n'));
+    m.update(key("up"));
+    run_slash(&mut m, "/remove");
+    feed(&mut m, stale);
+    assert_eq!(m.ask.arg, rs[0].path());
+    assert!(m.ask.wait.is_some(), "the stale answer unlocked y");
+    assert!(!view_text(&m).contains("3 uncommitted"));
 }
 
 #[test]
@@ -1410,7 +1462,7 @@ fn created_worktree_keeps_the_main_worktree_last() {
     git_repo(&r.path());
     let mut m = new_model(std::slice::from_ref(&r), "");
     (m.w, m.h) = (90, 16);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert_eq!(label(&m), "main", "the main worktree starts at the bottom");
 
     run_slash(&mut m, "/create feat/login");
@@ -1443,7 +1495,7 @@ fn remove_says_the_worktrees_go_too() {
             w("/tmp/wt/timeout", "fix/timeout"),
         ])
     });
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
     let view = view_text(&m);
     for want in ["2 worktrees will go too", "feat/login", "fix/timeout"] {
@@ -1472,7 +1524,7 @@ fn remove_names_the_work_in_the_worktrees() {
         ])
     });
     m.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 2 } else { 0 });
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     let view = view_text(&m);
     assert!(view.contains("feat/login (2 changed)"), "{view}");
     assert!(!view.contains("fix/timeout ("), "{view}");
@@ -1494,13 +1546,13 @@ fn remove_asks_git_rather_than_the_cache() {
 
     // Not loaded yet.
     let mut fresh = m.clone();
-    run_slash(&mut fresh, "/remove");
+    ask_remove(&mut fresh);
     assert!(fresh.status.is_empty());
     assert!(view_text(&fresh).contains("4 uncommitted changes"));
 
     // Loaded, but from before the files were changed.
     m.status.insert(rs[0].path(), Status::default());
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert!(view_text(&m).contains("4 uncommitted changes"));
 }
 
@@ -1520,14 +1572,15 @@ fn remove_worktree_forces_what_it_warned_about() {
         Ok(vec![w(dir, "main"), w("/tmp/wt/login", "feat/login")])
     });
     m.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 1 } else { 0 });
-    m.update(key("ctrl+w"));
+    let cmds = m.update(key("ctrl+w"));
+    feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);
     m.cursor = m
         .view
         .iter()
         .position(|&i| m.all[i].path == "/tmp/wt/login")
         .unwrap();
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
     assert!(m.ask.force);
     assert!(view_text(&m).contains("1 uncommitted changes"));
@@ -1569,7 +1622,7 @@ fn remove_says_nothing_without_worktrees() {
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     (m.w, m.h) = (90, 18);
     only_main(&mut m);
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert!(!view_text(&m).contains("will go too"));
 }
 
@@ -1844,8 +1897,12 @@ fn worktree_mode() {
         ])
     });
 
-    m.open_worktrees();
+    let cmds = m.open_worktrees();
+    assert_eq!(m.mode, Mode::Repos, "the list changed before git answered");
+    assert!(m.busy.contains("worktrees of"), "{:?}", m.busy);
+    feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);
+    assert_eq!(m.busy, "");
     assert_eq!(m.view.len(), 3);
     assert_eq!(label(&m), "main");
     assert_eq!(
@@ -1864,6 +1921,24 @@ fn worktree_mode() {
     assert_eq!(label(&m), "github.com/acme/bravo");
 }
 
+// git is asked off the UI thread, and an answer about a repository the
+// cursor has left is dropped rather than replacing the list it is on.
+#[test]
+fn worktree_mode_drops_a_stale_answer() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &["github.com/acme/alpha", "github.com/acme/bravo"],
+    );
+    let mut m = new_model(&rs, "");
+    only_main(&mut m);
+    let cmds = m.update(key("ctrl+w"));
+    m.update(key("up"));
+    feed(&mut m, cmds);
+    assert_eq!(m.mode, Mode::Repos);
+    assert_eq!(m.busy, "", "the wait outlived its answer");
+}
+
 // Ctrl-W toggles it off, Ctrl-G closes it, and Esc does too. Only Esc quits
 // gm, and only from the repository list.
 #[test]
@@ -1873,7 +1948,7 @@ fn worktree_mode_keys_go_back() {
     for k in ["ctrl+w", "ctrl+g", "esc"] {
         let mut m = new_model(&rs, "");
         only_main(&mut m);
-        m.open_worktrees();
+        open_worktrees(&mut m);
         assert_eq!(m.mode, Mode::Worktrees);
         let cmds = m.update(key(k));
         assert_eq!(m.mode, Mode::Repos, "{k}");
@@ -1893,7 +1968,7 @@ fn worktree_mode_leaves_the_list_alone_on_error() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     m.worktrees_of = Arc::new(|_| Err("not a git repository".into()));
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert!(m.mode == Mode::Repos && m.view.len() == 1);
     assert!(m.note.contains("not a git repository"), "{:?}", m.note);
 }
@@ -1905,7 +1980,7 @@ fn empty_lists_are_named() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     m.branches_of = Arc::new(|_| Ok(vec![]));
-    m.open_branches();
+    open_branches(&mut m);
     assert!(m.mode == Mode::Repos, "{:?}", m.note);
     assert!(
         m.note.contains("no branches in github.com/acme/alpha"),
@@ -1914,7 +1989,7 @@ fn empty_lists_are_named() {
     );
 
     m.worktrees_of = Arc::new(|_| Ok(vec![]));
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert!(
         m.note.contains("no worktrees in github.com/acme/alpha"),
         "{:?}",
@@ -1934,7 +2009,7 @@ fn worktree_create_and_remove() {
     git_repo(&r.path());
     let mut m = new_model(std::slice::from_ref(&r), "");
     (m.w, m.h) = (90, 18);
-    m.open_worktrees(); // the real repo::worktrees, not a stub
+    open_worktrees(&mut m); // the real repo::worktrees, not a stub
     assert!(m.mode == Mode::Worktrees && m.view.len() == 1);
 
     run_slash(&mut m, "/create feat/login");
@@ -1963,9 +2038,9 @@ fn worktree_create_and_remove() {
     assert_eq!(repo::find_repos(&root.path()), vec![r.path()]);
 
     // Now take it away, and its branch: it holds nothing HEAD lacks.
-    m.open_worktrees(); // the rows that come from git carry their branch
+    open_worktrees(&mut m); // the rows that come from git carry their branch
     m.cursor = 0;
-    run_slash(&mut m, "/remove");
+    ask_remove(&mut m);
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
     assert!(view_text(&m).contains("branch feat/login goes too"));
     let cmds = m.update(ch('y'));
@@ -2010,7 +2085,7 @@ fn expire_removes_the_idle_worktrees() {
     });
     let dirty = busy.clone();
     m.changed_of = Arc::new(move |p| usize::from(repo::same_path(p, &dirty)));
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert_eq!(rows(&m).len(), 4);
 
     run_slash(&mut m, "/expire 30d");
@@ -2055,7 +2130,7 @@ fn worktree_create_refuses_a_duplicate() {
         repo::WORKTREE_ROOT
     )));
     let mut m = new_model(std::slice::from_ref(&r), "");
-    m.open_worktrees();
+    open_worktrees(&mut m);
     run_slash(&mut m, "/create feat/login");
     assert_eq!(m.over, Overlay::None);
     assert!(m.note.contains("already exists"), "{:?}", m.note);
@@ -2072,7 +2147,7 @@ fn worktree_create_refuses_a_bogus_branch() {
     };
     git_repo(&r.path());
     let mut m = new_model(std::slice::from_ref(&r), "");
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/create ../../escaped");
     assert!(cmds.is_empty() && m.over == Overlay::None);
     assert!(m.note.contains("not a branch name"), "{:?}", m.note);
@@ -2086,7 +2161,7 @@ fn remove_refuses_the_main_worktree() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     only_main(&mut m);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/remove");
     assert!(!is_quit(&cmds) && m.over == Overlay::None);
     assert!(m.note.contains("repository itself"), "{:?}", m.note);
@@ -2114,7 +2189,7 @@ fn remove_refuses_the_main_worktree_behind_a_symlink() {
             ..Default::default()
         }])
     });
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/remove");
     assert!(!is_quit(&cmds) && m.over == Overlay::None);
     assert!(m.note.contains("repository itself"), "{:?}", m.note);
@@ -2163,6 +2238,15 @@ fn branch_model(root: &TempDir) -> (Model, Repo) {
     (m, r)
 }
 
+/// open_branches presses the branch key and hands the finder git's answer,
+/// returning what it asked next: the remotes, for what the last fetch did not
+/// bring.
+fn open_branches(m: &mut Model) -> Vec<Cmd> {
+    let cmds = m.update(key("ctrl+l"));
+    assert_eq!(m.mode, Mode::Repos, "the list changed before git answered");
+    feed(m, cmds)
+}
+
 // The newest branch rests under the cursor, a remote-only branch reads as the
 // remote's, Enter on a branch that is already checked out goes there, and the
 // key toggles the list off.
@@ -2171,6 +2255,8 @@ fn branch_mode() {
     let root = TempDir::new();
     let (mut m, r) = branch_model(&root);
     let cmds = m.update(key("ctrl+l"));
+    assert!(m.busy.contains("branches of"), "{:?}", m.busy);
+    let cmds = feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Branches);
     assert_eq!(rows(&m).join(" "), "origin/feat/login fix/timeout main");
     feed(&mut m, cmds);
@@ -2196,17 +2282,32 @@ fn branch_mode() {
     back.update(key("ctrl+l"));
     assert_eq!(back.mode, Mode::Repos);
     let mut other = m.clone();
-    other.update(key("ctrl+w"));
+    let cmds = other.update(key("ctrl+w"));
+    feed(&mut other, cmds);
     assert_eq!(other.mode, Mode::Worktrees);
     let cmds = m.update(key("esc"));
     assert!(m.mode == Mode::Repos && !is_quit(&cmds));
+}
+
+// git is asked off the UI thread, and an answer about a repository the
+// cursor has left is dropped rather than replacing the list it is on.
+#[test]
+fn branch_mode_drops_a_stale_answer() {
+    let root = TempDir::new();
+    let (mut m, _) = branch_model(&root);
+    let cmds = m.update(key("ctrl+l"));
+    set_query(&mut m, "nothing matches this");
+    feed(&mut m, cmds);
+    assert_eq!(m.mode, Mode::Repos);
+    assert_eq!(m.busy, "", "the wait outlived its answer");
 }
 
 #[test]
 fn branches_command() {
     let root = TempDir::new();
     let (mut m, _) = branch_model(&root);
-    run_slash(&mut m, "/branches");
+    let cmds = run_slash(&mut m, "/branches");
+    feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Branches);
 }
 
@@ -2218,7 +2319,7 @@ fn branches_command() {
 fn branch_query_prefers_the_named_branch() {
     let root = TempDir::new();
     let (mut m, _) = branch_model(&root);
-    m.update(key("ctrl+l"));
+    open_branches(&mut m);
     // A branch made after main, the way a feature branch arrives later: newer,
     // so without the tie-break it would take main's place at the bottom.
     m.all.push(Item {
@@ -2247,7 +2348,7 @@ fn branch_check_out() {
     git(&r.path(), &["branch", "fix/timeout"]);
 
     let mut m = new_model(std::slice::from_ref(&r), "");
-    m.update(key("ctrl+l"));
+    open_branches(&mut m);
     typed(&mut m, "timeout");
     assert_eq!(label(&m), "fix/timeout");
     let cmds = m.update(key("enter"));
@@ -2285,7 +2386,7 @@ fn add_worktree_updates_branch_row_and_invalidates_status() {
             ..Default::default()
         },
     );
-    m.update(key("ctrl+l"));
+    open_branches(&mut m);
     m.busy.clear(); // this test does not run the remote-branch task
     set_query(&mut m, "timeout");
     assert_eq!(label(&m), "fix/timeout");
@@ -2340,7 +2441,7 @@ fn create_updates_saved_repository_list_only() {
     let cmds = m.update(ch('y'));
     assert!(m.busy.contains("creat"), "{:?}", m.busy);
 
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let visible = rows(&m);
     let msg = answer(cmds).expect("confirmed repository creation did not run");
     m.update(msg);
@@ -2360,7 +2461,7 @@ fn create_updates_saved_repository_list_only() {
 fn remote_branches_join_the_list() {
     let root = TempDir::new();
     let (mut m, _) = branch_model(&root);
-    let cmds = m.update(key("ctrl+l"));
+    let cmds = open_branches(&mut m);
     assert!(m.busy.contains("asking the remotes"), "{:?}", m.busy);
     let before = label(&m);
     let Some(Msg::RemoteBranches(msg)) = answer(cmds) else {
@@ -2400,7 +2501,7 @@ fn remote_branches_say_why_not() {
             Some("origin: Could not read from remote repository.".into()),
         )
     });
-    let cmds = m.update(key("ctrl+l"));
+    let cmds = open_branches(&mut m);
     feed(&mut m, cmds);
     assert!(
         m.view.len() == 3 && m.note.contains("origin: Could not read"),
@@ -2410,7 +2511,7 @@ fn remote_branches_say_why_not() {
     );
 
     let (mut m, _) = branch_model(&root);
-    let cmds = m.update(key("ctrl+l"));
+    let cmds = open_branches(&mut m);
     m.update(key("ctrl+l"));
     feed(&mut m, cmds);
     assert!(m.mode == Mode::Repos && m.view.len() == 1);
@@ -2433,7 +2534,7 @@ fn unfetched_branch_check_out() {
     git(&upstream, &["branch", "feat/new"]);
 
     let mut m = new_model(std::slice::from_ref(&r), "");
-    let cmds = m.update(key("ctrl+l"));
+    let cmds = open_branches(&mut m);
     feed(&mut m, cmds);
     typed(&mut m, "new");
     assert_eq!(label(&m), "origin/feat/new", "{:?}", rows(&m));
@@ -2577,6 +2678,20 @@ fn pr_mode() {
     m.update(key("ctrl+j"));
     assert_eq!(m.mode, Mode::Repos);
     assert_eq!(label(&m), rs[1].rel);
+}
+
+// Which pull request is checked out where is git's answer too, so it is
+// worked out in gh's task rather than once the answer is on the UI thread.
+#[test]
+fn pr_mode_asks_git_off_the_ui_thread() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    let msg = answer(m.update(key("ctrl+j"))).expect("no answer from gh");
+    m.worktrees_of = Arc::new(|_| panic!("git was asked on the UI thread"));
+    m.update(msg);
+    assert_eq!(m.mode, Mode::Prs, "{:?}", m.note);
+    set_query(&mut m, "login");
+    assert_eq!(m.current().unwrap().path, "/tmp/wt/alpha-login");
 }
 
 // A fork's checkout is found under a symlinked root, where git prints the
@@ -2792,7 +2907,7 @@ fn stale_busy_answers_do_not_clear_newer_work() {
             "acme",
         )])
     });
-    let remote_cmds = m.update(key("ctrl+l"));
+    let remote_cmds = open_branches(&mut m);
     let Some(Msg::RemoteBranches(remote)) = answer(remote_cmds) else {
         panic!("no answer from the remotes")
     };
@@ -2823,7 +2938,7 @@ fn stale_busy_answers_do_not_clear_newer_work() {
     let Some(Msg::Prs(prs)) = answer(pr_cmds) else {
         panic!("no answer from gh")
     };
-    let remote_cmds = m.update(key("ctrl+l"));
+    let remote_cmds = open_branches(&mut m);
     let Some(Msg::RemoteBranches(remote)) = answer(remote_cmds) else {
         panic!("no answer from the remotes")
     };

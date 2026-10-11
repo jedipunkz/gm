@@ -1,7 +1,7 @@
 use super::info::tildify;
 use super::overlay::{Change, Overlay, Pending};
 use super::worktree::Mode;
-use super::{Action, Cmd, Model, Outcome};
+use super::{Action, Cmd, Model, Msg, Outcome, RemoveDetail};
 use crate::plural;
 use crate::repo;
 
@@ -122,77 +122,94 @@ pub const COMMANDS: &[Command] = &[
                 m.note = "nothing is selected".into();
                 return vec![];
             };
+            // git prints the resolved path for a worktree, while repo_at is
+            // the path the finder walked; under a symlinked root the two
+            // differ textually, so compare them the way the repository case
+            // below does.
+            let worktree = m.mode == Mode::Worktrees;
+            if worktree && repo::same_path(&it.path, &m.repo_at) {
+                m.note = "that is the repository itself, not a worktree of it".into();
+                return vec![];
+            }
             // git is asked now rather than the details pane's cache: the cache
             // fills only once the cursor has rested, which "gm;/remove" never
-            // gives it, and it is as old as the moment it was filled. One git
-            // status is cheap next to deleting work nobody was told about.
-            let changed = m.changed_of.clone();
-            let dirty = changed(&it.path);
-            let mut detail = vec![tildify(&it.path)];
-            if dirty > 0 {
-                detail.push(format!("{dirty} uncommitted changes will be lost"));
-            }
-
-            if m.mode == Mode::Worktrees {
-                // git prints the resolved path for a worktree, while repo_at is
-                // the path the finder walked; under a symlinked root the two
-                // differ textually, so compare them the way the repository
-                // case below does.
-                if repo::same_path(&it.path, &m.repo_at) {
-                    m.note = "that is the repository itself, not a worktree of it".into();
-                    return vec![];
-                }
-                if !it.branch.name.is_empty() {
-                    detail.push(format!(
-                        "branch {} goes too if git branch -d allows",
-                        it.branch.name
-                    ));
-                }
-                return m.confirm(Pending {
+            // gives it, and it is as old as the moment it was filled. It is
+            // asked off the UI thread, a git status per worktree being slow
+            // enough to freeze the screen, so the question goes up at once and
+            // y waits for the answer.
+            let (busy_tag, busy) = m.start_busy("checking for uncommitted work…");
+            let pending = Pending {
+                detail: vec![tildify(&it.path), "checking for uncommitted work…".into()],
+                wait: Some(busy_tag),
+                ..Default::default()
+            };
+            let mut cmds = m.confirm(if worktree {
+                Pending {
                     kind: Change::RemoveWorktree,
                     arg: it.branch.name.clone(),
                     dir: it.path.clone(),
                     title: format!("remove worktree {}", it.label),
-                    detail,
-                    force: dirty > 0,
-                    ..Default::default()
-                });
-            }
-            // The worktrees go with it, so the question has to say so.
-            if let Ok(wts) = (m.worktrees_of)(&it.path) {
-                // The main worktree is the repository itself. git prints the
-                // resolved path, so a mismatch here is one entry too many rather
-                // than a wrong answer.
-                let others: Vec<repo::Worktree> = wts
-                    .into_iter()
-                    .filter(|w| !repo::same_path(&w.path, &it.path))
-                    .collect();
-                // They go with --force, so the work in each is named here or
-                // nowhere.
-                if !others.is_empty() {
-                    detail.push(format!(
-                        "{} will go too: {}",
-                        plural(others.len(), "worktree", "worktrees"),
-                        repo::worktree_labels(&others, |p| changed(p))
-                    ));
+                    ..pending
                 }
-                if let Some(r) = m.tree.at(&it.path) {
-                    let strays = repo::strays(&r, &others);
-                    if !strays.is_empty() {
+            } else {
+                Pending {
+                    kind: Change::Remove,
+                    arg: it.path.clone(),
+                    title: "remove repository".into(),
+                    ..pending
+                }
+            });
+            let (changed, worktrees_of) = (m.changed_of.clone(), m.worktrees_of.clone());
+            let tree = m.tree.clone();
+            cmds.push(busy);
+            cmds.push(Cmd::Task(Box::new(move || {
+                let dirty = changed(&it.path);
+                let mut detail = vec![tildify(&it.path)];
+                if dirty > 0 {
+                    detail.push(format!("{dirty} uncommitted changes will be lost"));
+                }
+                if worktree {
+                    if !it.branch.name.is_empty() {
                         detail.push(format!(
-                            "also removed, not a worktree: {}",
-                            strays.join(", ")
+                            "branch {} goes too if git branch -d allows",
+                            it.branch.name
                         ));
                     }
+                } else if let Ok(wts) = worktrees_of(&it.path) {
+                    // The worktrees go with it, so the question has to say so.
+                    // The main worktree is the repository itself. git prints
+                    // the resolved path, so a mismatch here is one entry too
+                    // many rather than a wrong answer.
+                    let others: Vec<repo::Worktree> = wts
+                        .into_iter()
+                        .filter(|w| !repo::same_path(&w.path, &it.path))
+                        .collect();
+                    // They go with --force, so the work in each is named here
+                    // or nowhere.
+                    if !others.is_empty() {
+                        detail.push(format!(
+                            "{} will go too: {}",
+                            plural(others.len(), "worktree", "worktrees"),
+                            repo::worktree_labels(&others, |p| changed(p))
+                        ));
+                    }
+                    if let Some(r) = tree.at(&it.path) {
+                        let strays = repo::strays(&r, &others);
+                        if !strays.is_empty() {
+                            detail.push(format!(
+                                "also removed, not a worktree: {}",
+                                strays.join(", ")
+                            ));
+                        }
+                    }
                 }
-            }
-            m.confirm(Pending {
-                kind: Change::Remove,
-                arg: it.path.clone(),
-                title: "remove repository".into(),
-                detail,
-                ..Default::default()
-            })
+                Some(Msg::RemoveDetail(RemoveDetail {
+                    busy_tag,
+                    detail,
+                    force: dirty > 0,
+                }))
+            })));
+            cmds
         },
     },
     Command {

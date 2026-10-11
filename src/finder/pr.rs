@@ -5,7 +5,7 @@ use super::list::Item;
 use super::overlay::{Change, Pending};
 use super::worktree::Mode;
 use super::{Action, Cmd, Model, Msg, Outcome, Prs};
-use crate::repo::{self, PullRequest};
+use crate::repo::{self, PullRequest, Tree, Worktree};
 
 impl Model {
     /// open_prs asks gh for the selected repository's open pull requests, off
@@ -16,11 +16,21 @@ impl Model {
             return vec![];
         };
         let (busy_tag, busy) = self.start_busy(&format!("asking GitHub about {}…", it.label));
-        let (prs_of, path) = (self.prs_of.clone(), it.path);
+        let (prs_of, worktrees_of) = (self.prs_of.clone(), self.worktrees_of.clone());
+        let (tree, path) = (self.tree.clone(), it.path);
         vec![
             busy,
             Cmd::Task(Box::new(move || {
-                let prs = prs_of(&path);
+                // Where each one is checked out is git's to say, so it is
+                // asked here too, not once the answer is on the UI thread.
+                let prs = prs_of(&path).map(|prs| {
+                    let wts = if prs.is_empty() {
+                        vec![]
+                    } else {
+                        worktrees_of(&path).unwrap_or_default()
+                    };
+                    with_checkouts(&tree, &path, wts, prs)
+                });
                 Some(Msg::Prs(Prs {
                     path,
                     busy_tag,
@@ -54,40 +64,14 @@ impl Model {
             Ok(prs) => prs,
         };
 
-        // A pull request is already checked out when its branch is, or when
-        // its worktree is where gm files it. A fork's branch is matched by
-        // place only: its main is not the repository's main.
-        let (mut by_branch, mut by_path) = (HashMap::new(), Vec::new());
-        for w in (self.worktrees_of)(&it.path).unwrap_or_default() {
-            by_path.push(w.path.clone());
-            if !w.branch.is_empty() {
-                by_branch.insert(w.branch, w.path);
-            }
-        }
-        let r = self.tree.at(&it.path);
-        let at = |p: &PullRequest| -> String {
-            if let Some(path) = by_branch.get(&p.branch).filter(|_| !p.fork) {
-                return path.clone();
-            }
-            if let Some(r) = r.as_ref().filter(|_| repo::valid_branch(&p.checkout())) {
-                let dir = self.tree.worktree_dir(r, &p.worktree_name());
-                // git prints the resolved path, the tree the configured one:
-                // under a symlinked root they differ as text.
-                if by_path.iter().any(|w| repo::same_path(w, &dir)) {
-                    return dir;
-                }
-            }
-            String::new()
-        };
-
         // gh lists the newest first; reversed, it lands at the bottom next to
         // the cursor.
         let items = prs
             .iter()
             .rev()
-            .map(|p| Item {
+            .map(|(p, at)| Item {
                 label: p.label(),
-                path: at(p),
+                path: at.clone(),
                 pr: p.clone(),
                 ..Default::default()
             })
@@ -141,4 +125,46 @@ impl Model {
             ),
         ]
     }
+}
+
+/// with_checkouts pairs each of the pull requests of the repository at path
+/// with the worktree it is already checked out in, or "" when there is none.
+fn with_checkouts(
+    tree: &Tree,
+    path: &str,
+    wts: Vec<Worktree>,
+    prs: Vec<PullRequest>,
+) -> Vec<(PullRequest, String)> {
+    // A pull request is already checked out when its branch is, or when
+    // its worktree is where gm files it. A fork's branch is matched by
+    // place only: its main is not the repository's main.
+    let (mut by_branch, mut by_path) = (HashMap::new(), Vec::new());
+    for w in wts {
+        by_path.push(w.path.clone());
+        if !w.branch.is_empty() {
+            by_branch.insert(w.branch, w.path);
+        }
+    }
+    let r = tree.at(path);
+    let at = |p: &PullRequest| -> String {
+        if let Some(path) = by_branch.get(&p.branch).filter(|_| !p.fork) {
+            return path.clone();
+        }
+        if let Some(r) = r.as_ref().filter(|_| repo::valid_branch(&p.checkout())) {
+            let dir = tree.worktree_dir(r, &p.worktree_name());
+            // git prints the resolved path, the tree the configured one:
+            // under a symlinked root they differ as text.
+            if by_path.iter().any(|w| repo::same_path(w, &dir)) {
+                return dir;
+            }
+        }
+        String::new()
+    };
+
+    prs.into_iter()
+        .map(|p| {
+            let dir = at(&p);
+            (p, dir)
+        })
+        .collect()
 }

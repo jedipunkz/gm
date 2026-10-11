@@ -4,24 +4,62 @@ use super::info::tildify;
 use super::list::Item;
 use super::overlay::{Change, Pending};
 use super::worktree::Mode;
-use super::{Action, Cmd, Model, Msg, Outcome, RemoteBranches};
+use super::{Action, Branches, Cmd, Model, Msg, Outcome, RemoteBranches};
 use crate::repo;
 
 impl Model {
-    /// open_branches replaces the repository list with the branches of the
-    /// selected repository, local ones and those only a remote has. A branch
-    /// that is checked out somewhere carries that worktree's path, so Enter
-    /// can simply go there.
-    ///
-    /// The list is what git already knows, so it is up at once; the remotes
-    /// are asked in the background for what the last fetch did not bring.
+    /// open_branches asks git for the branches of the selected repository,
+    /// local ones and those only a remote has, off the UI thread: with many
+    /// refs it takes long enough to freeze the screen.
     pub(super) fn open_branches(&mut self) -> Vec<Cmd> {
         let Some(it) = self.current().cloned().filter(|_| self.mode == Mode::Repos) else {
             return vec![];
         };
+        let (busy_tag, busy) = self.start_busy(&format!("listing the branches of {}…", it.label));
+        let (branches_of, worktrees_of) = (self.branches_of.clone(), self.worktrees_of.clone());
+        let path = it.path;
+        vec![
+            busy,
+            Cmd::Task(Box::new(move || {
+                let branches = branches_of(&path);
+                let at = match &branches {
+                    Ok(bs) if !bs.is_empty() => worktrees_of(&path)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|w| !w.branch.is_empty())
+                        .map(|w| (w.branch, w.path))
+                        .collect(),
+                    _ => HashMap::new(),
+                };
+                Some(Msg::Branches(Branches {
+                    path,
+                    busy_tag,
+                    branches,
+                    at,
+                }))
+            })),
+        ]
+    }
+
+    /// show_branches replaces the repository list with git's answer, if the
+    /// repository it is about is still the one selected. A branch that is
+    /// checked out somewhere carries that worktree's path, so Enter can
+    /// simply go there.
+    ///
+    /// The list is what git already knows, so it is up at once; the remotes
+    /// are asked in the background for what the last fetch did not bring.
+    pub(super) fn show_branches(&mut self, msg: Branches) -> Vec<Cmd> {
+        self.finish_busy(msg.busy_tag);
+        let Some(it) = self
+            .current()
+            .cloned()
+            .filter(|it| self.mode == Mode::Repos && it.path == msg.path)
+        else {
+            return vec![];
+        };
         // Silence reads as a broken key, so an empty or a failed answer is
         // said, the way the pull request list does.
-        let bs = match (self.branches_of)(&it.path) {
+        let bs = match msg.branches {
             Ok(bs) if !bs.is_empty() => bs,
             Err(e) => {
                 self.note = e.0;
@@ -32,12 +70,7 @@ impl Model {
                 return vec![];
             }
         };
-        let at: HashMap<String, String> = (self.worktrees_of)(&it.path)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|w| !w.branch.is_empty())
-            .map(|w| (w.branch, w.path))
-            .collect();
+        let at = msg.at;
 
         // Reversed, so the branch with the newest commit lands at the bottom
         // next to the cursor.
