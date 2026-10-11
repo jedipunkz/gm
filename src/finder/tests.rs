@@ -1532,8 +1532,17 @@ fn remove_names_the_work_in_the_worktrees() {
     m.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 2 } else { 0 });
     ask_remove(&mut m);
     let view = view_text(&m);
-    assert!(view.contains("feat/login (2 changed)"), "{view}");
-    assert!(!view.contains("fix/timeout ("), "{view}");
+    // /tmp/wt is outside gm's worktree directory for this repository, so each
+    // path is named too: nothing else says where the checkouts are. The panel
+    // wraps between words, so the assertions stop where a line can break.
+    assert!(
+        view.contains("feat/login at /tmp/wt/login") && view.contains("changed)"),
+        "{view}"
+    );
+    assert!(
+        view.contains("fix/timeout at /tmp/wt/timeout") && !view.contains("fix/timeout ("),
+        "{view}"
+    );
     // The repository itself is clean here, so nothing claims otherwise.
     assert!(!view.contains("uncommitted"), "{view}");
 }

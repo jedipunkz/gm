@@ -75,7 +75,15 @@ impl Model {
             match kind {
                 Change::Remove => done(match tree.at(&a.arg) {
                     None => Err(err!("{} is not under any root", a.arg)),
-                    Some(r) => repo::delete(&r).map(|_| (r.path(), r.rel)),
+                    Some(r) => repo::delete(&r).map(|left| {
+                        // A checkout outside gm's worktree directory stays
+                        // where it is, and the note is where that is said.
+                        let mut label = r.rel.clone();
+                        if !left.is_empty() {
+                            label += &format!("; kept {}", left.join(", "));
+                        }
+                        (r.path(), label)
+                    }),
                 }),
                 Change::Create => done(tree.create(&a.arg, a.ssh).map(|r| (r.path(), r.rel))),
                 Change::AddWorktree | Change::CheckOut => done((|| {

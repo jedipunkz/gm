@@ -389,19 +389,30 @@ fn remove_all(p: &str) -> Result<()> {
 
 /// delete removes a repository, every worktree checked out of it, and the
 /// directories that are left empty above them. It asks nothing: the caller has
-/// already confirmed.
+/// already confirmed. It answers with the checkouts it has left where they
+/// were, because the repository's own files named a directory outside gm's
+/// worktree directory and git refused to remove them.
 ///
 /// The worktrees go first. Their administrative files live inside the
 /// repository, so once it is gone git can no longer remove them and they are
 /// left as directories whose .git points at nothing.
-pub fn delete(r: &Repo) -> Result<()> {
+pub fn delete(r: &Repo) -> Result<Vec<String>> {
+    let mut left = vec![];
     for w in other_worktrees(r) {
         if remove_worktree(&r.path(), &w.path, true).is_err() {
             // The repository is going anyway, so git's bookkeeping about this
             // checkout does not need to survive; the directory does not
             // either. This is the path a worktree git has lost track of
-            // takes, and it must not block the removal.
-            remove_all(&w.path)?;
+            // takes, and it must not block the removal. Only a checkout
+            // inside gm's own worktree directory may be deleted by hand,
+            // though: git's entry decides where a checkout is, and nothing
+            // ties it to the tree, so the warning the caller showed named a
+            // path the reader could not have guessed.
+            if is_under(&w.path, &worktrees_dir(r)) {
+                remove_all(&w.path)?;
+            } else {
+                left.push(w.path.clone());
+            }
         }
     }
     // The branch directories the checkouts hung under are gm's own, and
@@ -413,7 +424,7 @@ pub fn delete(r: &Repo) -> Result<()> {
 
     remove_all(&r.path())?;
     prune_empty_parents(&r.root, paths::dir(&r.path()));
-    Ok(())
+    Ok(left)
 }
 
 /// other_worktrees are the checkouts of r that are not r itself. A repository
@@ -526,6 +537,19 @@ pub fn same_path(a: &str, b: &str) -> bool {
     }
     match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
         (Ok(ra), Ok(rb)) => ra == rb,
+        _ => false,
+    }
+}
+
+/// is_under reports whether p names a directory inside dir, both resolved the
+/// way same_path resolves them. A symlinked checkout resolves to wherever it
+/// points, which is the honest answer about where deleting it would reach.
+/// dir is gone while delete is working, so a missing dir means outside: the
+/// one worktree git refused is left where it is rather than deleted on a
+/// guess.
+pub(crate) fn is_under(p: &str, dir: &str) -> bool {
+    match (std::fs::canonicalize(p), std::fs::canonicalize(dir)) {
+        (Ok(rp), Ok(rd)) => rp != rd && rp.starts_with(&rd),
         _ => false,
     }
 }
@@ -818,6 +842,97 @@ mod tests {
 
         delete(&r).unwrap();
         assert!(!exists(&r.path()) && !exists(&dir));
+    }
+
+    // The bug behind the security label: the checkout paths come from the
+    // repository's own .git, and nothing ties them to gm's tree. An entry
+    // naming a directory outside the worktree directory must be left where it
+    // is, not deleted with the repository.
+    #[test]
+    fn delete_leaves_a_checkout_outside_the_worktree_dir() {
+        let base = TempDir::new();
+        let other = TempDir::new();
+        let r = Repo {
+            root: base.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&r.path());
+        let tree = Tree {
+            roots: vec![base.path()],
+        };
+        let login = tree.worktree_dir(&r, "feat/login");
+        add_worktree(&base.path(), &r.path(), &login, "feat/login").unwrap();
+        // Point the entry at a directory outside the tree, the way a copied
+        // or hand-edited repository would.
+        let victim = paths::join(&other.path(), "victim");
+        mkdir(&victim);
+        write(&paths::join(&victim, "keep.txt"), "keep\n");
+        retarget_worktree(&r.path(), &victim);
+        assert_eq!(
+            other_worktrees(&r).first().unwrap().path,
+            victim,
+            "git now reports the victim checkout"
+        );
+
+        let left = delete(&r).unwrap();
+        assert!(!exists(&r.path()), "the repository went");
+        assert!(exists(&victim), "an outside checkout survives delete");
+        assert!(exists(&paths::join(&victim, "keep.txt")));
+        assert_eq!(
+            left,
+            vec![victim],
+            "the left checkout is named for the note"
+        );
+    }
+
+    // A path inside gm's tree that resolves elsewhere is outside the same way:
+    // symlinks are resolved on both sides, exactly where deleting would land.
+    #[test]
+    fn delete_leaves_a_symlink_that_resolves_outwards() {
+        let base = TempDir::new();
+        let other = TempDir::new();
+        let r = Repo {
+            root: base.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&r.path());
+        let tree = Tree {
+            roots: vec![base.path()],
+        };
+        let login = tree.worktree_dir(&r, "feat/login");
+        add_worktree(&base.path(), &r.path(), &login, "feat/login").unwrap();
+        // The entry names a symlink inside gm's worktree directory whose
+        // target is outside the tree.
+        let victim = paths::join(&other.path(), "victim");
+        mkdir(&victim);
+        write(&paths::join(&victim, "keep.txt"), "keep\n");
+        let evil = paths::join(&tree.worktree_dir(&r, "feat"), "evil");
+        mkdir(&paths::dir(&evil));
+        std::os::unix::fs::symlink(&victim, &evil).unwrap();
+        retarget_worktree(&r.path(), &evil);
+
+        let left = delete(&r).unwrap();
+        assert!(!exists(&r.path()), "the repository went");
+        assert!(exists(&victim) && exists(&paths::join(&victim, "keep.txt")));
+        // The entry itself, named as git's list reported it. The symlink is
+        // gm's own and goes with the worktree directory; its target is what
+        // must survive, and does.
+        assert_eq!(left, vec![evil]);
+    }
+
+    // retarget_worktree points the one worktree entry a repository holds at
+    // dir, as git's gitdir file does.
+    fn retarget_worktree(repo_dir: &str, dir: &str) {
+        let admin = paths::join(repo_dir, ".git/worktrees");
+        let mut names: Vec<String> = std::fs::read_dir(&admin)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 1, "one entry to retarget");
+        names.sort();
+        let entry = paths::join(&admin, &names.remove(0));
+        write(&paths::join(&entry, "gitdir"), &format!("{dir}/.git\n"));
     }
 
     // The bug where gm remove deleted a directory under .worktrees that was
