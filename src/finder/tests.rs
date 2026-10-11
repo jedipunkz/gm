@@ -689,6 +689,37 @@ fn ranking_prefers_the_repository_name() {
     );
 }
 
+// "gm" names github.com/jedipunkz/gm: the repository it names whole rests
+// under the cursor even with no visit history, over one that merely carries
+// "gm" inside a longer name and one whose earlier "gm" sits in the user.
+#[test]
+fn ranking_prefers_the_named_repository() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &[
+            "github.com/jedipunkz/gm-note",
+            "github.com/gmdev/tools",
+            "github.com/jedipunkz/gm",
+        ],
+    );
+    let mut m = new_model(&rs, "");
+    set_query(&mut m, "gm");
+    assert_eq!(
+        rows(&m),
+        vec![
+            "github.com/gmdev/tools",
+            "github.com/jedipunkz/gm-note",
+            "github.com/jedipunkz/gm",
+        ]
+    );
+    assert_eq!(label(&m), "github.com/jedipunkz/gm");
+    // The highlight sits on the "gm" the repository is named by, not on the
+    // first place the letters turn up.
+    let at = label(&m).len() - 2;
+    assert_eq!(m.matched[&m.view[m.cursor]], vec![at, at + 1]);
+}
+
 // The unselected row on screen carries the lifted colour, not the comment
 // colour the labels still use.
 #[test]

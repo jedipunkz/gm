@@ -4,7 +4,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use super::command::split_input;
-use super::score::{find, match_score, substring_match};
+use super::score::{find, rank, substring_match};
 use super::worktree::Mode;
 use super::{Cmd, Model, Msg};
 use crate::repo::{Branch, PullRequest, Visit};
@@ -59,7 +59,7 @@ impl Model {
                 // fuzzy finds candidates; where it landed the characters is its
                 // own guess, and a literal hit beats that guess every time.
                 let pos = substring_match(rel, &lower).unwrap_or(mt.matched);
-                scored.push((mt.index, match_score(rel, &pos)));
+                scored.push((mt.index, rank(rel, &pos, &lower)));
                 self.matched.insert(mt.index, char_indexes(rel, &pos));
             }
             // Ascending, so the strongest match lands at the bottom; frecency
