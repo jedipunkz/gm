@@ -125,10 +125,10 @@ jobs:
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            });
+                  issue_number: context.issue.number,
+                  body,
+                });
+              }
 
   # Weekly single-run trend on main: one sampled pass, appended as one
   # sticky comment it fully rewrites on a locked tracking issue.
