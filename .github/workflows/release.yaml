@@ -26,7 +26,7 @@ jobs:
           echo "refusing to release from ${{ github.ref }}" >&2
           exit 1
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # The whole history and every tag: one to work the version out from,
           # the rest for the changelog.
@@ -63,19 +63,19 @@ jobs:
 
       # goreleaser builds every target with cargo-zigbuild, which needs zig
       # and the Rust standard library for each target.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,x86_64-apple-darwin,aarch64-apple-darwin
 
       # Both pinned, so a release builds with the tools the last one did.
-      - uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: 0.15.1
 
       - name: Install cargo-zigbuild
         run: cargo install --locked cargo-zigbuild@0.23.4
 
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           version: "~> v2"
           args: release --clean
