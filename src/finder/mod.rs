@@ -188,10 +188,18 @@ pub enum Msg {
     Status(String, Status),         // one repository's git status
     Spin(u64),                      // the spinner's next frame, with its tag
     Done(Done),                     // a confirmed change has been carried out
+    Worktrees(Worktrees),           // git's worktree list for one repository
     RemoteBranches(RemoteBranches), // what the remotes have that was not fetched
     Prs(Prs),                       // gh's answer about one repository
     RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
     RepoState(String, repo::State), // one repository scanned again after a change
+}
+
+/// Worktrees carries git's worktree list for one repository.
+pub struct Worktrees {
+    path: String, // the repository it was asked about
+    busy_tag: u64,
+    wts: Result<Vec<Worktree>>,
 }
 
 /// RemoteBranches carries what the remotes of one repository have that the
@@ -407,6 +415,7 @@ impl Model {
                 vec![Cmd::After(SPINNER_INTERVAL, Msg::Spin(tag))]
             }
             Msg::Done(d) => self.done(d),
+            Msg::Worktrees(w) => self.show_worktrees(w),
             Msg::RemoteBranches(r) => self.add_remote_branches(r),
             Msg::Prs(p) => self.show_prs(p),
             Msg::RepoStates(tag, states) => {

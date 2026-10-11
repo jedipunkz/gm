@@ -207,6 +207,13 @@ fn dirty_model(root: &TempDir) -> (Model, Vec<Repo>) {
     (m, rs)
 }
 
+/// open_worktrees asks for the worktree list and hands the finder git's
+/// answer.
+fn open_worktrees(m: &mut Model) {
+    let cmds = m.open_worktrees();
+    feed(m, cmds);
+}
+
 fn only_main(m: &mut Model) {
     m.worktrees_of = Arc::new(|dir| {
         Ok(vec![Worktree {
@@ -381,14 +388,16 @@ fn worktree_key_is_configurable() {
     assert!(line_text(&m.help_line(90)).contains("ctrl-t worktrees"));
     // The old default must no longer do anything.
     let mut old = m.clone();
-    old.update(key("ctrl+w"));
+    let cmds = old.update(key("ctrl+w"));
+    feed(&mut old, cmds);
     assert_eq!(
         old.mode,
         Mode::Repos,
         "ctrl-w still opened the worktree list"
     );
 
-    m.update(key("ctrl+t"));
+    let cmds = m.update(key("ctrl+t"));
+    feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);
     assert!(line_text(&m.help_line(90)).contains("ctrl-t/g/esc repos"));
     // And it toggles back off.
@@ -434,7 +443,7 @@ fn help_line() {
     // In the worktree list the same keys go back instead of out.
     let mut wm = m.clone();
     only_main(&mut wm);
-    wm.open_worktrees();
+    open_worktrees(&mut wm);
     let buf = screen(&wm);
     assert!(row_text(&buf, buf.area.height - 1).contains("ctrl-w/g/esc repos"));
 
@@ -535,7 +544,7 @@ fn esc_leaves_the_worktree_list_first() {
     only_main(&mut m);
     let cmds = run_slash(&mut m, "/dirty");
     feed(&mut m, cmds);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert_eq!(m.mode, Mode::Worktrees);
     m.update(key("esc"));
     assert_eq!(m.mode, Mode::Repos);
@@ -835,7 +844,7 @@ fn unpushed_scan_filters_the_saved_repository_list_when_it_finishes_elsewhere() 
     let (mut m, _) = dirty_model(&root);
     let cmds = run_slash(&mut m, "/unpushed");
     only_main(&mut m);
-    m.open_worktrees();
+    open_worktrees(&mut m);
 
     feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);
@@ -896,7 +905,7 @@ fn dirty_filter_is_for_repositories() {
     let root = TempDir::new();
     let (mut m, _) = dirty_model(&root);
     only_main(&mut m);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/dirty");
     assert!(cmds.is_empty() && !m.dirty_only);
     assert!(m.note.contains("repository list"), "{:?}", m.note);
@@ -934,7 +943,7 @@ fn unpushed_filter_is_for_repositories() {
     let root = TempDir::new();
     let (mut m, _) = dirty_model(&root);
     only_main(&mut m);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/unpushed");
     assert!(cmds.is_empty() && !m.unpushed_only);
     assert!(m.note.contains("repository list"), "{:?}", m.note);
@@ -1410,7 +1419,7 @@ fn created_worktree_keeps_the_main_worktree_last() {
     git_repo(&r.path());
     let mut m = new_model(std::slice::from_ref(&r), "");
     (m.w, m.h) = (90, 16);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert_eq!(label(&m), "main", "the main worktree starts at the bottom");
 
     run_slash(&mut m, "/create feat/login");
@@ -1520,7 +1529,8 @@ fn remove_worktree_forces_what_it_warned_about() {
         Ok(vec![w(dir, "main"), w("/tmp/wt/login", "feat/login")])
     });
     m.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 1 } else { 0 });
-    m.update(key("ctrl+w"));
+    let cmds = m.update(key("ctrl+w"));
+    feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);
     m.cursor = m
         .view
@@ -1844,8 +1854,12 @@ fn worktree_mode() {
         ])
     });
 
-    m.open_worktrees();
+    let cmds = m.open_worktrees();
+    assert_eq!(m.mode, Mode::Repos, "the list changed before git answered");
+    assert!(m.busy.contains("worktrees of"), "{:?}", m.busy);
+    feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);
+    assert_eq!(m.busy, "");
     assert_eq!(m.view.len(), 3);
     assert_eq!(label(&m), "main");
     assert_eq!(
@@ -1864,6 +1878,24 @@ fn worktree_mode() {
     assert_eq!(label(&m), "github.com/acme/bravo");
 }
 
+// git is asked off the UI thread, and an answer about a repository the
+// cursor has left is dropped rather than replacing the list it is on.
+#[test]
+fn worktree_mode_drops_a_stale_answer() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &["github.com/acme/alpha", "github.com/acme/bravo"],
+    );
+    let mut m = new_model(&rs, "");
+    only_main(&mut m);
+    let cmds = m.update(key("ctrl+w"));
+    m.update(key("up"));
+    feed(&mut m, cmds);
+    assert_eq!(m.mode, Mode::Repos);
+    assert_eq!(m.busy, "", "the wait outlived its answer");
+}
+
 // Ctrl-W toggles it off, Ctrl-G closes it, and Esc does too. Only Esc quits
 // gm, and only from the repository list.
 #[test]
@@ -1873,7 +1905,7 @@ fn worktree_mode_keys_go_back() {
     for k in ["ctrl+w", "ctrl+g", "esc"] {
         let mut m = new_model(&rs, "");
         only_main(&mut m);
-        m.open_worktrees();
+        open_worktrees(&mut m);
         assert_eq!(m.mode, Mode::Worktrees);
         let cmds = m.update(key(k));
         assert_eq!(m.mode, Mode::Repos, "{k}");
@@ -1893,7 +1925,7 @@ fn worktree_mode_leaves_the_list_alone_on_error() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     m.worktrees_of = Arc::new(|_| Err("not a git repository".into()));
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert!(m.mode == Mode::Repos && m.view.len() == 1);
     assert!(m.note.contains("not a git repository"), "{:?}", m.note);
 }
@@ -1914,7 +1946,7 @@ fn empty_lists_are_named() {
     );
 
     m.worktrees_of = Arc::new(|_| Ok(vec![]));
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert!(
         m.note.contains("no worktrees in github.com/acme/alpha"),
         "{:?}",
@@ -1934,7 +1966,7 @@ fn worktree_create_and_remove() {
     git_repo(&r.path());
     let mut m = new_model(std::slice::from_ref(&r), "");
     (m.w, m.h) = (90, 18);
-    m.open_worktrees(); // the real repo::worktrees, not a stub
+    open_worktrees(&mut m); // the real repo::worktrees, not a stub
     assert!(m.mode == Mode::Worktrees && m.view.len() == 1);
 
     run_slash(&mut m, "/create feat/login");
@@ -1963,7 +1995,7 @@ fn worktree_create_and_remove() {
     assert_eq!(repo::find_repos(&root.path()), vec![r.path()]);
 
     // Now take it away, and its branch: it holds nothing HEAD lacks.
-    m.open_worktrees(); // the rows that come from git carry their branch
+    open_worktrees(&mut m); // the rows that come from git carry their branch
     m.cursor = 0;
     run_slash(&mut m, "/remove");
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
@@ -2010,7 +2042,7 @@ fn expire_removes_the_idle_worktrees() {
     });
     let dirty = busy.clone();
     m.changed_of = Arc::new(move |p| usize::from(repo::same_path(p, &dirty)));
-    m.open_worktrees();
+    open_worktrees(&mut m);
     assert_eq!(rows(&m).len(), 4);
 
     run_slash(&mut m, "/expire 30d");
@@ -2055,7 +2087,7 @@ fn worktree_create_refuses_a_duplicate() {
         repo::WORKTREE_ROOT
     )));
     let mut m = new_model(std::slice::from_ref(&r), "");
-    m.open_worktrees();
+    open_worktrees(&mut m);
     run_slash(&mut m, "/create feat/login");
     assert_eq!(m.over, Overlay::None);
     assert!(m.note.contains("already exists"), "{:?}", m.note);
@@ -2072,7 +2104,7 @@ fn worktree_create_refuses_a_bogus_branch() {
     };
     git_repo(&r.path());
     let mut m = new_model(std::slice::from_ref(&r), "");
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/create ../../escaped");
     assert!(cmds.is_empty() && m.over == Overlay::None);
     assert!(m.note.contains("not a branch name"), "{:?}", m.note);
@@ -2086,7 +2118,7 @@ fn remove_refuses_the_main_worktree() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     only_main(&mut m);
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/remove");
     assert!(!is_quit(&cmds) && m.over == Overlay::None);
     assert!(m.note.contains("repository itself"), "{:?}", m.note);
@@ -2114,7 +2146,7 @@ fn remove_refuses_the_main_worktree_behind_a_symlink() {
             ..Default::default()
         }])
     });
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let cmds = run_slash(&mut m, "/remove");
     assert!(!is_quit(&cmds) && m.over == Overlay::None);
     assert!(m.note.contains("repository itself"), "{:?}", m.note);
@@ -2196,7 +2228,8 @@ fn branch_mode() {
     back.update(key("ctrl+l"));
     assert_eq!(back.mode, Mode::Repos);
     let mut other = m.clone();
-    other.update(key("ctrl+w"));
+    let cmds = other.update(key("ctrl+w"));
+    feed(&mut other, cmds);
     assert_eq!(other.mode, Mode::Worktrees);
     let cmds = m.update(key("esc"));
     assert!(m.mode == Mode::Repos && !is_quit(&cmds));
@@ -2340,7 +2373,7 @@ fn create_updates_saved_repository_list_only() {
     let cmds = m.update(ch('y'));
     assert!(m.busy.contains("creat"), "{:?}", m.busy);
 
-    m.open_worktrees();
+    open_worktrees(&mut m);
     let visible = rows(&m);
     let msg = answer(cmds).expect("confirmed repository creation did not run");
     m.update(msg);
