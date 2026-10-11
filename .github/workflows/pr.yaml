@@ -1,18 +1,17 @@
 # Gate on the three things that can break the build: the tests, the linter,
 # and the formatting. One job, because a small repository spends more time
-# setting a runner up than it does running these.
+# setting a runner up than it does running these. Pull requests are the only
+# gate: every commit on main arrives through one, and CodeQL watches the
+# branch on its own, so a push to main runs nothing here twice.
 name: CI
 
 on:
   pull_request:
-    paths: &rust
+    paths:
       - "src/**"
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/pr.yaml
-  push:
-    branches: [main]
-    paths: *rust
 
 permissions:
   contents: read
