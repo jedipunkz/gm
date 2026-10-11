@@ -146,10 +146,25 @@ jobs:
       # The bundle and the attestation both carry their own certificate and
       # transparency information, so a machine that trusts nothing but the
       # sigstore trust root can verify a release without ever talking to this
-      # repository.
+      # repository. They go with the release files themselves: a user must
+      # not have to hunt them in the workflow's run artifacts.
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: checksums-signatures
           path: |
             dist/checksums.txt.bundle
             dist/checksums.txt.attestation.json
+
+      # The same two files, next to the release the checksums belong to. The
+      # verification a user runs against a download is:
+      #
+      #   cosign verify-blob --bundle checksums.txt.bundle \
+      #     --certificate-identity-regexp \
+      #     '^https://github.com/jedipunkz/gm/[.]github/workflows/release[.]yaml@refs/heads/main$' \
+      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      #     checksums.txt
+      - name: Publish the verification material
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${TAG}" --repo "${GITHUB_REPOSITORY}" dist/checksums.txt.bundle dist/checksums.txt.attestation.json
