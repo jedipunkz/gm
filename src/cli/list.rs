@@ -122,6 +122,7 @@ impl App<'_> {
                 .iter()
                 .map(|(_, path)| path.clone())
                 .collect::<Vec<_>>(),
+            repo::status_of,
         );
 
         // The name column is as wide as the widest name that survives the

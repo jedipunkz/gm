@@ -338,7 +338,9 @@ impl Model {
             branches_of: Arc::new(repo::branches),
             remote_branches_of: Arc::new(repo::remote_branches),
             prs_of: Arc::new(repo::pull_requests),
-            state_scan_of: Arc::new(repo::status_map),
+            state_scan_of: Arc::new(|ps: &[String]| {
+                repo::status_map(ps, repo::status_with_worktrees)
+            }),
             changed_of: Arc::new(repo::changed_files),
             open_url: Arc::new(|u| {
                 let _ = browse::open_url(u);

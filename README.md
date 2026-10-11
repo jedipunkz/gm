@@ -97,8 +97,8 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 
 | Command | Action |
 |---|---|
-| `/dirty` | Toggle: only repositories with uncommitted changes |
-| `/unpushed` | Toggle: only repositories with unpushed commits |
+| `/dirty` | Toggle: only repositories with uncommitted changes, in the repository or one of its worktrees |
+| `/unpushed` | Toggle: only repositories with unpushed commits, in the repository or one of its worktrees |
 | `/create <repo>` | Create a repository with `origin` set; it is added and selected |
 | `/remove` | Remove the selected repository and its worktrees (the panel says how many) |
 
