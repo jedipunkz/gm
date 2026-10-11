@@ -1,0 +1,15 @@
+# Mutation testing over the dangerous paths: src/repo is where the tool
+# deletes directories, decides what sits under the repository tree, and
+# manages worktrees. Survivors there are a testing-gap signal, not a gate:
+# the sweep runs on a schedule and reports through a tracking issue.
+
+examine_globs = [
+  "src/repo/*.rs",
+]
+
+# The package's tests are fast, but each mutant pays a full rebuild of the
+# crate, so the autoset per-mutant timeout is floored at a minute and a
+# couple of multipliers bound the stragglers instead of one hard second count.
+minimum_test_timeout = 60
+timeout_multiplier = 2.0
+build_timeout_multiplier = 2.0
