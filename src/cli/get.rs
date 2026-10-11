@@ -279,15 +279,15 @@ impl App<'_> {
             "" => String::new(),
             b => format!(" and branch {b} if merged"),
         };
-        if p.on("dry-run") {
-            writeln!(self.err, "would remove {dir}{also}")?;
-            return Ok(());
-        }
         // Work in the worktree is lost with it, so it is said before the
-        // question, not discovered afterwards.
+        // question, not discovered afterwards — and in a dry run as well.
         let dirty = repo::is_dirty(&dir).unwrap_or(false);
         if dirty {
             writeln!(self.err, "warning: {dir} has uncommitted changes")?;
+        }
+        if p.on("dry-run") {
+            writeln!(self.err, "would remove {dir}{also}")?;
+            return Ok(());
         }
         if !p.on("y") && !self.confirm(&format!("remove {dir}{also}?")) {
             writeln!(self.err, "skipped")?;
