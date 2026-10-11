@@ -47,7 +47,9 @@ impl Input {
         };
     }
 
-    /// completion is what Tab would add to the value.
+    /// completion is the part of the suggestion past what was typed: what
+    /// Tab adds to the value, though Tab also gives the typed part the
+    /// suggestion's case.
     fn completion(&self) -> Option<String> {
         let s: Vec<char> = self.matched.first()?.chars().collect();
         (s.len() > self.value.len()).then(|| s[self.value.len()..].iter().collect())
@@ -90,11 +92,12 @@ impl Input {
                 self.pos = 0;
             }
             "ctrl+k" => self.value.truncate(self.pos),
-            "tab" => {
-                if let Some(rest) = self.completion() {
-                    self.value.extend(rest.chars());
-                    self.pos = self.value.len();
-                }
+            // The suggestion replaces what was typed rather than being added
+            // after it: matching ignores case and command names do not, so
+            // /CR has to become /create, not /CReate.
+            "tab" if self.completion().is_some() => {
+                self.value = self.matched[0].chars().collect();
+                self.pos = self.value.len();
             }
             _ => {}
         }
@@ -218,8 +221,9 @@ mod tests {
         i.set_suggestions(vec!["/help".into(), "/worktrees".into()]);
         assert_eq!(i.completion().as_deref(), Some("rktrees"));
         i.update(&Key::named("tab"));
-        // What was typed keeps its case; only the rest is filled in.
-        assert_eq!(i.value(), "/Worktrees");
+        // The suggestion replaces what was typed, so the box holds the name
+        // as the command spells it.
+        assert_eq!(i.value(), "/worktrees");
         // An empty box offers nothing.
         let mut e = Input::default();
         e.set_suggestions(vec!["/help".into()]);
