@@ -225,7 +225,7 @@ pub struct RemoteBranches {
 pub struct Prs {
     path: String, // the repository it was asked about
     busy_tag: u64,
-    prs: Result<Vec<PullRequest>>,
+    prs: Result<Vec<(PullRequest, String)>>, // each with where it is checked out, if anywhere
 }
 
 /// Task is work off the UI thread; the message it returns is fed back in.

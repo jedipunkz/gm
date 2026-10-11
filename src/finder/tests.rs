@@ -2637,6 +2637,20 @@ fn pr_mode() {
     assert_eq!(label(&m), rs[1].rel);
 }
 
+// Which pull request is checked out where is git's answer too, so it is
+// worked out in gh's task rather than once the answer is on the UI thread.
+#[test]
+fn pr_mode_asks_git_off_the_ui_thread() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    let msg = answer(m.update(key("ctrl+j"))).expect("no answer from gh");
+    m.worktrees_of = Arc::new(|_| panic!("git was asked on the UI thread"));
+    m.update(msg);
+    assert_eq!(m.mode, Mode::Prs, "{:?}", m.note);
+    set_query(&mut m, "login");
+    assert_eq!(m.current().unwrap().path, "/tmp/wt/alpha-login");
+}
+
 // A fork's checkout is found under a symlinked root, where git prints the
 // resolved path, and is filed apart from the repository's own branches: a
 // local bob/main is not fork pull request bob:main.
