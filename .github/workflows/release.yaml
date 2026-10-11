@@ -15,6 +15,9 @@ on:
 
 permissions:
   contents: write
+  # cosign keyless signing ( Fulcio ) takes its OIDC token from this job: the
+  # workflow run itself is the signer, so the token must be minted and handed live.
+  id-token: write
 
 jobs:
   release:
@@ -84,3 +87,70 @@ jobs:
           # token it is handed is enough. The Homebrew formula is written by
           # the tap itself, which needs no credential of ours.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Sign and attest the checksums file that goreleaser just published. No
+      # stored keys: cosign signs keyless with the workflow run's OIDC identity,
+      # so the signature is as trustworthy as this very workflow and nothing
+      # here can sign a release outside of it.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      - name: Sign and attest the checksums file
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          # Certificate identity flags scoped to this exact workflow. cosign
+          # refuses to sign without an issuer and identity to bind, and a
+          # verifier refuses a signature made by any other workflow, repo or ref.
+          IDENTITY_REGEXP: ^https://github.com/jedipunkz/[.]github/workflows/(release|sign-release)[.]yaml@refs/heads/main$
+          OIDC_ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          set -euo pipefail
+          digests="dist/checksums.txt"
+
+          # Prove the file that came out of the build is the one being signed.
+          sha256sum "${digests}"
+
+          cosign sign-blob --yes \
+            --output-signature "${digests}.sig" \
+            --output-certificate "${digests}.pem" \
+            --use-signing-config=false \
+            --certificate-oidc-issuer "${OIDC_ISSUER}" \
+            --certificate-identity-regexp "${IDENTITY_REGEXP}" \
+            "${digests}"
+
+          # Provenance statement over that same file: who built it, where, from
+          # what source, and exactly what content. slsa-provenance v1 shape, with
+          # the fields cosign's slsaprovenance1 type requires.
+          release="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          sum_file="$(basename "${digests}")"
+          sha="$(shasum -a 256 "${digests}" | cut -d' ' -f1)"
+          jq -n \
+            --arg release "${release}" \
+            --arg run_url "${run_url}" \
+            --arg sha "${GITHUB_SHA}" \
+            --arg file "${sum_file}" \
+            --arg file_sha256 "${sha}" \
+            '{build_definition: {build_type: "https://github.com/jedipunkz/gm/.github/workflows/release.yaml@refs/heads/main", external_parameters: {release: $release}, internal_parameters: {}, resolved_dependencies: [{name: "gm", uri: "git+https://github.com/jedipunkz/gm@refs/heads/main", digest: {gitCommit: $sha}}]}, run_details: {builder: {id: "https://github.com/jedipunkz/gm/.github/workflows/release.yaml@refs/heads/main"}, metadata: {invocation_id: $run_url}, byproducts: [{name: "checksumsFile", uri: ($release + "/download/" + $file), digest: {sha256: $file_sha256}}]}}' \
+            > predicate.json
+
+          cosign attest-blob --yes \
+            --predicate predicate.json \
+            --type slsaprovenance1 \
+            --bundle "${digests}.attestation.json" \
+            --use-signing-config=false \
+            --tlog-upload=false \
+            --certificate-oidc-issuer "${OIDC_ISSUER}" \
+            --certificate-identity-regexp "${IDENTITY_REGEXP}" \
+            "${digests}"
+
+      # The two published files and the bundle make the verification below
+      # possible on a machine that trusts nothing but the sigstore trust root.
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: checksums-signatures
+          path: |
+            dist/checksums.txt.sig
+            dist/checksums.txt.pem
+            dist/checksums.txt.attestation.json
