@@ -99,11 +99,6 @@ jobs:
       - name: Sign and attest the checksums file
         env:
           TAG: ${{ steps.version.outputs.tag }}
-          # Certificate identity flags scoped to this exact workflow. cosign
-          # refuses to sign without an issuer and identity to bind, and a
-          # verifier refuses a signature made by any other workflow, repo or ref.
-          IDENTITY_REGEXP: ^https://github.com/jedipunkz/[.]github/workflows/(release|sign-release)[.]yaml@refs/heads/main$
-          OIDC_ISSUER: https://token.actions.githubusercontent.com
         run: |
           set -euo pipefail
           digests="dist/checksums.txt"
@@ -111,13 +106,20 @@ jobs:
           # Prove the file that came out of the build is the one being signed.
           sha256sum "${digests}"
 
+          # cosign v3 signs keyless with the run's own OIDC token: nothing is
+          # constrained from the signing side, and the identity flags the old
+          # versions took here belong to the verifier instead. The certificate
+          # this run mints carries the ref it runs at, so the verification a
+          # user runs against the checksums.txt next to these files is:
+          #
+          #   cosign verify-blob --bundle checksums.txt.bundle \
+          #     --certificate-identity-regexp \
+          #     '^https://github.com/jedipunkz/gm/[.]github/workflows/release[.]yaml@refs/heads/main$' \
+          #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+          #     checksums.txt
           cosign sign-blob --yes \
-            --output-signature "${digests}.sig" \
-            --output-certificate "${digests}.pem" \
-            --use-signing-config=false \
-            --certificate-oidc-issuer "${OIDC_ISSUER}" \
-            --certificate-identity-regexp "${IDENTITY_REGEXP}" \
-            "${digests}"
+            --bundle "${digests}.bundle" \
+            "${digests}" > /dev/null
 
           # Provenance statement over that same file: who built it, where, from
           # what source, and exactly what content. slsa-provenance v1 shape, with
@@ -125,7 +127,7 @@ jobs:
           release="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           sum_file="$(basename "${digests}")"
-          sha="$(shasum -a 256 "${digests}" | cut -d' ' -f1)"
+          sha="$(sha256sum "${digests}" | cut -d' ' -f1)"
           jq -n \
             --arg release "${release}" \
             --arg run_url "${run_url}" \
@@ -139,18 +141,15 @@ jobs:
             --predicate predicate.json \
             --type slsaprovenance1 \
             --bundle "${digests}.attestation.json" \
-            --use-signing-config=false \
-            --tlog-upload=false \
-            --certificate-oidc-issuer "${OIDC_ISSUER}" \
-            --certificate-identity-regexp "${IDENTITY_REGEXP}" \
-            "${digests}"
+            "${digests}" > /dev/null
 
-      # The two published files and the bundle make the verification below
-      # possible on a machine that trusts nothing but the sigstore trust root.
+      # The bundle and the attestation both carry their own certificate and
+      # transparency information, so a machine that trusts nothing but the
+      # sigstore trust root can verify a release without ever talking to this
+      # repository.
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: checksums-signatures
           path: |
-            dist/checksums.txt.sig
-            dist/checksums.txt.pem
+            dist/checksums.txt.bundle
             dist/checksums.txt.attestation.json
