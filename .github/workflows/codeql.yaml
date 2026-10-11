@@ -2,17 +2,22 @@
 # dependency-free Rust CLI can still make: command injection through git
 # arguments, path traversal out of the tree, resource leaks. Results land in
 # Security > Code scanning, where the README's badge reads from.
+#
+# The paths keep a README-only push from paying for an analysis; the weekly
+# cron is there for the changes no push will announce, such as tool and query
+# upgrades arriving in the action itself.
 name: CodeQL
 
 on:
   pull_request:
-    paths:
+    paths: &rust
       - "**.rs"
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/codeql.yaml
   push:
     branches: [main]
+    paths: *rust
   schedule:
     - cron: "17 3 * * 1"
 

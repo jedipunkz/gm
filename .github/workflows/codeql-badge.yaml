@@ -3,13 +3,24 @@
 # answer - no alerts, or how many - is what wants showing. This counts the
 # open code-scanning alerts and force-pushes the badges branch, which carries
 # nothing but that file.
+#
+# It follows the same paths as the analysis itself: a push where no analysis
+# runs cannot change the answer, and the cron sits half an hour behind the
+# analysis's cron, so it reads the scan the Monday run just made instead of
+# the one from last week.
 name: CodeQL badge
 
 on:
   push:
     branches: [main]
+    paths:
+      - "**.rs"
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/codeql.yaml
+      - .github/workflows/codeql-badge.yaml
   schedule:
-    - cron: "17 3 * * 1"
+    - cron: "47 3 * * 1"
 
 permissions:
   contents: write
