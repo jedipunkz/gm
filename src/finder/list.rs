@@ -92,7 +92,8 @@ impl Model {
     }
 
     /// keep_repo_filters applies status filters to the repository list only.
-    /// While the shared scan is in flight, every row stays visible.
+    /// A row the scan has no answer for yet stays visible, as every row does
+    /// while the first scan is in flight: hiding it would claim it is clean.
     fn keep_repo_filters(&self, view: Vec<usize>) -> Vec<usize> {
         if self.mode != Mode::Repos || !(self.dirty_only || self.unpushed_only) {
             return view;
@@ -102,7 +103,7 @@ impl Model {
         };
         view.into_iter()
             .filter(|&i| {
-                states.get(&self.all[i].path).is_some_and(|state| {
+                states.get(&self.all[i].path).is_none_or(|state| {
                     (!self.dirty_only || state.dirty > 0)
                         && (!self.unpushed_only || state.has_unpushed())
                 })
@@ -117,6 +118,19 @@ impl Model {
         let scan = self.state_scan_of.clone();
         Cmd::Task(Box::new(move || {
             Some(Msg::RepoStates(busy_tag, scan(&paths)))
+        }))
+    }
+
+    /// rescan_repo_state asks git again about the one repository a change in
+    /// the finder touched, so the status filters answer for it as it is now.
+    pub(super) fn rescan_repo_state(&self, path: &str) -> Cmd {
+        let path = path.to_string();
+        let scan = self.state_scan_of.clone();
+        Cmd::Task(Box::new(move || {
+            let state = scan(std::slice::from_ref(&path))
+                .remove(&path)
+                .unwrap_or_default();
+            Some(Msg::RepoState(path, state))
         }))
     }
 

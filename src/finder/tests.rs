@@ -981,6 +981,37 @@ fn dirty_filter_scans_again_when_switched_on_again() {
     assert_eq!(m.view.len(), 3, "{:?}", rows(&m));
 }
 
+// The bug where a repository made after the scan vanished under the filter:
+// it had no answer, and no answer read as clean.
+#[test]
+fn a_repository_created_under_a_filter_is_scanned() {
+    let root = TempDir::new();
+    let (mut m, _) = dirty_model(&root);
+    let cmds = run_slash(&mut m, "/dirty");
+    feed(&mut m, cmds);
+    dirty_everywhere(&mut m);
+
+    run_slash(&mut m, "/create acme/delta");
+    let cmds = m.update(ch('y'));
+    let rescan = feed(&mut m, cmds);
+    // Until git has answered for it, the new row is not hidden.
+    assert!(
+        rows(&m).contains(&"github.com/acme/delta".to_string()),
+        "{:?}",
+        rows(&m)
+    );
+    let Some(Msg::RepoState(path, state)) = answer(rescan) else {
+        panic!("the created repository was not scanned")
+    };
+    assert!(path.ends_with("github.com/acme/delta"), "{path}");
+    m.update(Msg::RepoState(path, state));
+    assert_eq!(
+        m.current().map(|it| it.label.as_str()),
+        Some("github.com/acme/delta"),
+        "the answer moved the selection off the new row"
+    );
+}
+
 // ---- the slash commands -------------------------------------------------
 
 // Repository paths are full of slashes, and only a leading one means a
