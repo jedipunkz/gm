@@ -462,10 +462,9 @@ fn branch_dates(dir: &str, list: &[Worktree]) -> HashMap<String, i64> {
     if refs.is_empty() {
         return HashMap::new();
     }
-    let mut args = vec![
-        "for-each-ref",
-        "--format=%(committerdate:unix) %(refname:short)",
-    ];
+    // The full name, because the short one is "heads/main" when a tag is
+    // also called main, and that is no branch name to look up.
+    let mut args = vec!["for-each-ref", "--format=%(committerdate:unix) %(refname)"];
     args.extend(refs.iter().map(String::as_str));
     let Ok(out) = git_in(dir, &args) else {
         return HashMap::new();
@@ -473,6 +472,7 @@ fn branch_dates(dir: &str, list: &[Worktree]) -> HashMap<String, i64> {
     out.split('\n')
         .filter_map(|line| {
             let (ts, name) = line.trim().split_once(' ')?;
+            let name = name.strip_prefix("refs/heads/")?;
             Some((name.to_string(), ts.parse().ok()?))
         })
         .collect()
@@ -1315,5 +1315,17 @@ detached
         let tmp = TempDir::new();
         let e = git_in(&tmp.path(), &["rev-parse", "HEAD"]).unwrap_err();
         assert!(e.0.contains("not a git repository"), "{e}");
+    }
+
+    // A tag named like the checked-out branch made git shorten the branch to
+    // "heads/main", and the worktree went undated.
+    #[test]
+    fn worktrees_date_a_branch_with_a_tag_of_its_name() {
+        let tmp = TempDir::new();
+        git_repo(&tmp.path());
+        git_in(&tmp.path(), &["tag", "main"]).unwrap();
+        let got = worktrees(&tmp.path()).unwrap();
+        assert_eq!(got[0].branch, "main");
+        assert!(got[0].committed_at > 0, "{got:?}");
     }
 }
