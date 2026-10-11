@@ -18,7 +18,7 @@ mod input;
 mod list;
 mod overlay;
 mod pr;
-mod score;
+pub mod score;
 mod terminal;
 mod theme;
 mod worktree;

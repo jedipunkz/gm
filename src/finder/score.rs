@@ -74,7 +74,16 @@ pub fn match_score(text: &str, idx: &[usize]) -> f64 {
 /// any subsequence the fuzzy matcher would piece together from elsewhere.
 pub fn substring_match(text: &str, lower_query: &str) -> Option<Vec<usize>> {
     if text.is_ascii() {
-        let at = text.to_lowercase().find(lower_query)?;
+        // An ASCII text lowers bytewise, so the query can be found without
+        // lowering the whole text into a fresh string.
+        let needle = lower_query.as_bytes();
+        if needle.is_empty() {
+            return Some(Vec::new());
+        }
+        let at = text
+            .as_bytes()
+            .windows(needle.len())
+            .position(|w| w.iter().zip(needle).all(|(a, b)| a.eq_ignore_ascii_case(b)))?;
         return Some(lower_query.char_indices().map(|(i, _)| at + i).collect());
     }
 
@@ -129,7 +138,7 @@ pub fn find(pattern: &str, data: &[&str]) -> Vec<Match> {
     let mut matches = Vec::new();
     for (index, full) in data.iter().enumerate() {
         let s = full.split('\0').next().unwrap_or("");
-        let chars: Vec<(usize, char)> = s.char_indices().collect();
+        let mut chars = s.char_indices().peekable();
         let mut m = Match {
             index,
             matched: Vec::with_capacity(runes.len()),
@@ -142,7 +151,7 @@ pub fn find(pattern: &str, data: &[&str]) -> Vec<Match> {
         let mut curr_adjacent_bonus = 0;
         let mut last = '\0';
         let mut last_index = 0;
-        for (k, &(j, candidate)) in chars.iter().enumerate() {
+        while let Some((j, candidate)) = chars.next() {
             if pattern_index < runes.len() && equal_fold(candidate, runes[pattern_index]) {
                 let mut score = 0;
                 if j == 0 {
@@ -169,7 +178,7 @@ pub fn find(pattern: &str, data: &[&str]) -> Vec<Match> {
                 }
             }
             let next_p = runes.get(pattern_index + 1).copied();
-            let next_c = chars.get(k + 1).map(|&(_, c)| c);
+            let next_c = chars.peek().map(|&(_, c)| c);
             // A pattern character is settled on once the next one could
             // start, or the text has run out.
             let settle = match (next_p, next_c) {
