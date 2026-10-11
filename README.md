@@ -102,7 +102,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `/create <repo>` | Create a repository with `origin` set; it is added and selected |
 | `/remove` | Remove the selected repository and its worktrees (the panel says how many) |
 
-- `/dirty` and `/unpushed` together keep repositories matching both. One background status scan serves both. `Esc` clears the query, then the filters.
+- `/dirty` and `/unpushed` together keep repositories matching both. One background status scan serves both, and switching either on scans again. `Esc` clears the query, then the filters.
 
 #### In Worktree list
 
