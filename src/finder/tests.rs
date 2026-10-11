@@ -1077,6 +1077,12 @@ fn command_completion() {
     assert!(shown.contains("/worktrees"), "{shown:?}");
     m.update(key("tab"));
     assert_eq!(m.input.value(), "/worktrees");
+    // A prefix typed in another case completes to a name Enter knows, and
+    // the query in front of it is kept as typed.
+    let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
+    typed(&mut m, "Alpha;/CR");
+    m.update(key("tab"));
+    assert_eq!(m.input.value(), "Alpha;/create");
 }
 
 // What to create or clone is not guessed.
