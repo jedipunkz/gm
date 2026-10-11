@@ -46,11 +46,18 @@ fn git_config(dir: &str, key: &str) -> String {
 /// beside what the others said.
 pub fn remote_branches(dir: &str) -> (Vec<Branch>, Option<Error>) {
     let (names, _) = remotes(dir);
+    // The full name, because the short one is "remotes/origin/x" when a local
+    // branch is also called origin/x.
     let fetched: HashSet<String> = git_in(
         dir,
-        &["for-each-ref", "--format=%(refname:short)", "refs/remotes"],
+        &["for-each-ref", "--format=%(refname)", "refs/remotes"],
     )
-    .map(|out| out.lines().map(str::to_string).collect())
+    .map(|out| {
+        out.lines()
+            .filter_map(|l| l.strip_prefix("refs/remotes/"))
+            .map(str::to_string)
+            .collect()
+    })
     .unwrap_or_default();
 
     list_remote_branches(&names, &fetched, |remote| {
@@ -228,6 +235,22 @@ mod tests {
             unfetched: true,
         };
         assert!(fetch_branch(&clone, &bad).is_err());
+    }
+
+    // A local branch named "origin/x" made git shorten the fetched branch to
+    // "remotes/origin/x", and the fetched branch was offered again as unfetched.
+    #[test]
+    fn remote_branches_skip_the_fetched_beside_a_local_branch_of_its_name() {
+        let tmp = TempDir::new();
+        let upstream = tmp.join("upstream");
+        git_repo(&upstream);
+        git_in(&upstream, &["branch", "x"]).unwrap();
+        let clone = tmp.join("clone");
+        git_quiet(&["clone", "-q", &upstream, &clone]).unwrap();
+        git_in(&clone, &["branch", "origin/x"]).unwrap();
+
+        let (bs, e) = remote_branches(&clone);
+        assert_eq!((bs, e), (vec![], None));
     }
 
     // The remote it could not reach is named, and nothing is asked on the way.
