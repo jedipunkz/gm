@@ -103,7 +103,7 @@ jobs:
 
       # One comment, updated in place — same marker/patch-or-create scheme
       # the coverage job uses.
-      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const body = await require('fs').promises.readFile('bench.md', 'utf8');
@@ -177,7 +177,7 @@ jobs:
 
       # Find or create the tracking issue, then patch (or create) the single
       # marker comment on it; the issue stays locked so it is only ever read.
-      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a2325f34cd # v8
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const body = await require('fs').promises.readFile('bench-trend.md', 'utf8');
