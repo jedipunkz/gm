@@ -98,7 +98,7 @@ jobs:
       # One comment, updated in place: a growing stack of coverage comments
       # on every push would drown the review it belongs to. The marker names
       # ours; it is patched when it is there, created when it is not.
-      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const those = (env) => (env || "").split("|");
