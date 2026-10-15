@@ -11,7 +11,9 @@ on:
       - "src/**"
       - Cargo.toml
       - Cargo.lock
-      - .github/workflows/pr.yaml
+      # Every workflow, so Dependabot's action bumps are built before they
+      # merge themselves (see dependabot-merge).
+      - ".github/workflows/**"
 
 permissions:
   contents: read
@@ -140,3 +142,24 @@ jobs:
                 body,
               });
             }
+
+  # Dependabot's minor and patch bumps merge themselves once the build and the
+  # coverage floor hold; a major bump waits for a person. The author, not the
+  # actor, is checked so a human re-running the job does not change who it
+  # trusts.
+  dependabot-merge:
+    needs: [check, coverage]
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - if: steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.update-type == 'version-update:semver-patch'
+        run: gh pr merge --squash "${PR_URL}"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
