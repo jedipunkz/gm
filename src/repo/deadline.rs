@@ -30,6 +30,10 @@ pub(super) fn run_deadline(
 ) -> Result<Output> {
     // A new session has no controlling terminal, so nothing this program
     // starts can open /dev/tty to ask for a password, whatever it is.
+    #[allow(
+        unsafe_code,
+        reason = "runs in the child between fork and exec; setsid is async-signal-safe and touches nothing of the parent"
+    )]
     // SAFETY: setsid is async-signal-safe and touches nothing of the parent.
     unsafe {
         cmd.pre_exec(|| {
@@ -75,7 +79,14 @@ pub(super) fn run_deadline(
                 // Nothing the program started outlives it: a process it left
                 // in the background still holds the pipes, and the reads
                 // below would wait for that one instead.
-                unsafe { libc::kill(-pgid, libc::SIGKILL) };
+                #[allow(
+                    unsafe_code,
+                    reason = "kill only signals the child's own process group"
+                )]
+                // SAFETY: kill only signals the child's own process group.
+                unsafe {
+                    libc::kill(-pgid, libc::SIGKILL)
+                };
             }
         }
         // A process that left the group still has the pipes, so the reads
@@ -91,6 +102,11 @@ pub(super) fn run_deadline(
             });
         }
         if Instant::now() >= deadline {
+            #[allow(
+                unsafe_code,
+                reason = "kill only signals the child's own process group"
+            )]
+            // SAFETY: kill only signals the child's own process group.
             if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 && status.is_none() {
                 let _ = child.kill();
             }

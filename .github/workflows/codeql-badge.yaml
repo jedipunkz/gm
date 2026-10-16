@@ -14,10 +14,6 @@ on:
     - cron: "47 3 * * 1"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  security-events: read
-
 concurrency:
   group: codeql-badge
   cancel-in-progress: true
@@ -26,8 +22,18 @@ jobs:
   badge:
     name: Update CodeQL badge
     runs-on: ubuntu-latest
+    # Scoped to the one job that uses them: counting the open alerts reads
+    # the code-scanning API, and publishing the badge force-pushes the
+    # `badges` branch. The workflow token itself defaults to read.
+    permissions:
+      contents: write
+      security-events: read
     steps:
       - name: Checkout code
+        # Credentials persist on purpose: the "Publish badge" step pushes
+        # the `badges` branch with the credential this checkout leaves
+        # behind, and no other step of the job carries a token git can
+        # push with.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Resolve CodeQL status
