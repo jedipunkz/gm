@@ -440,28 +440,28 @@ mod proptests {
             // The callers hand a lowercased query; fold the same way here.
             let lower = query.to_lowercase();
             if let Some(pos) = substring_match(&text, &lower) {
-                for raise in pos.iter().zip(lower.chars()) {
+                for place in pos.iter().zip(lower.chars()) {
                     prop_assert!(
-                        raise.0 < &text.len(),
+                        place.0 < &text.len(),
                         "position {} out of {:?}",
-                        raise.0,
+                        place.0,
                         text
                     );
                     prop_assert!(
-                        text.is_char_boundary(*raise.0),
+                        text.is_char_boundary(*place.0),
                         "mid-char {} in {:?}",
-                        raise.0,
+                        place.0,
                         text
                     );
                     prop_assert!(
-                        text[*raise.0..]
+                        text[*place.0..]
                             .chars()
                             .next()
-                            .is_some_and(|t| equal_fold(t, raise.1)),
+                            .is_some_and(|t| equal_fold(t, place.1)),
                         "position {} in {:?} is not {:?}'s",
-                        raise.0,
+                        place.0,
                         text,
-                        raise.1
+                        place.1
                     );
                 }
                 prop_assert!(

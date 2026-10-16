@@ -457,7 +457,6 @@ mod proptests {
             s in spelling(),
             fallback in spelling(),
         ) {
-            let _ = parse_chord(&s, &fallback);
             if let Ok(c) = parse_chord(&s, &fallback) {
                 let key = c.key();
                 prop_assert_eq!(
