@@ -5,6 +5,10 @@ fn main() {
     // `gm list | head` closes the pipe early. Go let SIGPIPE end the process
     // quietly; Rust ignores it and every write fails with "Broken pipe"
     // instead, which gm would report as an error.
+    #[allow(
+        unsafe_code,
+        reason = "SIG_DFL is a constant, always-valid handler, and nothing else has run yet"
+    )]
     // SAFETY: called before any thread exists, and SIG_DFL is always valid.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);

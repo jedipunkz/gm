@@ -198,7 +198,10 @@ pub mod testutil {
     }
 
     impl TempDir {
-        #[allow(clippy::new_without_default)]
+        #[allow(
+            clippy::new_without_default,
+            reason = "Default delegates to new(); making new delegate to Default would be circular"
+        )]
         pub fn new() -> TempDir {
             static N: AtomicUsize = AtomicUsize::new(0);
             let base = std::env::temp_dir().join(format!(
