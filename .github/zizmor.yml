@@ -1,0 +1,22 @@
+# zizmor configuration: https://docs.zizmor.sh/configuration/
+# Every relaxation below carries the reason it exists; revisit each entry
+# when the workflow it names changes what it does with the repository.
+rules:
+  # Every `uses:` clause in every workflow here is pinned to a full commit
+  # SHA with the action's version in a trailing comment; this policy keeps
+  # enforcing hash pins so a new workflow cannot regress to a mutable tag
+  # or branch.
+  unpinned-uses:
+    config:
+      policies:
+        "*": hash-pin
+  # Two checkout steps keep their credentials persisted on purpose, each
+  # with the same explanation written above the step it belongs to:
+  # release.yaml's checkout is what authorizes the tag push in "Tag it",
+  # and codeql-badge.yaml's is what authorizes the force-push of the
+  # `badges` branch in "Publish badge". Both pushes write only refs this
+  # workflow itself owns, with the token of this run.
+  artipacked:
+    ignore:
+      - release.yaml
+      - codeql-badge.yaml

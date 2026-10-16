@@ -42,13 +42,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: materialize the base commit
-        run: git worktree add /tmp/ght-base "${{ github.event.pull_request.base.sha }}"
+        env:
+          # A SHA, not a template expansion inside the shell: the expression
+          # is resolved once into an environment variable the step reads.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git worktree add /tmp/ght-base "${BASE_SHA}"
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
@@ -144,6 +149,8 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
 
@@ -153,12 +160,16 @@ jobs:
         run: cargo bench --locked --bench perf 2>&1 | tee divan-main.txt
 
       - name: summarize
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          REF: ${{ github.ref }}
         run: |
           python3 - <<'EOF' > bench-trend.md
+          import os
           import re
 
           rows = "<!-- gm-bench-trend -->\n\n## Bench trend on main\n\n" \
-                 "commit: `${{ github.sha }}` on `${{ github.ref }}`\n\n" \
+                 "commit: `" + os.environ["COMMIT_SHA"] + "` on `" + os.environ["REF"] + "`\n\n" \
                  "| bench | mean (µs) |\n| --- | --- |\n"
           for line in open("divan-main.txt", encoding="utf-8"):
               m = re.match(r"^[├╰]─\s*([\w:]+)\s+(.*)$", line)

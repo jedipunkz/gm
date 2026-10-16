@@ -38,6 +38,8 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
         id: filter
@@ -60,6 +62,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
@@ -86,6 +90,8 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
@@ -135,6 +141,11 @@ jobs:
       # on every push would drown the review it belongs to. The marker names
       # ours; it is patched when it is there, created when it is not.
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          # The floor reaches the script as an environment variable instead
+          # of a template expansion inside the script text: the value is
+          # data, not code.
+          FLOOR: ${{ steps.floor.outputs.floor }}
         with:
           script: |
             const those = (env) => (env || "").split("|");
@@ -150,7 +161,7 @@ jobs:
               "| " + lines[0] + "% (" + lines[1] + "/" + lines[2] + ") | "
                 + funcs[0] + "% (" + funcs[1] + "/" + funcs[2] + ") |",
               "",
-              "Floor: " + "${{ steps.floor.outputs.floor }}" + "% — comment-removed if it is absent",
+              "Floor: " + process.env.FLOOR + "% — comment-removed if it is absent",
               "",
               "[run](" + run + ")",
             ].join("\n");
