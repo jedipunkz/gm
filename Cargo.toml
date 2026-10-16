@@ -16,6 +16,21 @@ toml = { version = "1.1.6", default-features = false, features = ["std", "parse"
 [dev-dependencies]
 divan = "0.1"
 
+[lints.rust]
+# not "forbid": the two FFI sites need a local allow(..., reason = "..."),
+# and forbid would silence those for good rather than forcing a fresh reason.
+unsafe_code = "deny"
+# a call that is not itself sound turns into one the moment the wrapping fn is
+# inlined or exported; checking at the call site keeps each one accountable.
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+# every unsafe block has to carry a // SAFETY: comment, so a new block is a
+# written case for why it is sound, not a silent edit.
+undocumented_unsafe_blocks = "deny"
+# an allow that stays needs a sentence saying why the lint does not apply here.
+allow_attributes_without_reason = "deny"
+
 [[bench]]
 name = "perf"
 harness = false
