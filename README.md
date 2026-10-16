@@ -48,7 +48,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 
 | Requirement | When |
 |---|---|
-| macOS / Linux (Include WSL2) | Always |
+| macOS / Linux (including WSL2) | Always |
 | `git` on `$PATH` | Always |
 | [`gh`](https://cli.github.com/), logged in, with `gh pr checkout --worktree` | Pull request list |
 | True-color terminal | Themes |
