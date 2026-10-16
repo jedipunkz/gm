@@ -13,20 +13,23 @@ on:
         default: patch
         options: [patch, minor, major]
 
-permissions:
-  contents: write
-  # cosign keyless signing ( Fulcio ) takes its OIDC token from this job: the
-  # workflow run itself is the signer, so the token must be minted and handed live.
-  id-token: write
-
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Scoped to the one job that uses them: tagging and goreleaser write
+    # through `contents`, and cosign keyless signing ( Fulcio ) takes its
+    # OIDC token from `id-token` — the workflow run itself is the signer,
+    # so the token must be minted and handed live.
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - name: Releases come from main
         if: github.ref != 'refs/heads/main'
+        env:
+          REF: ${{ github.ref }}
         run: |
-          echo "refusing to release from ${{ github.ref }}" >&2
+          echo "refusing to release from ${REF}" >&2
           exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -34,6 +37,10 @@ jobs:
           # The whole history and every tag: one to work the version out from,
           # the rest for the changelog.
           fetch-depth: 0
+          # Persisted on purpose: the "Tag it" step pushes the tag with the
+          # credential this checkout leaves behind, and no other step of
+          # the workflow carries a token git can push with.
+          persist-credentials: true
 
       - name: Work out the next version
         id: version
@@ -74,6 +81,9 @@ jobs:
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: 0.15.1
+          # A release builds from the tag alone, so the zig toolchain cache
+          # stays off: what lands must be born in this run, not inherited.
+          use-cache: false
 
       - name: Install cargo-zigbuild
         run: cargo install --locked cargo-zigbuild@0.23.4
