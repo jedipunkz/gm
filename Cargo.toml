@@ -15,6 +15,11 @@ toml = { version = "1.1.6", default-features = false, features = ["std", "parse"
 
 [dev-dependencies]
 divan = "0.1"
+# proptest generates inputs the example-based tests never thought of, so the
+# functions that turn user input into paths are re-checked for their
+# invariants on every run. Regressions a run finds land in
+# proptest-regressions/ and are committed: a failure is re-tested forever.
+proptest = "1.12.0"
 
 [lints.rust]
 # not "forbid": the two FFI sites need a local allow(..., reason = "..."),

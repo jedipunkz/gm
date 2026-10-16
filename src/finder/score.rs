@@ -362,3 +362,120 @@ mod tests {
         assert!(find("", &["github.com/x/y"]).is_empty());
     }
 }
+
+// Property tests. Fuzzy filters run on whatever a repository is named and
+// whatever it is the user types, both of which are Unicode nobody prereads:
+// so no sequence of characters may panic the matcher, and every match it
+// reports must point at real places in its text. The example tests above
+// hold the cases someone thought of; these hold for everything else.
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// labels a candidate may carry: the repository paths gm ranks mostly,
+    /// with their \0 tail bytes, and any garble proptest can invent.
+    fn label() -> impl Strategy<Value = String> + 'static {
+        prop_oneof![
+            any::<String>(),
+            "(github\\.com/[a-z]{1,10}/[a-zA-Z0-9][a-zA-Z0-9._ -]{0,12}(\\x00[0-9-]{0,12})?)",
+            "(github\\.com/[a-z]{1,10}/){0,2}[a-zA-Z0-9][a-zA-Z0-9._ -]{0,13}(\\x00[0-9-]{0,12})?",
+        ]
+    }
+
+    proptest! {
+        // 256 cases a head; every proptest in this module runs the same.
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        // No pattern may panic the matcher, whatever the labels. And when
+        // the pattern matches, the match is a real answer: one position per
+        // pattern character, pointing at the letters it matched, at
+        // ascending char boundaries inside its own text, best scores first
+        // and on top the candidates' own order.
+        #[test]
+        fn find_answers_well_formed_matches(
+            pattern in any::<String>(),
+            labels in proptest::collection::vec(label(), 0..8),
+        ) {
+            let texts: Vec<&str> = labels.iter().map(String::as_str).collect();
+            let runes: Vec<char> = pattern.chars().collect();
+            let matches = find(&pattern, &texts);
+            prop_assert!(
+                matches.windows(2).all(|w| w[0].score >= w[1].score),
+                "scores out of order for {:?}",
+                pattern
+            );
+            for m in &matches {
+                let text = texts[m.index];
+                prop_assert_eq!(
+                    m.matched.len(),
+                    runes.len(),
+                    "positions against the pattern in {:?}",
+                    text
+                );
+                let in_order = m.matched.windows(2).all(|w| w[0] < w[1]);
+                prop_assert!(in_order, "positions out of order in {:?}", text);
+                for (i, r) in m.matched.iter().zip(&runes) {
+                    prop_assert!(*i < text.len(), "position {} out of {:?}", i, text);
+                    prop_assert!(text.is_char_boundary(*i), "mid-char {} in {:?}", i, text);
+                    prop_assert!(
+                        text[*i..]
+                            .chars()
+                            .next()
+                            .is_some_and(|c| equal_fold(c, *r)),
+                        "position {} in {:?} is not {:?}'s",
+                        i, text, r
+                    );
+                }
+            }
+        }
+
+        // A literal match points at the query's letters, one position each,
+        // in range, on whole characters, strictly ascending.
+        #[test]
+        fn substring_match_points_at_the_query(
+            text in any::<String>(),
+            query in any::<String>(),
+        ) {
+            // The callers hand a lowercased query; fold the same way here.
+            let lower = query.to_lowercase();
+            if let Some(pos) = substring_match(&text, &lower) {
+                for place in pos.iter().zip(lower.chars()) {
+                    prop_assert!(
+                        place.0 < &text.len(),
+                        "position {} out of {:?}",
+                        place.0,
+                        text
+                    );
+                    prop_assert!(
+                        text.is_char_boundary(*place.0),
+                        "mid-char {} in {:?}",
+                        place.0,
+                        text
+                    );
+                    prop_assert!(
+                        text[*place.0..]
+                            .chars()
+                            .next()
+                            .is_some_and(|t| equal_fold(t, place.1)),
+                        "position {} in {:?} is not {:?}'s",
+                        place.0,
+                        text,
+                        place.1
+                    );
+                }
+                prop_assert!(
+                    pos.windows(2).all(|w| w[0] < w[1]),
+                    "positions out of order in {:?}",
+                    text
+                );
+                prop_assert_eq!(
+                    pos.len(),
+                    lower.chars().count(),
+                    "length against {:?}",
+                    text
+                );
+            }
+        }
+    }
+}

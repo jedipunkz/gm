@@ -193,11 +193,17 @@ fn self_name() -> Result<String> {
 }
 
 /// rel_path_of is where a URL lands under a root: host/path, minus any .git
-/// suffix.
+/// suffix. The path segments collapse: a stray "//" in the reference, or a
+/// ".git" of its own — "https://github.com/a/.git" is a remote spelling, not
+/// a directory named "(nothing)" — never meant a segment without a name.
 pub fn rel_path_of(u: &Url) -> String {
     let p = u.path.trim_matches('/');
     let p = p.strip_suffix(".git").unwrap_or(p);
-    format!("{}/{p}", u.hostname())
+    std::iter::once(u.hostname())
+        .chain(p.split('/'))
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// browse_url turns a git remote into the https URL a browser can open:
@@ -357,5 +363,129 @@ mod tests {
         assert_eq!(scp_like("h.com:/u/r"), Some((None, "h.com", "/u/r")));
         assert_eq!(scp_like("u/r"), None);
         assert_eq!(scp_like("h.com:"), None);
+    }
+}
+
+// Property tests. The example-based tests above cover the references someone
+// thought of; these re-check the invariants against inputs proptest invents,
+// garbled or not, so a hand-typed reference can never become a path that
+// walks out of the tree, silently or otherwise.
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// prefix of the references users type: the schemes gm takes, the scp
+    /// form, or a bare host.
+    fn prefix() -> impl Strategy<Value = String> + 'static {
+        prop_oneof![
+            Just("https://".to_string()),
+            Just("ssh://git@".to_string()),
+            Just("git@".to_string()),
+            Just(String::new()),
+        ]
+    }
+
+    /// host of the references users type, port and all.
+    fn host() -> impl Strategy<Value = String> + 'static {
+        prop_oneof![
+            Just("github.com".to_string()),
+            Just("example.com".to_string()),
+            "([a-z][a-z0-9-]{0,7}){1,2}\\.[a-z]{2,3}(:[0-9]{0,5})?",
+            "[a-zA-Z0-9+.-]{0,12}",
+        ]
+    }
+
+    /// path of the references users type. Dot segments, stray slashes and
+    /// their like ride in here on purpose: they are what the Ok branch has
+    /// to refuse.
+    fn path() -> impl Strategy<Value = String> + 'static {
+        prop_oneof![
+            Just("/u/r.git".to_string()),
+            "(/|)([a-zA-Z0-9._~-]{1,10}){1,3}(/\\.git)?",
+            "(/\\.\\.?/|)[a-z]{0,6}(\\.|\\.\\.|//|/[a-z0-9._-]{0,8}){0,3}",
+            "[a-zA-Z0-9._~/-]*",
+        ]
+    }
+
+    /// references a gm user types: every shorthand and URL the doc comment
+    /// names, and any garble proptest can invent instead.
+    fn reference() -> impl Strategy<Value = String> + 'static {
+        // Weighted towards the forms gm is meant to accept, so the Ok
+        // branch — the one that produces a path — is hit often.
+        prop_oneof![
+            any::<String>(),
+            any::<String>(),
+            (prefix(), host(), path()).prop_map(|(pre, h, p)| format!("{pre}{h}{p}")),
+            "[a-z]{1,8}@[a-z][a-z0-9.-]{1,10}:[a-zA-Z0-9._~/-]{1,12}",
+        ]
+    }
+
+    proptest! {
+        // 256 cases a head; every proptest in this module runs the same.
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        // Whatever comes in — a typed reference, a URL a remote reported —
+        // the doors every clone or removal walks through must answer with
+        // an Ok or an Err, never a panic.
+        #[test]
+        fn normalize_and_browse_never_panic(r in reference(), ssh in any::<bool>()) {
+            let _ = normalize_url(&r, ssh);
+            let _ = browse_url(&r);
+            let _ = Url::parse(&r);
+        }
+
+        // When a reference is accepted, where it lands under the root is
+        // the relative path: the host and the path segments. No "." or ".."
+        // segment, no empty segment (a stray "//" in the reference would
+        // make a name gm never meant), nothing absolute, and no space or
+        // control character — the host segment is part of the same answer.
+        #[test]
+        fn an_accepted_reference_lands_safely_under_the_root(
+            r in reference(),
+            ssh in any::<bool>(),
+        ) {
+            if let Ok(u) = normalize_url(&r, ssh) {
+                let rel = rel_path_of(&u);
+                let segments: Vec<&str> = rel.split('/').collect();
+                let host = segments[0];
+                prop_assert!(
+                    !host.is_empty() && host == u.hostname(),
+                    "host lost: {:?} from {:?}", rel, r
+                );
+                prop_assert!(
+                    rel.chars().all(|c| !c.is_whitespace() && !c.is_control()),
+                    "a space or control character in {:?} from {:?}",
+                    rel, r
+                );
+                for segment in &segments[1..] {
+                    prop_assert!(!segment.is_empty(), "empty segment in {:?} from {:?}", rel, r);
+                    prop_assert_ne!(*segment, ".", "{:?} from {:?}", rel, r);
+                    prop_assert_ne!(*segment, "..", "{:?} from {:?}", rel, r);
+                }
+            }
+        }
+
+        // A URL that parses, printed, parses again: display loses nothing
+        // the parser keeps.
+        #[test]
+        fn parse_round_trips(s in any::<String>()) {
+            if let Ok(u) = Url::parse(&s) {
+                prop_assert_eq!(
+                    Url::parse(&u.to_string()),
+                    Ok(u.clone()),
+                    "from {:?}", s
+                );
+            }
+        }
+
+        // The only https URL a browser may be handed is the one browse_url
+        // builds.
+        #[test]
+        fn browse_url_is_https_when_it_succeeds(r in reference()) {
+            if let Ok(url) = browse_url(&r) {
+                prop_assert!(url.starts_with("https://"), "{:?} from {:?}", url, r);
+            }
+        }
     }
 }
