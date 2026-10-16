@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# The case below is the one that caught rel_path_of naming an empty
+# segment ("https://github.com/a/.git" landed as "github.com/a/"); the
+# fix collapses empty segments and this seed guards the fix.
+cc 08299f40c89c40c1fc433a758c8a6416318743c412567bd985b4599879f90a5d # shrinks to r = "https://github.com/a/.git", ssh = false

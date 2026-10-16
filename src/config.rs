@@ -380,3 +380,97 @@ mod tests {
         }
     }
 }
+
+// Property tests: gm.toml is the user's file, so parse and parse_chord can
+// be handed anything, and must answer with an Ok or an Err, never a panic.
+// (Which chords must then be refused — Enter and Tab in disguise — is judged
+// by the finder and the shell snippets, and is checked at their level.)
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// a TOML value: the string every setting is, the list root may be, and
+    /// the bare word or number root must refuse.
+    fn value() -> impl Strategy<Value = String> + 'static {
+        prop_oneof![
+            "[a-zA-Z0-9 ~/._-]{0,12}".prop_map(|s| format!("\"{s}\"")),
+            proptest::collection::vec("[~/a-zA-Z-]{0,6}".prop_map(|s| format!("\"{s}\"")), 0..4)
+                .prop_map(|vs| format!("[{}]", vs.join(", "))),
+            "[a-z]{0,6}",
+            "[0-9]{1,3}",
+        ]
+    }
+
+    /// one line of a gm.toml: a known key with a value of every kind it may
+    /// take, or a key gm does not know at all.
+    fn line() -> impl Strategy<Value = String> + 'static {
+        prop_oneof![
+            Just(KEYS).prop_flat_map(|keys| {
+                (0..keys.len(), value()).prop_map(move |(i, v)| format!("{} = {}\n", keys[i], v))
+            }),
+            any::<String>().prop_map(|k| {
+                let k = k.replace(['\n', '"', '='], "_").trim().replace(' ', "_");
+                let k = if k.is_empty() { "x".to_string() } else { k };
+                format!("{k} = \"x\"\n")
+            }),
+        ]
+    }
+
+    /// chord spellings, the ways the docs write the modifiers in any order,
+    /// beside any garble proptest can invent.
+    fn spelling() -> impl Strategy<Value = String> + 'static {
+        prop_oneof![
+            any::<String>(),
+            "(ctrl[\\-+]|c\\-|\\^)(alt[\\-+])?(shift[\\-+])?[a-z]",
+            "(ctrl[\\-+]|c\\-|\\^)(shift[\\-+])?(alt[\\-+])?[a-z]",
+            "(ctrl[\\-+]|c\\-|\\^)(alt[\\-+]|shift[\\-+]){0,2}",
+            "[a-z]+",
+        ]
+    }
+
+    proptest! {
+        // 256 cases a head; every proptest in this module runs the same.
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        // A gm.toml the user wrote a garble into, lines in any order, values
+        // of any kind, keys gm does not know: read it as a config or an
+        // error, never a panic.
+        #[test]
+        fn parse_never_panics_on_a_garbled_body(
+            lines in proptest::collection::vec(line(), 0..4),
+        ) {
+            let _ = parse(&lines.concat());
+        }
+
+        // Nor on any text at all: a pasted file, a rewritten one, anything.
+        #[test]
+        fn parse_never_panics_on_any_text(body in any::<String>()) {
+            let _ = parse(&body);
+        }
+
+        // No spelling, garbled or not, may panic parse_chord. And a chord
+        // that parses answers to the key it prints: key prints what
+        // parse_chord reads back, unchanged.
+        #[test]
+        fn a_bound_chord_answers_to_what_it_parses_from(
+            s in spelling(),
+            fallback in spelling(),
+        ) {
+            let _ = parse_chord(&s, &fallback);
+            if let Ok(c) = parse_chord(&s, &fallback) {
+                let key = c.key();
+                prop_assert_eq!(
+                    parse_chord(&key, "ctrl-x"),
+                    Ok(c.clone()),
+                    "{:?} parses to {:?}", s, key
+                );
+                prop_assert!(key.starts_with("ctrl+"), "{:?} became {:?}", s, key);
+                prop_assert!(
+                    c.letter.is_ascii_lowercase(),
+                    "{:?} bound {:?}", s, c.letter
+                );
+            }
+        }
+    }
+}
