@@ -12,10 +12,13 @@
 
 mod branch;
 mod browse;
+mod clipboard;
 mod command;
 mod info;
 mod input;
+mod issues;
 mod list;
+mod md;
 mod overlay;
 mod pr;
 pub mod score;
@@ -49,10 +52,12 @@ use worktree::{Mode, Stash};
 
 /// The finder keys gm.toml can move: DEFAULT_WORKTREE_KEY opens the worktree
 /// list, DEFAULT_BRANCH_KEY the branch list, DEFAULT_PR_KEY the pull request
-/// list, and DEFAULT_REMOTE_KEY the selected repository's remote.
+/// list, DEFAULT_ISSUE_KEY the issue list, and DEFAULT_REMOTE_KEY the selected
+/// repository's remote.
 pub const DEFAULT_WORKTREE_KEY: &str = "ctrl-w";
 pub const DEFAULT_BRANCH_KEY: &str = "ctrl-l";
 pub const DEFAULT_PR_KEY: &str = "ctrl-j";
+pub const DEFAULT_ISSUE_KEY: &str = "ctrl-[";
 pub const DEFAULT_REMOTE_KEY: &str = "ctrl-alt-b";
 
 /// RESERVED are the Ctrl chords the finder already answers to; binding an
@@ -72,6 +77,7 @@ pub struct Keys {
     pub worktree: Chord, // open and close the worktree list
     pub branch: Chord,   // open and close the branch list
     pub pr: Chord,       // open and close the pull request list
+    pub issue: Chord,    // open and close the issue list
     pub remote: Chord,   // open the selected repository's remote
 }
 
@@ -83,6 +89,7 @@ impl Keys {
             ("worktree_key", &self.worktree),
             ("branch_key", &self.branch),
             ("pr_key", &self.pr),
+            ("issue_key", &self.issue),
             ("remote_key", &self.remote),
         ];
         for (i, (name, chord)) in named.iter().enumerate() {
@@ -192,6 +199,8 @@ pub enum Msg {
     Branches(Branches),             // git's branch list for one repository
     RemoteBranches(RemoteBranches), // what the remotes have that was not fetched
     Prs(Prs),                       // gh's answer about one repository
+    Issues(Issues),                 // gh's answer about one repository's issues
+    IssueDetail(IssueDetail),       // gh's answer about the full text of one issue
     RemoveDetail(RemoveDetail),     // what a /remove waiting on git would lose
     RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
     RepoState(String, repo::State), // one repository scanned again after a change
@@ -229,6 +238,20 @@ pub struct Prs {
     prs: Result<Vec<(PullRequest, String)>>, // each with where it is checked out, if anywhere
 }
 
+/// Issues carries gh's answer about one repository.
+pub struct Issues {
+    path: String, // the repository it was asked about
+    busy_tag: u64,
+    issues: Result<Vec<crate::repo::Issue>>,
+}
+
+/// IssueDetail carries the full text of one issue.
+pub struct IssueDetail {
+    path: String, // the repository it was asked about
+    busy_tag: u64,
+    issue: Result<crate::repo::Issue>,
+}
+
 /// RemoveDetail is git's account of what a /remove would lose, for the
 /// question already on screen.
 pub struct RemoveDetail {
@@ -244,7 +267,7 @@ pub type Task = Box<dyn FnOnce() -> Option<Msg> + Send>;
 pub enum Cmd {
     Quit,
     Task(Task),
-    After(Duration, Msg),
+    After(Duration, Box<Msg>),
 }
 
 /// STATUS_DELAY is how long a row has to stay selected before git is asked
@@ -256,6 +279,11 @@ const STATUS_DELAY: Duration = Duration::from_millis(100);
 /// can replace it; every real run uses the repo function of the same name.
 type Seam<T> = Arc<dyn Fn(&str) -> T + Send + Sync>;
 type StateScan = Arc<dyn Fn(&[String]) -> HashMap<String, repo::State> + Send + Sync>;
+/// IssueOf asks gh for one issue's full text, the repository dir and the
+/// number in hand; the tests stand in for it.
+type IssueOf = Arc<dyn Fn(&str, u64) -> Result<crate::repo::Issue> + Send + Sync>;
+/// CopyOf puts a string on the clipboard the terminal remembers.
+type CopyOf = Arc<dyn Fn(&str) -> std::io::Result<()> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Model {
@@ -281,6 +309,9 @@ pub struct Model {
     query: String, // the query the view was built from; a command is not one
     over: Overlay, // the panel drawn over the list, if any
     ask: Pending,  // what a confirmation is waiting on
+    /// detail is the one issue the panel is showing, held while Overlay::Issue
+    /// is up.
+    detail: Option<issues::Detail>,
     /// repo_states holds the bulk status scan once one of the repository
     /// filters needs it. Both filters share the same result.
     repo_states: Option<HashMap<String, repo::State>>,
@@ -299,9 +330,16 @@ pub struct Model {
     branches_of: Seam<Result<Vec<Branch>>>,
     remote_branches_of: Seam<(Vec<Branch>, Option<Error>)>,
     prs_of: Seam<Result<Vec<PullRequest>>>,
+    /// issues_of lists a repository's open issues, issue_of reads one in
+    /// full; both gh's to answer, so the tests can stand in for them.
+    issues_of: Seam<Result<Vec<crate::repo::Issue>>>,
+    issue_of: IssueOf,
     state_scan_of: StateScan,
     changed_of: Seam<usize>,
     open_url: Arc<dyn Fn(&str) + Send + Sync>,
+    /// copy_url puts a string on the clipboard the terminal remembers, by
+    /// OSC52, so a test can watch for it instead of a tty.
+    copy_url: CopyOf,
     gh: String, // the program that checks pull requests out
 }
 
@@ -354,6 +392,7 @@ impl Model {
             query: String::new(),
             over: Overlay::None,
             ask: Pending::default(),
+            detail: None,
             repo_states: None,
             scanning_states: false,
             dirty_only: false,
@@ -366,6 +405,8 @@ impl Model {
             branches_of: Arc::new(repo::branches),
             remote_branches_of: Arc::new(repo::remote_branches),
             prs_of: Arc::new(repo::pull_requests),
+            issues_of: Arc::new(repo::issues),
+            issue_of: Arc::new(repo::issue),
             state_scan_of: Arc::new(|ps: &[String]| {
                 repo::status_map(ps, repo::status_with_worktrees)
             }),
@@ -373,6 +414,7 @@ impl Model {
             open_url: Arc::new(|u| {
                 let _ = browse::open_url(u);
             }),
+            copy_url: Arc::new(clipboard::copy),
             gh: "gh".into(),
         };
         m.filter();
@@ -394,7 +436,7 @@ impl Model {
         if p.is_empty() || self.status.contains_key(&p) {
             return None; // a branch with no worktree yet has nothing to ask git about
         }
-        Some(Cmd::After(STATUS_DELAY, Msg::Probe(p)))
+        Some(Cmd::After(STATUS_DELAY, Msg::Probe(p).into()))
     }
 
     /// probe asks git about path, off the UI thread, unless the cursor has
@@ -431,13 +473,15 @@ impl Model {
                     return vec![];
                 }
                 self.spin.frame += 1;
-                vec![Cmd::After(SPINNER_INTERVAL, Msg::Spin(tag))]
+                vec![Cmd::After(SPINNER_INTERVAL, Msg::Spin(tag).into())]
             }
             Msg::Done(d) => self.done(d),
             Msg::Worktrees(w) => self.show_worktrees(w),
             Msg::Branches(b) => self.show_branches(b),
             Msg::RemoteBranches(r) => self.add_remote_branches(r),
             Msg::Prs(p) => self.show_prs(p),
+            Msg::Issues(i) => self.show_issues(i),
+            Msg::IssueDetail(d) => self.show_issue_detail(d),
             Msg::RemoveDetail(d) => self.fill_detail(d),
             Msg::RepoStates(tag, states) => {
                 // Merged, not replaced: a repository scanned again while this
@@ -648,6 +692,13 @@ impl Model {
         if name == self.keys.pr.key() {
             return self.switch_to(Mode::Prs);
         }
+        // The default issue chord is ctrl-[, the byte terminals send instead
+        // of ESC. It is answered to from the fixed esc branch below instead,
+        // because a binding that answered to "ctrl+[" would never fire: no
+        // terminal sends that name.
+        if name == self.keys.issue.key() && self.keys.issue.letter != '[' {
+            return self.switch_to(Mode::Issues);
+        }
         if name == self.keys.remote.key() {
             return self.open_remote().into_iter().collect();
         }
@@ -677,6 +728,13 @@ impl Model {
                     self.cursor = self.view.len().saturating_sub(1);
                     return self.load_status().into_iter().collect();
                 }
+                // The default issue chord is ctrl-[, and the key it arrives
+                // as is esc. By here the back-outs a query or a filter holds
+                // for esc are done with: nothing is left to undo, so esc
+                // opens the issue list, and only ctrl+c quits when it does.
+                if self.keys.issue.letter == '[' {
+                    return self.switch_to(Mode::Issues);
+                }
                 return if name == "esc" {
                     vec![Cmd::Quit]
                 } else {
@@ -690,6 +748,7 @@ impl Model {
                 match self.mode {
                     Mode::Branches => return self.check_out(),
                     Mode::Prs => return self.check_out_pr(),
+                    Mode::Issues => return self.view_issue(),
                     _ => {}
                 }
                 if let Some(it) = self.current() {
@@ -782,7 +841,7 @@ impl Model {
         self.busy_since = Instant::now();
         self.note.clear();
         let tag = self.spin.tag;
-        (tag, Cmd::After(Duration::ZERO, Msg::Spin(tag)))
+        (tag, Cmd::After(Duration::ZERO, Msg::Spin(tag).into()))
     }
 
     fn finish_busy(&mut self, tag: u64) {
@@ -839,10 +898,11 @@ impl Model {
     }
 
     fn hints(&self, width: usize) -> Line<'static> {
-        let (wt, br, pr, rm) = (
+        let (wt, br, pr, iss, rm) = (
             self.keys.worktree.short(),
             self.keys.branch.short(),
             self.keys.pr.short(),
+            self.keys.issue.short(),
             self.keys.remote.short(),
         );
         // Esc undoes one layer of narrowing at a time, so it has to say which.
@@ -863,6 +923,7 @@ impl Model {
                 (rm, "browse"),
                 (br, "branches"),
                 (pr, "prs"),
+                (iss, "issues"),
             ],
             Mode::Worktrees => vec![
                 mv,
@@ -887,6 +948,14 @@ impl Model {
                 (rm, "browse"),
                 (wt, "worktrees"),
                 (br, "branches"),
+            ],
+            Mode::Issues => vec![
+                mv,
+                ("enter".into(), "view"),
+                ("esc".into(), "repos"),
+                (rm, "browse"),
+                (pr, "prs"),
+                (wt, "worktrees"),
             ],
         };
 
@@ -976,6 +1045,7 @@ impl Model {
             Mode::Worktrees => "worktree",
             Mode::Branches => "branch",
             Mode::Prs => "pr",
+            Mode::Issues => "issue",
         };
         Paragraph::new(Line::styled(mode, self.st.prompt))
             .alignment(ratatui::layout::Alignment::Center)
@@ -997,6 +1067,7 @@ impl Model {
         match self.over {
             Overlay::Help => self.overlay(buf, self.help_box()),
             Overlay::Confirm => self.overlay(buf, self.confirm_box()),
+            Overlay::Issue => self.render_issue(buf),
             Overlay::None => {}
         }
     }
@@ -1051,7 +1122,7 @@ pub fn run(
         for cmd in cmds.drain(..) {
             match cmd {
                 Cmd::Quit => return Ok(m.result),
-                Cmd::After(d, msg) => timers.push((Instant::now() + d, msg)),
+                Cmd::After(d, msg) => timers.push((Instant::now() + d, *msg)),
                 Cmd::Task(task) => {
                     let tx = tx.clone();
                     std::thread::spawn(move || {

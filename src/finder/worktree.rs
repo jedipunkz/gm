@@ -11,6 +11,7 @@ pub enum Mode {
     Worktrees,
     Branches,
     Prs,
+    Issues,
 }
 
 /// Stash is the repository list put aside while another list is up, so Esc
@@ -136,6 +137,7 @@ impl Model {
         match mode {
             Mode::Branches => self.open_branches(),
             Mode::Prs => self.open_prs(),
+            Mode::Issues => self.open_issues(),
             _ => self.open_worktrees(),
         }
     }

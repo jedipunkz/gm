@@ -65,6 +65,27 @@ impl Model {
                     return out;
                 }
             }
+            Mode::Issues => {
+                let i = &it.issue;
+                field(&mut out, "issue", &it.label, st.name);
+                field(&mut out, "repository", &self.origin, st.dim);
+                field(&mut out, "author", &i.author, st.remote);
+                field(&mut out, "labels", &i.labels.join(", "), st.branch);
+                field(&mut out, "url", &i.url, st.remote);
+                if !i.body.is_empty() {
+                    field(&mut out, "body", &i.body, st.subject);
+                }
+                // The pane is for the listing's rows: the comments are the
+                // detail panel's, where enter takes the panel and it says.
+                if !i.comments.is_empty() {
+                    field(
+                        &mut out,
+                        "comments",
+                        &crate::plural(i.comments.len(), "comment", "comments"),
+                        st.branch,
+                    );
+                }
+            }
             Mode::Repos => field(&mut out, "repository", &it.label, st.name),
         }
         field(&mut out, "path", &tildify(&it.path), st.path);
