@@ -82,6 +82,42 @@ jobs:
       - name: cargo test
         run: cargo test --locked
 
+  msrv:
+    name: cargo check (MSRV)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Read rust-version from Cargo.toml
+        id: msrv
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
+          import tomllib
+
+          with open("Cargo.toml", "rb") as cargo_toml:
+              version = tomllib.load(cargo_toml)["package"]["rust-version"]
+          if not isinstance(version, str) or not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", version):
+              raise SystemExit("Cargo.toml package.rust-version must be a numeric Rust version")
+          print(f"toolchain={version}")
+          PY
+
+      - name: Install the declared toolchain
+        env:
+          MSRV: ${{ steps.msrv.outputs.toolchain }}
+        run: rustup toolchain install "$MSRV" --profile minimal
+
+      - name: cargo check (MSRV)
+        env:
+          MSRV: ${{ steps.msrv.outputs.toolchain }}
+        run: cargo +"$MSRV" check --locked --all-targets
+
   # Its own job because the ruleset's required context `check` must keep its
   # name (#251): a matrix on `check` would rename it and block every merge.
   # Only the tests run here, because the release matrix ships both darwin
