@@ -74,14 +74,8 @@ jobs:
       # Caches the registry and the build, keyed on Cargo.lock.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
-      - name: cargo fmt
-        run: cargo fmt --check
-
-      - name: cargo clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
-
-      - name: cargo test
-        run: cargo test --locked
+      - name: make check
+        run: make check
 
   msrv:
     name: cargo check (MSRV)

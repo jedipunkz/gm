@@ -20,8 +20,10 @@ lint:
 fmt:
 	cargo fmt
 
-check: lint test
+check:
 	cargo fmt --check
+	cargo clippy --locked --all-targets -- -D warnings
+	cargo test --locked
 
 bench:
 	cargo bench --bench perf
