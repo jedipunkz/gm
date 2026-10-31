@@ -46,7 +46,11 @@ jobs:
               - '**.rs'
               - Cargo.toml
               - Cargo.lock
-              - .github/workflows/codeql.yaml
+              # Not codeql.yaml itself: dependabot rides the action pins in
+              # that file, and an actions bump changes no Rust code. What the
+              # workflow runs is validated by the scheduled scan of main,
+              # where the query packs and the extractor arrive with the
+              # action.
 
   analyze:
     # Scheduled runs skip change detection and always analyze. !cancelled()
