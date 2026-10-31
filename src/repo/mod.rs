@@ -5,6 +5,7 @@
 mod deadline;
 mod git;
 mod history;
+mod issue;
 mod pr;
 mod remote;
 mod url;
@@ -12,6 +13,7 @@ mod url;
 pub(crate) use git::git_command;
 pub use git::*;
 pub use history::*;
+pub use issue::*;
 pub use pr::*;
 pub use remote::*;
 pub use url::*;

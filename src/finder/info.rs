@@ -65,6 +65,35 @@ impl Model {
                     return out;
                 }
             }
+            Mode::Issues => {
+                let i = &it.issue;
+                field(&mut out, "issue", &it.label, st.name);
+                field(&mut out, "repository", &self.origin, st.dim);
+                field(&mut out, "author", &i.author, st.remote);
+                field(&mut out, "labels", &i.labels.join(", "), st.branch);
+                field(&mut out, "assignees", &i.assignees.join(", "), st.remote);
+                field(&mut out, "url", &i.url, st.remote);
+                // The body is Markdown, newlines and all, as the detail panel
+                // draws it; folding it as one string would run its lines
+                // together.
+                if !i.body.is_empty() {
+                    out.push(Line::from(Span::styled("body", st.label)));
+                    out.extend(super::md::render(&i.body, w, st));
+                }
+                // The pane is for the listing's rows: the comments are the
+                // detail panel's, where enter takes the panel and it says.
+                if !i.comments.is_empty() {
+                    field(
+                        &mut out,
+                        "comments",
+                        &crate::plural(i.comments.len(), "comment", "comments"),
+                        st.branch,
+                    );
+                }
+                // An issue has no worktree, so no path and no git status to
+                // wait on: those rows would say "-" and "loading…" forever.
+                return out;
+            }
             Mode::Repos => field(&mut out, "repository", &it.label, st.name),
         }
         field(&mut out, "path", &tildify(&it.path), st.path);

@@ -14,6 +14,7 @@ pub enum Overlay {
     None,
     Help,
     Confirm,
+    Issue, // the detail panel of one issue
 }
 
 /// Change is what a confirmation will carry out. It is not an Action: none of
@@ -334,6 +335,29 @@ impl Model {
         match self.over {
             Overlay::Help if matches!(name, "q" | "esc" | "ctrl+c" | "enter") => {
                 self.over = Overlay::None
+            }
+            Overlay::Issue => {
+                // The issue's detail panel answers for itself: q closes it,
+                // the scroll keys window its text, and its two chords act on
+                // the URL the issue lives at. j and k scroll the way vim
+                // moves, since the panel has no box to type a query into.
+                match name {
+                    "q" | "esc" | "ctrl+c" | "enter" | "ctrl+g" => self.close_detail(),
+                    "up" | "k" => self.scroll_detail(false, false),
+                    "down" | "j" => self.scroll_detail(false, true),
+                    // Space pages forward, shift+space back — but only a
+                    // terminal speaking the Kitty keyboard protocol reports
+                    // the shift, so b pages back the way less's does and
+                    // PgUp too, whatever the terminal is.
+                    " " => self.scroll_detail(true, true),
+                    "shift+ " => self.scroll_detail(true, false),
+                    "b" => self.scroll_detail(true, false),
+                    "pgup" => self.scroll_detail(true, false),
+                    "pgdown" => self.scroll_detail(true, true),
+                    "ctrl+b" => return self.open_issue_in_browser(),
+                    "ctrl+y" => return self.copy_issue_url(),
+                    _ => {}
+                }
             }
             Overlay::Confirm if matches!(name, "y" | "Y") && self.ask.wait.is_none() => {
                 let a = std::mem::take(&mut self.ask);
