@@ -57,6 +57,47 @@ fn usage_covers_every_command() {
     }
 }
 
+#[test]
+fn usage_covers_every_flag_spelling_without_advertising_wrong_wt_flags() {
+    let u = usage();
+    for command in COMMANDS {
+        let line = u
+            .lines()
+            .find(|line| {
+                line.trim_start()
+                    .starts_with(&format!("gm {}", command.name))
+            })
+            .unwrap_or_else(|| panic!("usage does not mention {}:\n{u}", command.name));
+        for flag in command
+            .flags
+            .iter()
+            .chain(command.verbs.iter().flat_map(|verb| verb.flags.iter()))
+        {
+            for name in flag.names {
+                let prefix = if name.len() == 1 { "-" } else { "--" };
+                let spelling = format!("{prefix}{name}");
+                let has_spelling = line
+                    .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+                    .any(|token| token == spelling);
+                assert!(
+                    has_spelling,
+                    "usage for {} does not mention {spelling}:\n{line}",
+                    command.name
+                );
+            }
+        }
+    }
+    let wt = u
+        .lines()
+        .find(|line| line.trim_start().starts_with("gm wt "))
+        .unwrap();
+    let create = wt.split(" | ").next().unwrap();
+    assert!(
+        !create.contains("-y"),
+        "wt create must not advertise -y:\n{create}"
+    );
+}
+
 // Help and the version answer without gm.toml or the roots: a broken file
 // must not hide how to fix it, or what version is broken.
 #[test]
@@ -1438,6 +1479,58 @@ fn reference_commands_report_their_usage() {
         "{}",
         create.err
     );
+}
+
+#[test]
+fn missing_arguments_use_the_same_derived_command_syntax() {
+    let root = TempDir::new();
+    let get = run_in(&tree(&root.path()), "", Config::default(), |a| a.get(&[]));
+    assert_eq!(
+        get.res.unwrap_err().0,
+        "usage: gm get [-u|--update] [--ssh] [--shallow] [-s|--silent] [-l|--look] [--no-recursive] [-b <branch>|--branch <branch>] <repo>..."
+    );
+
+    let create = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.create(&[])
+    });
+    assert_eq!(
+        create.res.unwrap_err().0,
+        "usage: gm create [--ssh] <repo>|<user>/<repo>|<host>/<user>/<repo>"
+    );
+
+    let remove = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.remove(&[])
+    });
+    assert_eq!(
+        remove.res.unwrap_err().0,
+        "usage: gm remove [--dry-run] [-y] <repo>..."
+    );
+
+    let migrate = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.migrate(&[])
+    });
+    assert_eq!(
+        migrate.res.unwrap_err().0,
+        "usage: gm migrate [--dry-run] [-y] [-r|--recursive] <directory>..."
+    );
+
+    let shell = run_in(&tree(&root.path()), "", Config::default(), |a| a.shell(&[]));
+    assert_eq!(shell.res.unwrap_err().0, "usage: gm shell <fish|zsh|bash>");
+
+    let wt = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.wt(&args(&["create", "only-one-arg"]))
+    });
+    let error = wt.res.unwrap_err().0;
+    assert!(error.contains("gm wt create <repo> <branch>"), "{error}");
+    assert!(
+        error.contains("gm wt remove [--dry-run] [-y] <repo> <branch>"),
+        "{error}"
+    );
+    assert!(
+        error.contains("gm wt expire [--dry-run] [-y] <repo> <days>d"),
+        "{error}"
+    );
+    assert!(!error.contains("gm wt create [-y]"), "{error}");
 }
 
 // version is a command as well as a flag: the same answer either way, from

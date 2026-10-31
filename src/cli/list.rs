@@ -11,28 +11,11 @@ use crate::config;
 use crate::repo::{self, Repo, State};
 use crate::{Result, err, paths, plural};
 
-use super::{App, Flag, parse};
+use super::{App, LIST_FLAGS, ROOT_FLAGS, STATUS_FLAGS, missing_usage, parse};
 
 impl App<'_> {
     pub(super) fn list(&mut self, args: &[String]) -> Result<()> {
-        let flags = [
-            Flag {
-                names: &["p", "full-path"],
-                value: None,
-                usage: "print full paths",
-            },
-            Flag {
-                names: &["e", "exact"],
-                value: None,
-                usage: "match the query exactly",
-            },
-            Flag {
-                names: &["unique"],
-                value: None,
-                usage: "print the shortest unambiguous path",
-            },
-        ];
-        let p = parse(self, "gm list", &flags, args)?;
+        let p = parse(self, "gm list", LIST_FLAGS, args)?;
         let query = p.args.join(" ");
 
         let repos = self.tree.list();
@@ -69,12 +52,7 @@ impl App<'_> {
     }
 
     pub(super) fn root(&mut self, args: &[String]) -> Result<()> {
-        let flags = [Flag {
-            names: &["all"],
-            value: None,
-            usage: "show every root",
-        }];
-        let p = parse(self, "gm root", &flags, args)?;
+        let p = parse(self, "gm root", ROOT_FLAGS, args)?;
         let n = if p.on("all") {
             self.tree.roots.len()
         } else {
@@ -91,29 +69,7 @@ impl App<'_> {
     /// disk, so it is fast and works offline, and behind is as stale as the
     /// last fetch was.
     pub(super) fn status(&mut self, args: &[String]) -> Result<()> {
-        let flags = [
-            Flag {
-                names: &["dirty"],
-                value: None,
-                usage: "only repositories with uncommitted changes",
-            },
-            Flag {
-                names: &["unpushed"],
-                value: None,
-                usage: "only repositories with commits that are not pushed",
-            },
-            Flag {
-                names: &["a"],
-                value: None,
-                usage: "include repositories that are clean and in sync",
-            },
-            Flag {
-                names: &["p", "full-path"],
-                value: None,
-                usage: "print full paths",
-            },
-        ];
-        let p = parse(self, "gm status", &flags, args)?;
+        let p = parse(self, "gm status", STATUS_FLAGS, args)?;
         let (dirty_only, unpushed, all) = (p.on("dirty"), p.on("unpushed"), p.on("a"));
 
         let rows = self.everything(p.on("p"));
@@ -176,7 +132,7 @@ impl App<'_> {
 
     pub(super) fn shell(&mut self, args: &[String]) -> Result<()> {
         let [sh] = args else {
-            return Err("usage: gm shell <fish|zsh|bash>".into());
+            return Err(missing_usage("shell").into());
         };
         let tmpl = match sh.as_str() {
             "fish" => FISH,
