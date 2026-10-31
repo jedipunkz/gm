@@ -140,6 +140,229 @@ pub fn rank(text: &str, pos: &[usize], lower_query: &str) -> f64 {
     score
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TermKind {
+    Fuzzy,
+    Substring,
+    Prefix,
+    Suffix,
+    Exclude,
+}
+
+struct Term {
+    kind: TermKind,
+    pattern: Vec<char>,
+    lower: Vec<char>,
+    escaped: bool,
+}
+
+/// Query holds parsed terms. A single plain term stays on the original
+/// matcher path; this is how existing one-word searches keep their ranking.
+pub(super) struct Query {
+    terms: Vec<Term>,
+    legacy: bool,
+}
+
+/// MatchScratch reuses the candidate buffers while walking labels. Only a
+/// successful row's final highlights escape into the model.
+#[derive(Default)]
+pub(super) struct MatchScratch {
+    positions: Vec<usize>,
+    pub(super) hits: Vec<usize>,
+    best: Vec<usize>,
+    candidate: Vec<usize>,
+}
+
+impl Query {
+    /// parse_query compiles operators and lowercase character sequences once,
+    /// rather than allocating or lowercasing query text for every row.
+    pub(super) fn parse_query(input: &str) -> Self {
+        let mut terms = Vec::new();
+        for token in input.split_whitespace() {
+            let (kind, text, escaped) = parse_term(token);
+            terms.push(Term {
+                kind,
+                pattern: text.chars().collect(),
+                lower: text.to_lowercase().chars().collect(),
+                escaped,
+            });
+        }
+        let legacy = terms.len() == 1 && terms[0].kind == TermKind::Fuzzy && !terms[0].escaped;
+        Self { terms, legacy }
+    }
+
+    pub(super) fn is_legacy(&self) -> bool {
+        self.legacy
+    }
+
+    /// score matches every positive term and excludes any label containing a
+    /// negative literal. Prefixes and suffixes address the complete label.
+    pub(super) fn score(&self, text: &str, scratch: &mut MatchScratch) -> Option<f64> {
+        scratch.hits.clear();
+        let mut score = 0.0;
+        for term in &self.terms {
+            scratch.positions.clear();
+            let matched = match term.kind {
+                TermKind::Fuzzy => {
+                    find_one(&term.pattern, text, &mut scratch.positions)?;
+                    // Keep the old preference for a literal occurrence over
+                    // a scattered fuzzy landing, choosing its best location.
+                    if substring_into(text, &term.lower, &mut scratch.best, &mut scratch.candidate)
+                    {
+                        scratch.positions.clear();
+                        scratch.positions.extend_from_slice(&scratch.best);
+                    }
+                    true
+                }
+                TermKind::Substring => substring_into(
+                    text,
+                    &term.lower,
+                    &mut scratch.positions,
+                    &mut scratch.candidate,
+                ),
+                TermKind::Prefix => edge_into(text, &term.lower, false, &mut scratch.positions),
+                TermKind::Suffix => edge_into(text, &term.lower, true, &mut scratch.positions),
+                TermKind::Exclude => {
+                    if substring_into(text, &term.lower, &mut scratch.best, &mut scratch.candidate)
+                    {
+                        return None;
+                    }
+                    continue;
+                }
+            };
+            if !matched {
+                return None;
+            }
+            score += match_score(text, &scratch.positions);
+            scratch.hits.extend_from_slice(&scratch.positions);
+        }
+        scratch.hits.sort_unstable();
+        scratch.hits.dedup();
+        Some(score)
+    }
+}
+
+fn parse_term(token: &str) -> (TermKind, String, bool) {
+    // Backslash only quotes an operator at its syntactic edge. It is removed;
+    // elsewhere it remains ordinary query text. There is no shell-style
+    // quoting or escaped whitespace.
+    if let Some(rest) = token.strip_prefix('\\')
+        && rest
+            .chars()
+            .next()
+            .is_some_and(|c| matches!(c, '\'' | '^' | '!'))
+    {
+        return (TermKind::Fuzzy, rest.to_string(), true);
+    }
+    if let Some(prefix) = token.strip_suffix("\\$") {
+        return (TermKind::Fuzzy, format!("{prefix}$"), true);
+    }
+    if let Some(value) = token.strip_prefix('\'')
+        && !value.is_empty()
+    {
+        return (TermKind::Substring, value.to_string(), false);
+    }
+    if let Some(value) = token.strip_prefix('^')
+        && !value.is_empty()
+    {
+        return (TermKind::Prefix, value.to_string(), false);
+    }
+    if let Some(value) = token.strip_prefix('!')
+        && !value.is_empty()
+    {
+        return (TermKind::Exclude, value.to_string(), false);
+    }
+    if let Some(value) = token.strip_suffix('$')
+        && !value.is_empty()
+    {
+        return (TermKind::Suffix, value.to_string(), false);
+    }
+    (TermKind::Fuzzy, token.to_string(), false)
+}
+
+/// substring_into picks the highest-scoring literal occurrence into reusable
+/// buffers. Positions are byte offsets so Unicode highlights stay aligned.
+fn substring_into(
+    text: &str,
+    query: &[char],
+    best: &mut Vec<usize>,
+    candidate: &mut Vec<usize>,
+) -> bool {
+    best.clear();
+    if query.is_empty() {
+        return false;
+    }
+    let mut best_score = f64::NEG_INFINITY;
+    if text.is_ascii() && query.iter().all(|c| c.is_ascii()) {
+        for (at, window) in text.as_bytes().windows(query.len()).enumerate() {
+            if window
+                .iter()
+                .zip(query)
+                .all(|(a, b)| a.eq_ignore_ascii_case(&(*b as u8)))
+            {
+                candidate.clear();
+                candidate.extend(at..at + query.len());
+                consider_substring(text, candidate, best, &mut best_score);
+            }
+        }
+    } else {
+        for (at, _) in text.char_indices() {
+            candidate.clear();
+            let mut chars = text[at..].char_indices();
+            let mut equal = true;
+            for &wanted in query {
+                let Some((offset, found)) = chars.next() else {
+                    equal = false;
+                    break;
+                };
+                if !equal_fold(found, wanted) {
+                    equal = false;
+                    break;
+                }
+                candidate.push(at + offset);
+            }
+            if equal {
+                consider_substring(text, candidate, best, &mut best_score);
+            }
+        }
+    }
+    !best.is_empty()
+}
+
+fn consider_substring(
+    text: &str,
+    candidate: &[usize],
+    best: &mut Vec<usize>,
+    best_score: &mut f64,
+) {
+    let score = match_score(text, candidate);
+    if score > *best_score {
+        best.clear();
+        best.extend_from_slice(candidate);
+        *best_score = score;
+    }
+}
+
+/// edge_into matches a case-insensitive prefix or suffix of the whole label.
+fn edge_into(text: &str, query: &[char], suffix: bool, positions: &mut Vec<usize>) -> bool {
+    if query.is_empty() {
+        return false;
+    }
+    let count = text.chars().count();
+    if count < query.len() {
+        return false;
+    }
+    let skip = if suffix { count - query.len() } else { 0 };
+    for ((offset, found), &wanted) in text.char_indices().skip(skip).zip(query) {
+        if !equal_fold(found, wanted) {
+            positions.clear();
+            return false;
+        }
+        positions.push(offset);
+    }
+    true
+}
+
 /// Match is one candidate the fuzzy matcher kept.
 pub struct Match {
     pub index: usize,
@@ -174,76 +397,86 @@ pub fn find(pattern: &str, data: &[&str]) -> Vec<Match> {
     }
     let mut matches = Vec::new();
     for (index, full) in data.iter().enumerate() {
-        let s = full.split('\0').next().unwrap_or("");
-        let mut chars = s.char_indices().peekable();
-        let mut m = Match {
-            index,
-            matched: Vec::with_capacity(runes.len()),
-            score: 0,
-        };
-
-        let mut pattern_index = 0;
-        let mut best_score = -1;
-        let mut matched_index: Option<usize> = None;
-        let mut curr_adjacent_bonus = 0;
-        let mut last = '\0';
-        let mut last_index = 0;
-        while let Some((j, candidate)) = chars.next() {
-            if pattern_index < runes.len() && equal_fold(candidate, runes[pattern_index]) {
-                let mut score = 0;
-                if j == 0 {
-                    score += FIRST_CHAR_MATCH_BONUS;
-                }
-                if last.is_lowercase() && candidate.is_uppercase() {
-                    score += CAMEL_CASE_MATCH_BONUS;
-                }
-                if j != 0 && is_separator(last) {
-                    score += MATCH_FOLLOWING_SEPARATOR_BONUS;
-                }
-                if let Some(&last_match) = m.matched.last() {
-                    let bonus = if last_match == last_index {
-                        curr_adjacent_bonus * 2 + ADJACENT_MATCH_BONUS
-                    } else {
-                        0
-                    };
-                    score += bonus;
-                    curr_adjacent_bonus += bonus;
-                }
-                if score > best_score {
-                    best_score = score;
-                    matched_index = Some(j);
-                }
-            }
-            let next_p = runes.get(pattern_index + 1).copied();
-            let next_c = chars.peek().map(|&(_, c)| c);
-            // A pattern character is settled on once the next one could
-            // start, or the text has run out.
-            let settle = match (next_p, next_c) {
-                (_, None) => true,
-                (Some(p), Some(c)) => equal_fold(p, c),
-                (None, Some(_)) => false,
-            };
-            if settle && let Some(mi) = matched_index {
-                if m.matched.is_empty() {
-                    let penalty = mi as i64 * UNMATCHED_LEADING_CHAR_PENALTY;
-                    best_score += penalty.max(MAX_UNMATCHED_LEADING_CHAR_PENALTY);
-                }
-                m.score += best_score;
-                m.matched.push(mi);
-                best_score = -1;
-                matched_index = None;
-                pattern_index += 1;
-            }
-            last_index = j;
-            last = candidate;
-        }
-        m.score += m.matched.len() as i64 - s.len() as i64;
-        if m.matched.len() == runes.len() {
-            matches.push(m);
+        let mut matched = Vec::with_capacity(runes.len());
+        if let Some(score) = find_one(&runes, full, &mut matched) {
+            matches.push(Match {
+                index,
+                matched,
+                score,
+            });
         }
     }
     matches.sort_by_key(|m| std::cmp::Reverse(m.score)); // stable
     matches
+}
+
+/// find_one is find's allocation-free candidate matcher. The caller owns and
+/// reuses matched, while the pattern characters are prepared once per query.
+fn find_one(pattern: &[char], full: &str, matched: &mut Vec<usize>) -> Option<i64> {
+    matched.clear();
+    if pattern.is_empty() {
+        return None;
+    }
+    let s = full.split('\0').next().unwrap_or("");
+    let mut chars = s.char_indices().peekable();
+    let mut score_total = 0;
+    let mut pattern_index = 0;
+    let mut best_score = -1;
+    let mut matched_index: Option<usize> = None;
+    let mut curr_adjacent_bonus = 0;
+    let mut last = '\0';
+    let mut last_index = 0;
+    while let Some((j, candidate)) = chars.next() {
+        if pattern_index < pattern.len() && equal_fold(candidate, pattern[pattern_index]) {
+            let mut score = 0;
+            if j == 0 {
+                score += FIRST_CHAR_MATCH_BONUS;
+            }
+            if last.is_lowercase() && candidate.is_uppercase() {
+                score += CAMEL_CASE_MATCH_BONUS;
+            }
+            if j != 0 && is_separator(last) {
+                score += MATCH_FOLLOWING_SEPARATOR_BONUS;
+            }
+            if let Some(&last_match) = matched.last() {
+                let bonus = if last_match == last_index {
+                    curr_adjacent_bonus * 2 + ADJACENT_MATCH_BONUS
+                } else {
+                    0
+                };
+                score += bonus;
+                curr_adjacent_bonus += bonus;
+            }
+            if score > best_score {
+                best_score = score;
+                matched_index = Some(j);
+            }
+        }
+        let next_p = pattern.get(pattern_index + 1).copied();
+        let next_c = chars.peek().map(|&(_, c)| c);
+        // A pattern character is settled on once the next one could start,
+        // or the text has run out.
+        let settle = match (next_p, next_c) {
+            (_, None) => true,
+            (Some(p), Some(c)) => equal_fold(p, c),
+            (None, Some(_)) => false,
+        };
+        if settle && let Some(mi) = matched_index {
+            if matched.is_empty() {
+                let penalty = mi as i64 * UNMATCHED_LEADING_CHAR_PENALTY;
+                best_score += penalty.max(MAX_UNMATCHED_LEADING_CHAR_PENALTY);
+            }
+            score_total += best_score;
+            matched.push(mi);
+            best_score = -1;
+            matched_index = None;
+            pattern_index += 1;
+        }
+        last_index = j;
+        last = candidate;
+    }
+    score_total += matched.len() as i64 - s.len() as i64;
+    (matched.len() == pattern.len()).then_some(score_total)
 }
 
 #[cfg(test)]
