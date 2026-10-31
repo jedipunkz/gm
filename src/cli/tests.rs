@@ -982,6 +982,127 @@ fn status_finds_unfinished_work() {
     assert!(out.contains("acme/clean") && out.contains("clean"), "{out}");
 }
 
+#[test]
+fn status_lists_registered_worktrees_not_orphan_directories() {
+    let tmp = TempDir::new();
+    let root = tmp.join("root");
+    let r = Repo {
+        root: root.clone(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+
+    let external = tmp.join("external/login");
+    repo::add_worktree(&tmp.path(), &r.path(), &external, "feat/login").unwrap();
+    write(&paths::join(&external, "wip.txt"), "registered worktree\n");
+
+    // This looks like a checkout to a filesystem walk but Git does not list it.
+    let orphan = paths::join(&root, ".worktrees/github.com/acme/alpha/orphan");
+    mkdir(&paths::join(&orphan, ".git"));
+    write(&paths::join(&orphan, "wip.txt"), "orphan\n");
+
+    let run = run_in(&tree(&root), "", Config::default(), |app| {
+        app.status(&args(&["-a"]))
+    });
+    run.res.unwrap();
+    assert!(
+        run.out.contains(&external),
+        "missing registered worktree:\n{}",
+        run.out
+    );
+    assert!(
+        !run.out.contains("orphan"),
+        "listed an orphan directory:\n{}",
+        run.out
+    );
+}
+
+#[test]
+fn status_worktree_rows_match_finder_aggregate() {
+    let tmp = TempDir::new();
+    let root = tmp.join("root");
+    let r = Repo {
+        root: root.clone(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    write(&paths::join(&r.path(), "main.txt"), "main work\n");
+
+    let external = tmp.join("external/login");
+    repo::add_worktree(&tmp.path(), &r.path(), &external, "feat/login").unwrap();
+    write(&paths::join(&external, "login.txt"), "worktree work\n");
+
+    let run = run_in(&tree(&root), "", Config::default(), |app| {
+        app.status(&args(&["--dirty"]))
+    });
+    run.res.unwrap();
+    let rows = run.out.lines().collect::<Vec<_>>();
+    let reported_dirty = rows
+        .iter()
+        .map(|line| {
+            line.split_once("  ")
+                .and_then(|(_, summary)| summary.split_whitespace().next())
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0)
+        })
+        .sum::<usize>();
+    assert_eq!(
+        rows.len(),
+        2,
+        "expected one row per live checkout:\n{}",
+        run.out
+    );
+    assert_eq!(
+        reported_dirty,
+        repo::status_with_worktrees(&r.path()).dirty,
+        "{}",
+        run.out
+    );
+}
+
+#[test]
+fn status_keeps_the_root_spelling_and_deduplicates_symlinked_roots() {
+    let tmp = TempDir::new();
+    let real_root = tmp.join("real");
+    let linked_root = tmp.join("linked");
+    std::os::unix::fs::symlink(&real_root, &linked_root).unwrap();
+    let r = Repo {
+        root: real_root.clone(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let worktree = paths::join(&real_root, ".worktrees/github.com/acme/alpha/login");
+    repo::add_worktree(
+        &paths::join(&real_root, ".worktrees"),
+        &r.path(),
+        &worktree,
+        "feat/login",
+    )
+    .unwrap();
+
+    let roots = Tree {
+        roots: vec![linked_root.clone(), real_root],
+    };
+    let run = run_in(&roots, "", Config::default(), |app| {
+        app.status(&args(&["-a", "-p"]))
+    });
+    run.res.unwrap();
+    let rows = run.out.lines().collect::<Vec<_>>();
+    let canonical_worktree = std::fs::canonicalize(&worktree)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(rows.len(), 2, "duplicate canonical paths:\n{}", run.out);
+    assert!(rows.iter().any(|line| line.starts_with(&linked_root)));
+    assert!(!rows.iter().any(|line| line.starts_with(&r.path())));
+    assert!(
+        rows.iter()
+            .any(|line| line.starts_with(&canonical_worktree)),
+        "missing worktree path {canonical_worktree}:\n{}",
+        run.out
+    );
+}
+
 // Unpushed work does not have to sit on the branch checked out or on one with
 // an upstream: a branch that was never pushed counts, and a repository with
 // no remotes keeps the behaviour it had, since everything it has is unshared

@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 
 use ratatui::text::Span;
 
@@ -104,30 +105,54 @@ impl App<'_> {
         Ok(())
     }
 
-    /// everything lists the repositories and the worktrees hanging off them,
-    /// as (name, path). A worktree is where work in progress lives, so leaving
-    /// them out would miss the thing the command is for; the walk skips dotted
-    /// directories, so .worktrees has to be asked for by name.
+    /// everything lists repositories and the worktrees Git registers for them,
+    /// as (name, path). The main checkout keeps the root's spelling; linked
+    /// worktrees use Git's path, resolved against the configured roots for a
+    /// short name.
     fn everything(&self, full: bool) -> Vec<(String, String)> {
         let mut rows: Vec<(String, String)> = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = std::collections::HashSet::<PathBuf>::new();
         let mut add = |name: String, path: String| {
-            if seen.insert(path.clone()) {
+            let key =
+                std::fs::canonicalize(&path).unwrap_or_else(|_| PathBuf::from(paths::clean(&path)));
+            if seen.insert(key) {
                 rows.push((if full { path.clone() } else { name }, path));
             }
         };
         for r in self.tree.list() {
-            add(r.rel.clone(), r.path());
-        }
-        for root in &self.tree.roots {
-            for p in repo::find_repos(&paths::join(root, repo::WORKTREE_ROOT)) {
-                if let Some(rel) = p.strip_prefix(&format!("{}/", root.trim_end_matches('/'))) {
-                    add(rel.to_string(), p.clone());
-                }
+            let main = r.path();
+            add(r.rel.clone(), main.clone());
+            for w in repo::other_live_worktrees_of(&main) {
+                let name = if full {
+                    w.path.clone()
+                } else {
+                    self.worktree_name(&w.path)
+                };
+                add(name, w.path);
             }
         }
         rows.sort();
         rows
+    }
+
+    /// worktree_name is a root-relative name when Git's canonical path is
+    /// inside one of the roots, and the full path when it is outside them.
+    fn worktree_name(&self, path: &str) -> String {
+        let path =
+            std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(paths::clean(path)));
+        self.tree
+            .roots
+            .iter()
+            .filter_map(|root| {
+                let root = std::fs::canonicalize(root)
+                    .unwrap_or_else(|_| PathBuf::from(paths::clean(root)));
+                path.strip_prefix(root)
+                    .ok()
+                    .filter(|rel| !rel.as_os_str().is_empty())
+                    .map(|rel| rel.to_string_lossy().into_owned())
+            })
+            .next()
+            .unwrap_or_else(|| path.to_string_lossy().into_owned())
     }
 
     pub(super) fn shell(&mut self, args: &[String]) -> Result<()> {

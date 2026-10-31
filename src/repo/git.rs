@@ -424,8 +424,7 @@ impl Worktree {
 /// worktrees lists the checkouts of the repository at dir, the main one
 /// first, which is the order git itself reports.
 pub fn worktrees(dir: &str) -> Result<Vec<Worktree>> {
-    let out = git_in(dir, &["worktree", "list", "--porcelain"])?;
-    let mut list = parse_worktrees(&out);
+    let mut list = registered_worktrees(dir)?;
     let dates = branch_dates(dir, &list);
     let used = used_times(dir);
     for w in &mut list {
@@ -436,6 +435,14 @@ pub fn worktrees(dir: &str) -> Result<Vec<Worktree>> {
             .map_or(0, |&(_, t)| t);
     }
     Ok(list)
+}
+
+/// registered_worktrees is Git's checkout list without the branch and reflog
+/// metadata worktree details need. Status scans use this as their shared source
+/// so discovering worktrees costs only the list command.
+pub fn registered_worktrees(dir: &str) -> Result<Vec<Worktree>> {
+    let out = git_in(dir, &["worktree", "list", "--porcelain"])?;
+    Ok(parse_worktrees(&out))
 }
 
 /// used_times is when HEAD last moved in each linked worktree of the
@@ -608,7 +615,7 @@ fn unpushed_commits(dir: &str) -> usize {
 /// unpushed already covers every branch, and branch stays the main checkout's.
 pub fn status_with_worktrees(dir: &str) -> State {
     let mut s = status_of(dir);
-    for w in super::other_worktrees_of(dir) {
+    for w in super::other_live_worktrees_of(dir) {
         let t = git_in(&w.path, &["status", "--porcelain", "-b"])
             .map(|out| parse_status(&out))
             .unwrap_or_default();
