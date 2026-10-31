@@ -1106,7 +1106,7 @@ fn remove_names_the_work_in_the_worktrees() {
     res.res.unwrap();
     assert!(
         res.err
-            .contains("2 worktrees will be removed too: feat/login (1 changed), fix/timeout"),
+            .contains("2 worktrees will go too: feat/login (1 changed), fix/timeout"),
         "{}",
         res.err
     );
@@ -1155,7 +1155,7 @@ fn remove_dry_run_says_what_would_go() {
     res.res.unwrap();
     for want in [
         "alpha has uncommitted changes",
-        "1 worktree will be removed too: feat/login (1 changed)",
+        "1 worktree will go too: feat/login (1 changed)",
         "also removed, not a worktree: scratch",
         "would remove",
     ] {
@@ -1189,9 +1189,8 @@ fn remove_names_and_leaves_a_checkout_outside_the_worktree_dir() {
     });
     res.res.unwrap();
     assert!(
-        res.err.contains(&format!(
-            "1 worktree will be removed too: feat/login at {victim}"
-        )),
+        res.err
+            .contains(&format!("1 worktree will go too: feat/login at {victim}")),
         "{}",
         res.err
     );

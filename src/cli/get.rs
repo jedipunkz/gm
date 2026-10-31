@@ -282,7 +282,8 @@ impl App<'_> {
         // Work in the worktree is lost with it, so it is said before the
         // question, not discovered afterwards — and in a dry run as well.
         let dirty = repo::is_dirty(&dir).unwrap_or(false);
-        if dirty {
+        let plan = repo::worktree_removal_plan(w.clone(), usize::from(dirty));
+        if plan.changed > 0 {
             writeln!(self.err, "warning: {dir} has uncommitted changes")?;
         }
         if p.on("dry-run") {
@@ -293,7 +294,7 @@ impl App<'_> {
             writeln!(self.err, "skipped")?;
             return Ok(());
         }
-        let gone = repo::remove_worktree_and_branch(&r, &dir, &w.branch, dirty)?;
+        let gone = repo::remove_worktree_and_branch(&r, &dir, &w.branch, plan.force)?;
         writeln!(self.err, "removed  {dir}")?;
         if !w.branch.is_empty() {
             let what = if gone {
@@ -328,14 +329,21 @@ impl App<'_> {
         };
         let days = repo::parse_days(age)?;
         let r = self.tree.resolve(query)?;
-        let (dirty, clean): (Vec<_>, Vec<_>) =
-            repo::expired(&r.path(), &repo::worktrees(&r.path())?, days, repo::now())
-                .into_iter()
-                .partition(|w| repo::changed_files(&w.path) > 0);
-        for w in &dirty {
-            writeln!(self.err, "keep     {} (uncommitted changes)", w.path)?;
+        let plan = repo::expiry_plan(
+            &r.path(),
+            &repo::worktrees(&r.path())?,
+            days,
+            repo::now(),
+            repo::changed_files,
+        );
+        for impact in &plan.keep {
+            writeln!(
+                self.err,
+                "keep     {} (uncommitted changes)",
+                impact.worktree.path
+            )?;
         }
-        if clean.is_empty() {
+        if plan.remove.is_empty() {
             writeln!(self.err, "no worktree of {} idle for {days} days", r.rel)?;
             return Ok(());
         }
@@ -344,17 +352,22 @@ impl App<'_> {
         } else {
             "remove"
         };
-        for w in &clean {
-            writeln!(self.err, "{verb} {}", w.path)?;
+        for impact in &plan.remove {
+            writeln!(self.err, "{verb} {}", impact.worktree.path)?;
         }
         if p.on("dry-run") {
             return Ok(());
         }
-        let what = crate::plural(clean.len(), "worktree", "worktrees");
+        let what = crate::plural(plan.remove.len(), "worktree", "worktrees");
         if !p.on("y") && !self.confirm(&format!("remove {what} and their merged branches?")) {
             writeln!(self.err, "skipped")?;
             return Ok(());
         }
+        let clean: Vec<_> = plan
+            .remove
+            .iter()
+            .map(|impact| impact.worktree.clone())
+            .collect();
         let done = repo::expire(&r, &clean);
         for f in &done.failed {
             writeln!(self.err, "failed   {f}")?;
