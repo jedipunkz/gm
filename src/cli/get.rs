@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use crate::repo;
 use crate::{Result, err, paths, plural};
 
-use super::{App, Flag, parse};
+use super::{App, GET_FLAGS, MIGRATE_FLAGS, WT_VERBS, missing_usage, parse};
 
 impl App<'_> {
     /// advance moves a fetched clone across the commits the fetch brought:
@@ -64,46 +64,9 @@ impl App<'_> {
     /// get_last is gm get, answering with the path of the last repository it
     /// handled, which is where the finder's /get goes.
     pub(super) fn get_last(&mut self, args: &[String]) -> Result<String> {
-        let flags = [
-            Flag {
-                names: &["u", "update"],
-                value: None,
-                usage: "update the repository if it is already cloned",
-            },
-            Flag {
-                names: &["ssh"],
-                value: None,
-                usage: "clone via SSH",
-            },
-            Flag {
-                names: &["shallow"],
-                value: None,
-                usage: "do a shallow clone",
-            },
-            Flag {
-                names: &["s", "silent"],
-                value: None,
-                usage: "clone quietly",
-            },
-            Flag {
-                names: &["l", "look"],
-                value: None,
-                usage: "open a shell in the repository afterwards",
-            },
-            Flag {
-                names: &["no-recursive"],
-                value: None,
-                usage: "do not clone submodules",
-            },
-            Flag {
-                names: &["b", "branch"],
-                value: Some("branch"),
-                usage: "clone a single branch",
-            },
-        ];
-        let p = parse(self, "gm get", &flags, args)?;
+        let p = parse(self, "gm get", GET_FLAGS, args)?;
         if p.args.is_empty() {
-            return Err("usage: gm get [options] <url>|<user>/<repo>|<repo>".into());
+            return Err(missing_usage("get").into());
         }
 
         let mut last = String::new();
@@ -177,16 +140,9 @@ impl App<'_> {
     }
 
     pub(super) fn create(&mut self, args: &[String]) -> Result<()> {
-        let flags = [Flag {
-            names: &["ssh"],
-            value: None,
-            usage: "set the origin remote to its SSH URL",
-        }];
-        let p = parse(self, "gm create", &flags, args)?;
+        let p = parse(self, "gm create", super::CREATE_FLAGS, args)?;
         let [reference] = p.args.as_slice() else {
-            return Err(
-                "usage: gm create [--ssh] <repo>|<user>/<repo>|<host>/<user>/<repo>".into(),
-            );
+            return Err(missing_usage("create").into());
         };
         let r = self.tree.create(reference, p.on("ssh"))?;
         self.bump(&r.path());
@@ -207,16 +163,20 @@ impl App<'_> {
             Some("create" | "new") => self.wt_create(&args[1..]),
             Some("remove" | "rm") => self.wt_remove(&args[1..]),
             Some("expire") => self.wt_expire(&args[1..]),
-            _ => Err(WT_USAGE.into()),
+            _ => Err(missing_usage("wt").into()),
         }
     }
 
     /// wt_create checks a branch out beside the repository and prints where,
     /// so a script can cd into it the way it can with gm create.
     pub(super) fn wt_create(&mut self, args: &[String]) -> Result<()> {
-        let p = parse(self, "gm wt create", &[], args)?;
+        let verb = WT_VERBS
+            .iter()
+            .find(|verb| verb.name == "create")
+            .expect("wt create has a verb definition");
+        let p = parse(self, "gm wt create", verb.flags, args)?;
         let [query, branch] = p.args.as_slice() else {
-            return Err(WT_USAGE.into());
+            return Err(missing_usage("wt").into());
         };
         let r = self.tree.resolve(query)?;
         let dir = self.tree.worktree_dir(&r, branch);
@@ -245,21 +205,13 @@ impl App<'_> {
     /// wt_remove takes one worktree away. It is destructive, so it says what is
     /// in the way first and asks, the way gm remove does.
     fn wt_remove(&mut self, args: &[String]) -> Result<()> {
-        let flags = [
-            Flag {
-                names: &["dry-run"],
-                value: None,
-                usage: "show what would be removed",
-            },
-            Flag {
-                names: &["y"],
-                value: None,
-                usage: "skip the confirmation prompt",
-            },
-        ];
-        let p = parse(self, "gm wt remove", &flags, args)?;
+        let verb = WT_VERBS
+            .iter()
+            .find(|verb| verb.name == "remove")
+            .expect("wt remove has a verb definition");
+        let p = parse(self, "gm wt remove", verb.flags, args)?;
         let [query, branch] = p.args.as_slice() else {
-            return Err(WT_USAGE.into());
+            return Err(missing_usage("wt").into());
         };
         let r = self.tree.resolve(query)?;
         let dir = self.tree.worktree_dir(&r, branch);
@@ -311,21 +263,13 @@ impl App<'_> {
     /// an age, "30d", and their branches where git -d allows. One with changes
     /// in it is named and kept.
     fn wt_expire(&mut self, args: &[String]) -> Result<()> {
-        let flags = [
-            Flag {
-                names: &["dry-run"],
-                value: None,
-                usage: "show what would be removed",
-            },
-            Flag {
-                names: &["y"],
-                value: None,
-                usage: "skip the confirmation prompt",
-            },
-        ];
-        let p = parse(self, "gm wt expire", &flags, args)?;
+        let verb = WT_VERBS
+            .iter()
+            .find(|verb| verb.name == "expire")
+            .expect("wt expire has a verb definition");
+        let p = parse(self, "gm wt expire", verb.flags, args)?;
         let [query, age] = p.args.as_slice() else {
-            return Err(WT_USAGE.into());
+            return Err(missing_usage("wt").into());
         };
         let days = repo::parse_days(age)?;
         let r = self.tree.resolve(query)?;
@@ -382,26 +326,9 @@ impl App<'_> {
     }
 
     pub(super) fn migrate(&mut self, args: &[String]) -> Result<()> {
-        let flags = [
-            Flag {
-                names: &["dry-run"],
-                value: None,
-                usage: "show what would move",
-            },
-            Flag {
-                names: &["y"],
-                value: None,
-                usage: "skip the confirmation prompt",
-            },
-            Flag {
-                names: &["r", "recursive"],
-                value: None,
-                usage: "search the arguments for repositories instead of moving them",
-            },
-        ];
-        let p = parse(self, "gm migrate", &flags, args)?;
+        let p = parse(self, "gm migrate", MIGRATE_FLAGS, args)?;
         if p.args.is_empty() {
-            return Err("usage: gm migrate [--dry-run] [-y] [-r] <directory>...".into());
+            return Err(missing_usage("migrate").into());
         }
         let recursive = p.on("r");
 
@@ -539,8 +466,6 @@ enum Plan {
     InPlace,         // already where gm would put it
     Problem(String), // why it cannot move, phrased to follow the path
 }
-
-const WT_USAGE: &str = "usage: gm wt create <repo> <branch>\n       gm wt remove [--dry-run] [-y] <repo> <branch>\n       gm wt expire [--dry-run] [-y] <repo> <days>d";
 
 /// look_in drops the user into a shell inside the repository just cloned.
 fn look_in(dir: &str) -> Result<()> {

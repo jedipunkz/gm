@@ -4,25 +4,13 @@
 use crate::Result;
 use crate::repo::{self, Repo};
 
-use super::{App, Flag, parse};
+use super::{App, REMOVE_FLAGS, missing_usage, parse};
 
 impl App<'_> {
     pub(super) fn remove(&mut self, args: &[String]) -> Result<()> {
-        let flags = [
-            Flag {
-                names: &["dry-run"],
-                value: None,
-                usage: "show what would be removed",
-            },
-            Flag {
-                names: &["y"],
-                value: None,
-                usage: "skip the confirmation prompt",
-            },
-        ];
-        let p = parse(self, "gm remove", &flags, args)?;
+        let p = parse(self, "gm remove", REMOVE_FLAGS, args)?;
         if p.args.is_empty() {
-            return Err("usage: gm remove [--dry-run] [-y] <repo>...".into());
+            return Err(missing_usage("remove").into());
         }
         for q in &p.args {
             let r = self.tree.resolve(q)?;
