@@ -446,9 +446,24 @@ pub fn other_worktrees(r: &Repo) -> Vec<Worktree> {
 
 /// other_worktrees_of is the same thing for a path, which is all describe has.
 pub fn other_worktrees_of(dir: &str) -> Vec<Worktree> {
-    worktrees(dir)
-        .unwrap_or_default()
-        .into_iter()
+    exclude_main_worktree(worktrees(dir).unwrap_or_default(), dir)
+}
+
+/// live_worktrees_of is every checkout Git registers for dir, including the
+/// main one. Git's list, not a directory walk, decides whether a path is a
+/// worktree; an unavailable repository has none.
+pub fn live_worktrees_of(dir: &str) -> Vec<Worktree> {
+    registered_worktrees(dir).unwrap_or_default()
+}
+
+/// other_live_worktrees_of is the registered list without the main checkout.
+/// Status and the finder use it so both see exactly the paths Git reports.
+pub fn other_live_worktrees_of(dir: &str) -> Vec<Worktree> {
+    exclude_main_worktree(live_worktrees_of(dir), dir)
+}
+
+fn exclude_main_worktree(wts: Vec<Worktree>, dir: &str) -> Vec<Worktree> {
+    wts.into_iter()
         .filter(|w| !same_path(&w.path, dir)) // the main worktree is the repository
         .collect()
 }
