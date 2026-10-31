@@ -245,6 +245,16 @@ the valid ones.
 
 Visits are stored in `$XDG_STATE_HOME/gm/frecency.json` (default `~/.local/state/gm/frecency.json`). Delete it to reset.
 
+## 🛠 Development
+
+Enable the pre-push check with:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+`make check` runs formatting, Clippy, and tests in the same order as CI.
+
 ## 🦄 License
 
 MIT
