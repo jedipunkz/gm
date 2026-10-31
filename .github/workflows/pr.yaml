@@ -53,6 +53,7 @@ jobs:
               - tests/**
               - Makefile
               - .github/coverage-threshold
+              - .github/coverage-delta-tolerance
               # Every workflow, so Dependabot's action bumps are built before
               # they merge themselves (see dependabot-merge).
               - .github/workflows/**
@@ -145,6 +146,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          # The base commit is materialized as a second checkout of this clone.
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
@@ -157,65 +160,101 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
-      # lcov over the whole workspace is what the totals are read from: one
-      # file, four counters, and no dependence on the summary table's widths.
-      # Branch totals are not collected, so they are not reported.
-      - name: cargo llvm-cov
-        run: cargo llvm-cov --locked --lcov --output-path lcov.info
+      - name: materialize the base commit
+        env:
+          # Keep the SHA as data, not shell source.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git worktree add /tmp/ght-base "$BASE_SHA"
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: /tmp/ght-base
+
+      # Both trees run on this same runner so the comparison shares one OS
+      # and one measurement environment.
+      - name: cargo llvm-cov (base)
+        working-directory: /tmp/ght-base
+        run: cargo llvm-cov --locked --lcov --output-path "$GITHUB_WORKSPACE/lcov-base.info"
+
+      - name: cargo llvm-cov (head)
+        run: cargo llvm-cov --locked --lcov --output-path lcov-head.info
 
       - name: summarize
+        id: summary
         run: |
-          python3 - > coverage.env <<'EOF'
-          counters = ("LH:", "LF:", "FNH:", "FNF:")
-          got = dict.fromkeys(counters, 0)
-          for line in open("lcov.info"):
-              for k in counters:
-                  if line.startswith(k):
-                      got[k] += int(line.strip()[len(k):])
-          lh, lf, fnh, fnf = (got[k] for k in counters)
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          def totals(path):
+              counters = ("LH:", "LF:", "FNH:", "FNF:")
+              got = dict.fromkeys(counters, 0)
+              with open(path, encoding="utf-8") as lcov:
+                  for line in lcov:
+                      for counter in counters:
+                          if line.startswith(counter):
+                              got[counter] += int(line.strip()[len(counter):])
+              return got
+
           def pct(hit, total):
               return 100.0 * hit / total if total > 0 else 100.0
-          print(f"COVERAGE_LINES={pct(lh, lf):.2f}|{lh}|{lf}")
-          print(f"COVERAGE_FUNCS={pct(fnh, fnf):.2f}|{fnh}|{fnf}")
-          EOF
-          cat coverage.env >> "${GITHUB_ENV}"
 
-      # The floor lives in its own file so lowering it is a deliberate,
-      # reviewable diff rather than a one-character edit in here.
-      - name: check the floor
-        id: floor
+          base = totals("lcov-base.info")
+          head = totals("lcov-head.info")
+          base_pct = pct(base["LH:"], base["LF:"])
+          head_pct = pct(head["LH:"], head["LF:"])
+          print(f"base_lines={base_pct:.2f}|{base['LH:']}|{base['LF:']}")
+          print(f"head_lines={head_pct:.2f}|{head['LH:']}|{head['LF:']}")
+          print(f"delta={head_pct - base_pct:+.2f}")
+          print(f"head_functions={pct(head['FNH:'], head['FNF:']):.2f}|{head['FNH:']}|{head['FNF:']}")
+          PY
+
+      # Both thresholds live in files so changing either is a deliberate,
+      # reviewable diff rather than a one-character edit in this workflow.
+      - name: read coverage thresholds
+        id: thresholds
         run: |
-          floor="$(cat .github/coverage-threshold)"
-          echo "floor=${floor}" >> "${GITHUB_OUTPUT}"
-          lines="${COVERAGE_LINES%%|*}"
-          python3 -c "import sys; sys.exit(0 if float('$lines') >= float('$floor') else 1)" \
-            || { echo "line coverage ${lines} is below the floor ${floor} — raise it or lower the floor deliberately in .github/coverage-threshold"; exit 1; }
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
+
+          for name, path in (("floor", ".github/coverage-threshold"),
+                             ("tolerance", ".github/coverage-delta-tolerance")):
+              with open(path, encoding="utf-8") as threshold:
+                  value = threshold.read().strip()
+              if not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]+)?", value):
+                  raise SystemExit(f"{path} must contain a non-negative decimal")
+              if float(value) > 100:
+                  raise SystemExit(f"{path} must not exceed 100")
+              print(f"{name}={value}")
+          PY
 
       # One comment, updated in place: a growing stack of coverage comments
       # on every push would drown the review it belongs to. The marker names
       # ours; it is patched when it is there, created when it is not.
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          # The floor reaches the script as an environment variable instead
-          # of a template expansion inside the script text: the value is
-          # data, not code.
-          FLOOR: ${{ steps.floor.outputs.floor }}
+          BASE_LINES: ${{ steps.summary.outputs.base_lines }}
+          HEAD_LINES: ${{ steps.summary.outputs.head_lines }}
+          DELTA: ${{ steps.summary.outputs.delta }}
+          HEAD_FUNCTIONS: ${{ steps.summary.outputs.head_functions }}
+          FLOOR: ${{ steps.thresholds.outputs.floor }}
+          TOLERANCE: ${{ steps.thresholds.outputs.tolerance }}
         with:
           script: |
             const those = (env) => (env || "").split("|");
-            const lines = those(process.env.COVERAGE_LINES);
-            const funcs = those(process.env.COVERAGE_FUNCS);
+            const base = those(process.env.BASE_LINES);
+            const head = those(process.env.HEAD_LINES);
+            const funcs = those(process.env.HEAD_FUNCTIONS);
             const marker = "<!-- gm-coverage -->";
             const run = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
             const body = marker + "\n" + [
               "## Test coverage (cargo-llvm-cov)",
               "",
-              "| lines | functions |",
-              "| --- | --- |",
-              "| " + lines[0] + "% (" + lines[1] + "/" + lines[2] + ") | "
+              "| base lines | head lines | delta | head functions |",
+              "| --- | --- | --- | --- |",
+              "| " + base[0] + "% (" + base[1] + "/" + base[2] + ") | "
+                + head[0] + "% (" + head[1] + "/" + head[2] + ") | "
+                + process.env.DELTA + "pp | "
                 + funcs[0] + "% (" + funcs[1] + "/" + funcs[2] + ") |",
               "",
-              "Floor: " + process.env.FLOOR + "% — comment-removed if it is absent",
+              "Floor: " + process.env.FLOOR + "% | Drop tolerance: " + process.env.TOLERANCE + "pp",
               "",
               "[run](" + run + ")",
             ].join("\n");
@@ -241,6 +280,44 @@ jobs:
                 body,
               });
             }
+
+      - name: check coverage floor and base delta
+        env:
+          BASE_LINES: ${{ steps.summary.outputs.base_lines }}
+          HEAD_LINES: ${{ steps.summary.outputs.head_lines }}
+          FLOOR: ${{ steps.thresholds.outputs.floor }}
+          TOLERANCE: ${{ steps.thresholds.outputs.tolerance }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+          from decimal import Decimal
+          from fractions import Fraction
+
+          def percentage(value):
+              _, hit, total = value.split("|")
+              return Fraction(int(hit), int(total)) * 100 if int(total) > 0 else Fraction(100)
+
+          base = percentage(os.environ["BASE_LINES"])
+          head = percentage(os.environ["HEAD_LINES"])
+          floor = Fraction(Decimal(os.environ["FLOOR"]))
+          tolerance = Fraction(Decimal(os.environ["TOLERANCE"]))
+          failures = []
+          if head < floor:
+              failures.append(
+                  f"line coverage {float(head):.2f}% is below the floor {float(floor):.2f}% "
+                  "— raise it or lower the floor deliberately in .github/coverage-threshold"
+              )
+          if head < base - tolerance:
+              failures.append(
+                  f"line coverage dropped from {float(base):.2f}% to {float(head):.2f}% "
+                  f"({float(head - base):+.2f}pp), beyond the {float(tolerance):.2f}pp tolerance "
+                  "in .github/coverage-delta-tolerance"
+              )
+          if failures:
+              print("\n".join(failures), file=sys.stderr)
+              raise SystemExit(1)
+          PY
 
   # Dependabot's minor and patch bumps merge themselves once the build and the
   # coverage floor hold; a major bump waits for a person. The author, not the
