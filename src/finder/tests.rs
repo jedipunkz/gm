@@ -3223,6 +3223,7 @@ fn detail_issue(numbers_and_bodies: &[(u64, &str)]) -> Result<Issue> {
             state: "OPEN".into(),
             author: "alice".into(),
             labels: vec!["bug".into(), "ui".into()],
+            assignees: vec![],
             url: format!("https://github.com/acme/alpha/issues/{n}"),
             body: (*body).into(),
             comments: vec![repo::Comment {
@@ -3351,6 +3352,48 @@ fn issue_row_keeps_its_number_and_the_pane_its_body() {
     for s in ["path", "git", "loading…"] {
         assert!(!pane.lines().any(|l| l == s), "{s:?}:\n{pane}");
     }
+}
+
+// label:, assignee: and author: narrow the issue list the way GitHub's search does:
+// commas are any-of, repeated qualifiers are all-of, case does not matter,
+// and what is left of the query is matched as ever.
+#[test]
+fn issue_list_qualifiers() {
+    let root = TempDir::new();
+    let (mut m, _) = issue_model(&root);
+    let mk = |n, title, labels: &[&str], who: &[&str]| Issue {
+        labels: labels.iter().map(|s| s.to_string()).collect(),
+        assignees: who.iter().map(|s| s.to_string()).collect(),
+        author: if n == 2 { "carol" } else { "alice" }.into(),
+        ..issue(n, title)
+    };
+    let list = vec![
+        mk(1, "Leak", &["security"], &["jedipunkz"]),
+        mk(2, "Typo", &["docs"], &[]),
+        mk(3, "Bump", &["foo", "security"], &["bob"]),
+    ];
+    m.issues_of = Arc::new(move |_| Ok(list.clone()));
+    open_issue_list(&mut m);
+
+    for (q, want) in [
+        ("label:security,docs", "#3 Bump|#2 Typo|#1 Leak"),
+        ("label:security label:foo", "#3 Bump"),
+        ("label:SECURITY assignee:jedipunkz", "#1 Leak"),
+        ("assignees:bob,jedipunkz leak", "#1 Leak"),
+        ("author:carol", "#2 Typo"),
+        ("author:Carol,alice label:docs", "#2 Typo"),
+        ("label:secur", ""),
+        // A qualifier with no value yet narrows nothing.
+        ("label:", "#3 Bump|#2 Typo|#1 Leak"),
+    ] {
+        set_query(&mut m, q);
+        assert_eq!(rows(&m).join("|"), want, "{q:?}");
+    }
+
+    // The pane names the assignees, so what assignee: matched is on screen.
+    set_query(&mut m, "label:foo");
+    let pane = lines_text(&m.info_lines(40));
+    assert!(pane.contains("assignees\nbob"), "{pane}");
 }
 
 // The scroll keys walk the panel's window: never past the top, and never

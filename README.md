@@ -154,6 +154,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 ### Issue list
 
 - Open issues, newest at the bottom. Type `#42` to find one by number.
+- `label:security,foo`, `assignee:jedipunkz` (or `assignees:`) and `author:jedipunkz` narrow the list as on GitHub: commas mean any of, repeated qualifiers all of, case ignored. The rest of the query matches the rows as usual.
 - `Enter` opens the issue full screen: the description and each comment in their own frame, markdown (headings, code, lists, quotes, rules, emphasis, links) drawn, and one hint line on the bottom row.
 - In the detail view: `q` / `Esc` go back, `Space` / `PgDn` page down, `b` / `PgUp` / `Shift-Space` page back (`Shift-Space` needs a terminal that reports keys), `j` / `k` go a line.
 - `Ctrl-B` opens the issue in a browser; `Ctrl-Y` copies its URL (OSC52: tmux needs `set-clipboard`, and some terminals ask first).

@@ -71,6 +71,7 @@ impl Model {
                 field(&mut out, "repository", &self.origin, st.dim);
                 field(&mut out, "author", &i.author, st.remote);
                 field(&mut out, "labels", &i.labels.join(", "), st.branch);
+                field(&mut out, "assignees", &i.assignees.join(", "), st.remote);
                 field(&mut out, "url", &i.url, st.remote);
                 // The body is Markdown, newlines and all, as the detail panel
                 // draws it; folding it as one string would run its lines

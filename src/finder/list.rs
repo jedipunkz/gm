@@ -50,14 +50,21 @@ impl Model {
             None
         };
         self.view_stale = false;
+        // The issue list's qualifiers narrow it; the rest of the query is
+        // the pattern the rows are ranked on.
+        let (pat, quals) = if self.mode == Mode::Issues {
+            split_qualifiers(&q)
+        } else {
+            (q.clone(), Vec::new())
+        };
 
-        let view: Vec<usize> = if q.is_empty() {
+        let view: Vec<usize> = if pat.is_empty() {
             (0..self.all.len()).collect()
         } else {
-            let lower = q.to_lowercase();
+            let lower = pat.to_lowercase();
             let labels: Vec<&str> = self.all.iter().map(|it| it.label.as_str()).collect();
             let mut scored: Vec<(usize, f64)> = Vec::new();
-            for mt in find(&q, &labels) {
+            for mt in find(&pat, &labels) {
                 let rel = labels[mt.index];
                 // fuzzy finds candidates; where it landed the characters is its
                 // own guess, and a literal hit beats that guess every time.
@@ -85,7 +92,7 @@ impl Model {
             scored.into_iter().map(|(i, _)| i).collect()
         };
         self.query = q;
-        self.view = self.keep_repo_filters(view);
+        self.view = self.keep_issue_filters(self.keep_repo_filters(view), &quals);
 
         if let Some(i) = held.and_then(|h| self.view.iter().position(|&x| x == h)) {
             self.cursor = i;
@@ -109,6 +116,27 @@ impl Model {
                 states.get(&self.all[i].path).is_none_or(|state| {
                     (!self.dirty_only || state.dirty > 0)
                         && (!self.unpushed_only || state.has_unpushed())
+                })
+            })
+            .collect()
+    }
+
+    /// keep_issue_filters keeps the issues every qualifier accepts: one of
+    /// its values among the issue's labels, assignees or author, case aside.
+    fn keep_issue_filters(&self, view: Vec<usize>, quals: &[Qualifier]) -> Vec<usize> {
+        if quals.is_empty() {
+            return view;
+        }
+        view.into_iter()
+            .filter(|&i| {
+                let issue = &self.all[i].issue;
+                quals.iter().all(|f| {
+                    let have = match f.field {
+                        Field::Label => &issue.labels[..],
+                        Field::Assignee => &issue.assignees[..],
+                        Field::Author => std::slice::from_ref(&issue.author),
+                    };
+                    have.iter().any(|h| f.any_of.contains(&h.to_lowercase()))
                 })
             })
             .collect()
@@ -167,6 +195,53 @@ impl Model {
         }
         Line::from(spans)
     }
+}
+
+/// Qualifier is one `label:`, `assignee:` or `author:` word of the issue
+/// list's query: the values it accepts, lowercased, any one of them enough.
+struct Qualifier {
+    field: Field,
+    any_of: Vec<String>,
+}
+
+/// Field is what of an issue a qualifier looks at.
+enum Field {
+    Label,
+    Assignee,
+    Author,
+}
+
+/// split_qualifiers takes the issue list's qualifiers out of a query and
+/// leaves the words the rows are matched on. The keys are GitHub's —
+/// `label:`, `assignee:` (or `assignees:`) and `author:` — and so is the
+/// meaning: commas are any-of, a repeated qualifier is all-of. A key with no value yet is
+/// dropped, so the list does not empty while it is being typed.
+fn split_qualifiers(q: &str) -> (String, Vec<Qualifier>) {
+    let (mut rest, mut quals) = (Vec::new(), Vec::new());
+    for word in q.split_whitespace() {
+        let qual = word.split_once(':').and_then(|(k, v)| {
+            let field = match k.to_ascii_lowercase().as_str() {
+                "label" => Field::Label,
+                "assignee" | "assignees" => Field::Assignee,
+                "author" => Field::Author,
+                _ => return None,
+            };
+            Some((field, v))
+        });
+        let Some((field, v)) = qual else {
+            rest.push(word);
+            continue;
+        };
+        let any_of: Vec<String> = v
+            .split(',')
+            .filter(|v| !v.is_empty())
+            .map(str::to_lowercase)
+            .collect();
+        if !any_of.is_empty() {
+            quals.push(Qualifier { field, any_of });
+        }
+    }
+    (rest.join(" "), quals)
 }
 
 /// char_indexes converts byte offsets into char positions, which is what
