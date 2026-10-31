@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/check-rust.py"
+            ],
+            "timeout": 600,
+            "statusMessage": "Formatting and linting Rust sources"
+          }
+        ]
+      }
+    ]
+  }
+}
