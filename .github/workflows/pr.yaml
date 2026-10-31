@@ -1,6 +1,6 @@
 # Gate on the three things that can break the build: the tests, the linter,
-# and the formatting. One job, because a small repository spends more time
-# setting a runner up than it does running these. Pull requests are the only
+# and the formatting. One job per OS, because a small repository spends more
+# time setting a runner up than it does running these. Pull requests are the only
 # gate: every commit on main arrives through one, and CodeQL watches the
 # branch on its own, so a push to main runs nothing here twice.
 #
@@ -8,7 +8,7 @@
 # filters: `check` and `coverage` are the checks the main ruleset requires
 # (#251), and a job screened out by a workflow-level filter never reports, so
 # it would sit pending forever and block a docs-only pull request. The
-# dorny/paths-filter step decides relevance instead, and the two jobs skip
+# dorny/paths-filter step decides relevance instead, and the three jobs skip
 # under `if:` when nothing they check changed — a skipped job reports success
 # to the required checks, so docs-only PRs merge without paying for a build.
 name: CI
@@ -78,6 +78,29 @@ jobs:
 
       - name: cargo clippy
         run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --locked
+
+  # Its own job because the ruleset's required context `check` must keep its
+  # name (#251): a matrix on `check` would rename it and block every merge.
+  # Only the tests run here, because the release matrix ships both darwin
+  # targets (.goreleaser.yaml) and what they exercise differs per OS —
+  # ownership checks resolve symlinks across /var and /private/var, and
+  # `repo/deadline.rs` runs setsid / kill(-pgid) through libc (docs/design.md).
+  macos:
+    name: cargo test (macos)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: cargo test
         run: cargo test --locked
