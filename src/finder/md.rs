@@ -372,4 +372,47 @@ mod tests {
         assert!(t.contains("below"), "{t}");
         assert!(t.contains("─"), "{t}");
     }
+
+    // Numbered rows keep their numbers, every bullet mark draws, and a `#`
+    // with no space after it is the word it was typed as.
+    #[test]
+    fn numbers_bullets_and_bare_hashes() {
+        let st = styles();
+        let out = render("1. first\n12. twelfth\n  + inner\n#tag\n7.no", 30, &st);
+        let t = text(&out);
+        assert!(t.contains("  1. first"), "{t}");
+        assert!(t.contains(" 12. twelfth"), "{t}");
+        assert!(t.contains("• inner"), "{t}");
+        assert!(t.contains("#tag"), "{t}");
+        assert!(t.contains("7.no"), "{t}");
+    }
+
+    // Escapes hand the next character through, and a marker that never
+    // closes stays the characters that were typed.
+    #[test]
+    fn escapes_and_unclosed_markers() {
+        let st = styles();
+        let out = render(
+            "\\*not italic\\* `open *half [](w) [x] [y](z end\\",
+            80,
+            &st,
+        );
+        let t = text(&out);
+        assert!(t.contains("*not italic*"), "{t}");
+        assert!(t.contains("`open"), "{t}");
+        assert!(t.contains("*half"), "{t}");
+        assert!(t.contains("[x]"), "{t}");
+        assert!(t.contains("[y](z"), "{t}");
+        assert!(t.contains("end"), "{t}");
+    }
+
+    // An unclosed fence renders verbatim to the end of the body.
+    #[test]
+    fn unclosed_fence_runs_to_the_end() {
+        let st = styles();
+        let out = render("before\n```\n**kept** as typed", 40, &st);
+        let t = text(&out);
+        assert!(t.contains("before"), "{t}");
+        assert!(t.contains("**kept** as typed"), "{t}");
+    }
 }
