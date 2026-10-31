@@ -339,22 +339,37 @@ impl Model {
         cmds.push(busy);
         cmds.push(Cmd::Task(Box::new(move || {
             let result = worktrees_of(&repo_at).map(|wts| {
-                let (dirty, idle): (Vec<_>, Vec<_>) =
-                    repo::expired(&repo_at, &wts, days, repo::now())
-                        .into_iter()
-                        .partition(|w| changed(&w.path) > 0);
-                let kept = (!dirty.is_empty()).then(|| {
+                let plan = repo::expiry_plan(&repo_at, &wts, days, repo::now(), |p| changed(p));
+                let dirty: Vec<_> = plan
+                    .keep
+                    .iter()
+                    .map(|impact| impact.worktree.clone())
+                    .collect();
+                let kept = (!plan.keep.is_empty()).then(|| {
                     format!(
                         "kept, uncommitted changes: {}",
-                        repo::worktree_labels(&dirty, |p| changed(p))
+                        repo::worktree_labels(&dirty, |p| {
+                            plan.keep
+                                .iter()
+                                .find(|impact| impact.worktree.path == p)
+                                .map_or(0, |impact| impact.changed)
+                        })
                     )
                 });
-                let names = idle.iter().map(Worktree::label).collect::<Vec<_>>();
+                let names = plan
+                    .remove
+                    .iter()
+                    .map(|impact| impact.worktree.label())
+                    .collect::<Vec<_>>();
                 let mut detail = vec![format!("idle {days}+ days: {}", names.join(", "))];
                 detail.extend(kept.clone());
                 detail.push("their branches go too where git branch -d allows".into());
                 ExpireScan {
-                    worktrees: idle,
+                    worktrees: plan
+                        .remove
+                        .into_iter()
+                        .map(|impact| impact.worktree)
+                        .collect(),
                     detail,
                     kept,
                 }

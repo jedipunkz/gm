@@ -8,6 +8,7 @@ mod history;
 mod issue;
 mod pr;
 mod remote;
+mod removal;
 mod url;
 
 pub(crate) use git::git_command;
@@ -16,6 +17,7 @@ pub use history::*;
 pub use issue::*;
 pub use pr::*;
 pub use remote::*;
+pub use removal::*;
 pub use url::*;
 
 use crate::config::Config;
