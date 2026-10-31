@@ -4,7 +4,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use super::command::split_input;
-use super::score::{find, rank, substring_match};
+use super::score::{MatchScratch, Query, find, rank, substring_match};
 use super::worktree::Mode;
 use super::{Cmd, Model, Msg};
 use crate::repo::{Branch, Issue, PullRequest, Visit};
@@ -61,16 +61,28 @@ impl Model {
         let view: Vec<usize> = if pat.is_empty() {
             (0..self.all.len()).collect()
         } else {
-            let lower = pat.to_lowercase();
             let labels: Vec<&str> = self.all.iter().map(|it| it.label.as_str()).collect();
             let mut scored: Vec<(usize, f64)> = Vec::new();
-            for mt in find(&pat, &labels) {
-                let rel = labels[mt.index];
-                // fuzzy finds candidates; where it landed the characters is its
-                // own guess, and a literal hit beats that guess every time.
-                let pos = substring_match(rel, &lower).unwrap_or(mt.matched);
-                scored.push((mt.index, rank(rel, &pos, &lower)));
-                self.matched.insert(mt.index, char_indexes(rel, &pos));
+            let query = Query::parse_query(&pat);
+            if query.is_legacy() {
+                let lower = pat.to_lowercase();
+                for mt in find(&pat, &labels) {
+                    let rel = labels[mt.index];
+                    // fuzzy finds candidates; where it landed the characters is its
+                    // own guess, and a literal hit beats that guess every time.
+                    let pos = substring_match(rel, &lower).unwrap_or(mt.matched);
+                    scored.push((mt.index, rank(rel, &pos, &lower)));
+                    self.matched.insert(mt.index, char_indexes(rel, &pos));
+                }
+            } else {
+                let mut scratch = MatchScratch::default();
+                for (index, &label) in labels.iter().enumerate() {
+                    if let Some(score) = query.score(label, &mut scratch) {
+                        scored.push((index, score));
+                        self.matched
+                            .insert(index, char_indexes(label, &scratch.hits));
+                    }
+                }
             }
             // Ascending, so the strongest match lands at the bottom; frecency
             // breaks ties between equally good matches. The branch list has
