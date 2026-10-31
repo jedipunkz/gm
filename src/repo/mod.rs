@@ -311,6 +311,14 @@ pub fn matches(rel: &str, query: &str, exact: bool) -> bool {
         return true;
     }
     if !exact {
+        // Smart case, as in fd/rg/fzf: no uppercase letter in the query means
+        // match without case, and an uppercase letter means match as written.
+        // Tree::resolve refuses ambiguity before anything is removed or moved,
+        // so the looser branch can only turn "no match" into a match, never
+        // the wrong removal.
+        if !query.chars().any(char::is_uppercase) {
+            return rel.to_lowercase().contains(&query.to_lowercase());
+        }
         return rel.contains(query);
     }
     let parts: Vec<&str> = rel.split('/').collect();
@@ -575,6 +583,42 @@ mod tests {
             ("", false, true),
         ] {
             assert_eq!(matches(rel, query, exact), want, "{query:?} exact={exact}");
+        }
+    }
+
+    // Smart case, as in fd/rg/fzf: the query reads without case unless it
+    // carries an uppercase letter, which keeps the exact spelling.
+    #[test]
+    fn matches_lowercase_queries_without_case() {
+        for (rel, query, want) in [
+            ("github.com/acme/MyRepo", "myrepo", true),
+            ("github.com/acme/myrepo", "myrepo", true),
+            ("github.com/acme/MyRepo", "acme/myrepo", true),
+        ] {
+            assert_eq!(matches(rel, query, false), want, "{query:?} in {rel:?}");
+        }
+    }
+
+    #[test]
+    fn matches_query_case_as_written_when_it_carries_an_uppercase() {
+        for (rel, query, want) in [
+            ("github.com/acme/MyRepo", "MyRepo", true),
+            ("github.com/acme/MyRepo", "MYREPO", false),
+            ("github.com/acme/myrepo", "MyRepo", false),
+        ] {
+            assert_eq!(matches(rel, query, false), want, "{query:?} in {rel:?}");
+        }
+    }
+
+    // -e means byte-exact even when the query has no uppercase letter.
+    #[test]
+    fn matches_exact_queries_by_case() {
+        for (rel, query, want) in [
+            ("github.com/acme/MyRepo", "myrepo", false),
+            ("github.com/acme/MyRepo", "MyRepo", true),
+            ("github.com/acme/myrepo", "myrepo", true),
+        ] {
+            assert_eq!(matches(rel, query, true), want, "{query:?} in {rel:?}");
         }
     }
 
