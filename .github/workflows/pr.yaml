@@ -27,7 +27,7 @@ concurrency:
 jobs:
   # What did this pull request change? Everything it names is what the two
   # gate jobs exist to test — not the original workflow-level `paths:` list.
-  # Makefile and benches join the list because `check` builds --all-targets.
+  # Makefile, benches and tests join the list because `check` builds --all-targets.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -50,6 +50,7 @@ jobs:
               - Cargo.toml
               - Cargo.lock
               - benches/**
+              - tests/**
               - Makefile
               - .github/coverage-threshold
               # Every workflow, so Dependabot's action bumps are built before
