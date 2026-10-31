@@ -47,6 +47,7 @@ const lists = [
   ["Worktrees", "`Ctrl-W`", "Worktrees of the selected repository", "Go there"],
   ["Branches", "`Ctrl-L`", "Local branches, and remote ones with no local branch", "Go to its worktree, creating it if needed"],
   ["Pull requests", "`Ctrl-J`", "Open pull requests, drafts marked `[draft]`", "Go to its worktree, creating it with `gh pr checkout --worktree` if needed"],
+  ["Issues", "`Ctrl-[`", "Open issues", "Open the issue's detail panel: `q` back, `↑↓` scroll, `Ctrl-B` browser, `Ctrl-Y` copy the URL"],
 ];
 
 const keys = [
@@ -54,9 +55,10 @@ const keys = [
   ["`↑` `↓` / `Ctrl-P` `Ctrl-N`", "Move the cursor; `PgUp` `PgDn` move a screen"],
   ["`Enter`", "Go to the selected row (gm prints its path and the shell `cd`s there). With a command typed, run it"],
   ["`Ctrl-W` `Ctrl-L` `Ctrl-J`", "Open the worktree / branch / pull request list. The same key goes back to the repositories"],
+  ["`Ctrl-[`", "Open the issue list; the same key goes back to the repositories. Its byte is `Esc`, so at the repositories, with nothing to undo, it opens the issue list instead of quitting — `Ctrl-C` always quits"],
   ["`Ctrl-Alt-B`", "Open the repository's remote in a browser"],
   ["`Tab`", "Accept the command completion shown after the cursor"],
-  ["`Esc`", "Undo one step: back to the repositories, clear the query, clear `/dirty` `/unpushed`, then quit"],
+  ["`Esc`", "Undo one step: back to the repositories, clear the query, clear `/dirty` `/unpushed`, then (unless the issue list owns it, above) quit"],
   ["`Ctrl-G`", "Same as `Esc`, but never quits"],
   ["`Ctrl-C`", "Quit at once"],
 ];
@@ -68,7 +70,7 @@ const slash = [
   ["`/remove`", "Remove the selected repository with its worktrees, or the selected worktree and its merged branch. Never the main worktree", "Repositories, worktrees"],
   ["`/expire <days>d`", "Remove worktrees whose `HEAD` has not moved for that long, and their merged branches", "Worktrees"],
   ["`/dirty` `/unpushed`", "Toggle a filter: only repositories with uncommitted changes / unpushed commits, counting their worktrees. Both on: both must hold. Switching one on scans again", "Repositories"],
-  ["`/worktrees` `/branches` `/prs` `/browse`", "Same as `Ctrl-W` `Ctrl-L` `Ctrl-J` `Ctrl-Alt-B`", "All"],
+  ["`/worktrees` `/branches` `/prs` `/issues` `/browse`", "Same as `Ctrl-W` `Ctrl-L` `Ctrl-J` `Ctrl-[` `Ctrl-Alt-B`", "All"],
   ["`/help`", "Show the command list", "All"],
 ];
 
@@ -129,6 +131,7 @@ const settings = [
   ["`worktree_key`", "`ctrl-w`", "Finder: worktree list"],
   ["`branch_key`", "`ctrl-l`", "Finder: branch list"],
   ["`pr_key`", "`ctrl-j`", "Finder: pull request list"],
+  ["`issue_key`", "`ctrl-[`", "Finder: issue list"],
   ["`remote_key`", "`ctrl-alt-b`", "Finder: open the remote in a browser"],
 ];
 
@@ -138,6 +141,7 @@ launch_key   = "ctrl-g"
 worktree_key = "ctrl-w"
 branch_key   = "ctrl-l"
 pr_key       = "ctrl-j"
+issue_key    = "ctrl-["
 remote_key   = "ctrl-alt-b"`;
 
 const rootOrder = [
@@ -217,12 +221,13 @@ const envs = [
       <ul>
         <li>The other lists belong to the repository selected when they were opened. Going back restores the query and cursor.</li>
         <li>In the pull request list, <code>#42</code> finds number 42.</li>
+        <li>In the issue list, <code>#42</code> finds number 42; <code>Enter</code> opens its text full screen — the description and each comment in their own frame, headings, code, lists and links drawn — , <code>q</code> or <code>Esc</code> goes back, <code>Space</code> pages, <code>Shift-Space</code> or <code>b</code> pages back (<code>b</code> works everywhere; <code>Shift-Space</code> needs a terminal that reports keys — Ghostty, kitty, WezTerm, foot, recent Windows Terminal), <code>j</code> <code>k</code> go a line, <code>Ctrl-B</code> opens it in a browser, <code>Ctrl-Y</code> copies its URL (OSC52: tmux needs <code>set-clipboard</code>, and some terminals ask to be allowed).</li>
         <li>Picking a remote branch makes a local branch that tracks it.</li>
       </ul>
 
       <h3 id="keys">Keys</h3>
       <RefTable head={["Key", "Action"]} rows={keys} />
-      <p><code>Ctrl-W</code> <code>Ctrl-L</code> <code>Ctrl-J</code> <code>Ctrl-Alt-B</code> can be changed: see <a href="#chords">Key bindings</a>.</p>
+      <p><code>Ctrl-W</code> <code>Ctrl-L</code> <code>Ctrl-J</code> <code>Ctrl-[</code> <code>Ctrl-Alt-B</code> can be changed: see <a href="#chords">Key bindings</a>.</p>
 
       <h3 id="slash">Slash commands</h3>
       <ul>
@@ -356,7 +361,7 @@ const envs = [
       </p>
       <ul>
         <li><code>launch_key</code> must be a plain Ctrl chord, and not <code>ctrl-m</code> <code>ctrl-i</code> <code>ctrl-j</code> (terminals send them as Enter, Tab, newline).</li>
-        <li>The four finder keys must differ from each other, and cannot take <code>ctrl-m</code> <code>ctrl-i</code> or, as plain chords, <code>ctrl-c</code> <code>ctrl-n</code> <code>ctrl-p</code> <code>ctrl-g</code>.</li>
+        <li>The five finder keys must differ from each other, and cannot take <code>ctrl-m</code> <code>ctrl-i</code> or, as plain chords, <code>ctrl-c</code> <code>ctrl-n</code> <code>ctrl-p</code> <code>ctrl-g</code>. <code>issue_key</code> may also be <code>ctrl-[</code>, the byte <code>Esc</code> is sent as.</li>
         <li>Avoid what the shell keeps for itself: <code>ctrl-r</code>, <code>ctrl-c</code>, <code>ctrl-d</code>, <code>ctrl-z</code>.</li>
       </ul>
       <RefTable head={["Chord", "Works in"]} rows={reach} />
@@ -376,8 +381,8 @@ const envs = [
       <h2 id="env">Requirements and environment</h2>
       <ul>
         <li>macOS or Linux (WSL2 included), <code>git</code> on <code>$PATH</code>, and a true-color terminal for the themes.</li>
-        <li>The pull request list needs <a href="https://cli.github.com/"><code>gh</code></a>, logged in. The branch list uses git's own credentials.</li>
-        <li>Network calls never prompt for a password and give up after a deadline (20 s for the branch list, 30 s for pull requests), saying what timed out.</li>
+        <li>The pull request and issue lists need <a href="https://cli.github.com/"><code>gh</code></a>, logged in. The branch list uses git's own credentials.</li>
+        <li>Network calls never prompt for a password and give up after a deadline (20 s for the branch list, 30 s for pull requests and issues), saying what timed out.</li>
       </ul>
       <RefTable head={["File", "Purpose"]} rows={files} />
       <RefTable head={["Variable", "Effect"]} rows={envs} />

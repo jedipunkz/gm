@@ -11,7 +11,7 @@ use super::theme::{ROW_LIFT, blend, rgb};
 use super::*;
 use crate::config::parse_chord;
 use crate::paths;
-use crate::repo::{Commit, Ref, RefKind};
+use crate::repo::{Commit, Issue, Ref, RefKind};
 use crate::testutil::{TempDir, exists, git, git_repo, mkdir};
 
 fn test_keys() -> Keys {
@@ -19,6 +19,7 @@ fn test_keys() -> Keys {
         worktree: parse_chord("", DEFAULT_WORKTREE_KEY).unwrap(),
         branch: parse_chord("", DEFAULT_BRANCH_KEY).unwrap(),
         pr: parse_chord("", DEFAULT_PR_KEY).unwrap(),
+        issue: parse_chord("", DEFAULT_ISSUE_KEY).unwrap(),
         remote: parse_chord("", DEFAULT_REMOTE_KEY).unwrap(),
     }
 }
@@ -162,6 +163,13 @@ fn slash_commands_answer_their_own_edges() {
         "{}",
         m.note
     );
+    m.mode = Mode::Issues;
+    run_slash(&mut m, "/remove");
+    assert_eq!(
+        m.note, "/remove applies to repositories and worktrees",
+        "{}",
+        m.note
+    );
 
     // Repos mode with nothing at all to select: the note says so. filter()
     // during the run rebuilds the view, so the only things to look at have
@@ -170,7 +178,6 @@ fn slash_commands_answer_their_own_edges() {
     m.all.clear();
     run_slash(&mut m, "/remove");
     assert_eq!(m.note, "nothing is selected", "{}", m.note);
-
     // The mode commands, asked for the mode they are already in, have
     // nothing to do.
     m.mode = Mode::Worktrees;
@@ -179,6 +186,8 @@ fn slash_commands_answer_their_own_edges() {
     assert!(run_slash(&mut m, "/branches").is_empty());
     m.mode = Mode::Prs;
     assert!(run_slash(&mut m, "/prs").is_empty());
+    m.mode = Mode::Issues;
+    assert!(run_slash(&mut m, "/issues").is_empty());
 }
 
 /// answer runs the commands the way the loop would and returns the message
@@ -425,10 +434,11 @@ fn reserved_keys_are_refused() {
         }
     }
     // Two actions cannot answer to the same chord.
-    let (wt, br, pr, rm) = (
+    let (wt, br, pr, is, rm) = (
         keys.worktree.clone(),
         keys.branch.clone(),
         keys.pr.clone(),
+        keys.issue.clone(),
         keys.remote.clone(),
     );
     for k in [
@@ -436,24 +446,28 @@ fn reserved_keys_are_refused() {
             worktree: wt.clone(),
             branch: br.clone(),
             pr: pr.clone(),
+            issue: is.clone(),
             remote: wt.clone(),
         },
         Keys {
             worktree: wt.clone(),
             branch: wt.clone(),
             pr: pr.clone(),
+            issue: is.clone(),
             remote: rm.clone(),
         },
         Keys {
             worktree: wt.clone(),
             branch: rm.clone(),
             pr: pr.clone(),
+            issue: is.clone(),
             remote: rm.clone(),
         },
         Keys {
             worktree: wt.clone(),
             branch: br.clone(),
             pr: br.clone(),
+            issue: is.clone(),
             remote: rm.clone(),
         },
     ] {
@@ -629,8 +643,46 @@ fn esc_clears_the_filter() {
     assert_eq!(m.cursor, m.view.len() - 1);
     assert!(line_text(&m.help_line(90)).contains("esc quit"));
 
-    // With nothing left to undo, Esc quits as it always did.
-    assert!(is_quit(&m.update(key("esc"))));
+    // With nothing left to undo, Esc quits as it always did — with an issue
+    // key that is not the default, whose ctrl-[ takes esc for the issue
+    // list (esc_opens_the_issue_list below names what that does instead).
+    let mut esc_quits = {
+        let mut m = m.clone();
+        m.keys.issue = parse_chord("", "ctrl-e").unwrap();
+        m
+    };
+    assert!(is_quit(&esc_quits.update(key("esc"))));
+}
+
+// The default issue chord is ctrl-[, and esc is the key it arrives as: at
+// the repository list, with nothing to undo, it opens the issue list
+// instead of quitting — ctrl+c is left quit's key.
+#[test]
+fn esc_opens_the_issue_list() {
+    let root = TempDir::new();
+    let rs = repos(&root.path(), &["github.com/acme/alpha"]);
+    let mut m = new_model(&rs, "");
+    m.issues_of = Arc::new(|_| Ok(vec![issue(7, "Add login")]));
+    let cmds = m.update(key("esc"));
+    assert!(!is_quit(&cmds), "esc quit instead of opening the issues");
+    feed(&mut m, cmds);
+    assert_eq!(m.mode, Mode::Issues, "{:?}", m.note);
+    assert_eq!(rows(&m), ["#7 Add login"]);
+
+    // And the same key takes the list back down.
+    m.update(key("esc"));
+    assert_eq!(m.mode, Mode::Repos);
+
+    // Deeper lists keep esc's own back-outs: from the issue list it goes to
+    // the repositories, which the toggle above is, and a query still clears
+    // rather than opening anything.
+    let mut m = new_model(&rs, "");
+    set_query(&mut m, "alpha");
+    assert!(
+        !is_quit(&m.update(key("esc"))),
+        "esc quit with a query to clear"
+    );
+    assert_eq!(m.input.value(), "");
 }
 
 // The worktree list is backed out of before the filter is.
@@ -915,8 +967,15 @@ fn find_then_act_on_it() {
         m.ask
     );
 
-    // With the box empty, Esc quits as it always did.
-    assert!(is_quit(&new_model(&rs, "").update(key("esc"))));
+    // With the box empty, Esc quits as it always did — with an issue key
+    // that is not the default: the default ctrl-[ is esc and opens the
+    // issue list instead, see esc_opens_the_issue_list.
+    let mut esc_quits = {
+        let mut m = new_model(&rs, "");
+        m.keys.issue = parse_chord("", "ctrl-e").unwrap();
+        m
+    };
+    assert!(is_quit(&esc_quits.update(key("esc"))));
 }
 
 #[test]
@@ -2062,7 +2121,15 @@ fn worktree_mode_keys_go_back() {
             "{k} quit gm instead of closing the worktree list"
         );
     }
-    assert!(is_quit(&new_model(&rs, "").update(key("esc"))));
+    // Esc quits from the repository list with an issue key that is not the
+    // default: the default ctrl-[ is esc and opens the issue list instead,
+    // see esc_opens_the_issue_list.
+    let mut esc_quits = {
+        let mut m = new_model(&rs, "");
+        m.keys.issue = parse_chord("", "ctrl-e").unwrap();
+        m
+    };
+    assert!(is_quit(&esc_quits.update(key("esc"))));
     assert!(!is_quit(&new_model(&rs, "").update(key("ctrl+g"))));
 }
 
@@ -3115,4 +3182,304 @@ fn tiny_terminals_do_not_panic() {
             }
         }
     }
+    // And with the issue's panel up, detail and scroll included: it is
+    // nearly the whole screen, so small terminals clip it hardest.
+    m.detail = Some(super::issues::Detail {
+        issue: issue(
+            7,
+            "A body long enough to fold, and fold again, many times over. ",
+        ),
+        scroll: 5,
+    });
+    m.over = Overlay::Issue;
+    for w in 0..30 {
+        for h in 0..12 {
+            (m.w, m.h) = (w, h);
+            screen(&m);
+        }
+    }
+}
+
+// ---- the issue list and its detail panel ---------------------------------
+
+fn issue(number: u64, title: &str) -> Issue {
+    Issue {
+        number,
+        title: title.into(),
+        state: "OPEN".into(),
+        author: "alice".into(),
+        labels: vec!["bug".into()],
+        url: format!("https://github.com/acme/alpha/issues/{number}"),
+        ..Default::default()
+    }
+}
+
+fn detail_issue(numbers_and_bodies: &[(u64, &str)]) -> Result<Issue> {
+    numbers_and_bodies
+        .last()
+        .map(|(n, body)| Issue {
+            number: *n,
+            title: "Add login".into(),
+            state: "OPEN".into(),
+            author: "alice".into(),
+            labels: vec!["bug".into(), "ui".into()],
+            url: format!("https://github.com/acme/alpha/issues/{n}"),
+            body: (*body).into(),
+            comments: vec![repo::Comment {
+                author: "bob".into(),
+                body: "Reproduced here.".into(),
+            }],
+        })
+        .ok_or("no such issue".into())
+}
+
+/// issue_model is a finder over two repositories; alpha has two open issues
+/// and gh is stubbed, for the listing and for one issue in full.
+fn issue_model(root: &TempDir) -> (Model, Vec<Repo>) {
+    let rs = repos(
+        &root.path(),
+        &["github.com/acme/bravo", "github.com/acme/alpha"],
+    );
+    let mut m = new_model(&rs, "");
+    m.keys.issue = parse_chord("ctrl-e", "ctrl-e").unwrap();
+    (m.w, m.h) = (100, 30);
+    set_query(&mut m, "alpha");
+    let (list, at) = (
+        vec![issue(7, "Add login"), issue(9, "Crash on start")],
+        rs[1].path(),
+    );
+    m.issues_of = Arc::new(move |dir| {
+        assert_eq!(dir, at);
+        Ok(list.clone())
+    });
+    (m, rs)
+}
+
+/// open_issue_list presses the issue key and hands the finder gh's answer.
+fn open_issue_list(m: &mut Model) {
+    let cmds = m.update(key("ctrl+e"));
+    assert!(!cmds.is_empty(), "the key did not ask gh");
+    assert!(m.busy.contains("asking GitHub"), "{:?}", m.busy);
+    feed(m, cmds);
+}
+
+/// open_issue_panel presses enter in the issue list and feeds gh's view
+/// answer, leaving the panel up.
+fn open_issue_panel(m: &mut Model, detail: Issue) {
+    m.issue_of = Arc::new(move |_, _| Ok(detail.clone()));
+    let cmds = m.update(key("enter"));
+    assert!(m.busy.contains("viewing #7"), "{:?}", m.busy);
+    feed(m, cmds);
+    assert!(
+        m.over == Overlay::Issue,
+        "the panel did not open: {:?}",
+        m.note
+    );
+}
+
+// The listing is newest at the bottom, enter opens the panel over it, and q
+// closes the panel back onto the list — which the issue key closes as well.
+#[test]
+fn issue_mode() {
+    let root = TempDir::new();
+    let (mut m, rs) = issue_model(&root);
+    open_issue_list(&mut m);
+    assert_eq!(m.mode, Mode::Issues, "{:?}", m.note);
+    assert_eq!(rows(&m).join("|"), "#9 Crash on start|#7 Add login");
+
+    // The hints and the pane say what an issue is.
+    let hints = line_text(&m.help_line(140));
+    assert!(
+        hints.contains("enter view") && hints.contains("esc repos"),
+        "{hints:?}"
+    );
+    let pane = lines_text(&m.info_lines(40));
+    for s in [rs[1].rel.as_str(), "alice", "#7 Add login", "bug"] {
+        assert!(pane.contains(s), "{s:?}:\n{pane}");
+    }
+
+    open_issue_panel(
+        &mut m,
+        detail_issue(&[(
+            7,
+            "The form hangs. As does everything else for a long time after.",
+        )])
+        .unwrap(),
+    );
+    let panel = text(&screen(&m));
+    for s in ["Add login", "The form hangs.", "Reproduced here."] {
+        assert!(panel.contains(s), "{s:?}:\n{panel}");
+    }
+    // Each Comment is its own frame, its author riding the top rail.
+    assert!(panel.contains('╭'), "{panel}");
+    assert!(panel.contains("─ bob "), "{panel}");
+    assert!(panel.contains('╯'), "{panel}");
+    let rail = panel
+        .lines()
+        .find(|l| l.contains("Reproduced here."))
+        .expect("the comment's row is not drawn");
+    assert!(rail.trim_start().starts_with("│ "), "{rail:?}");
+
+    // q closes the panel back onto the list.
+    m.update(key("q"));
+    assert!(m.over == Overlay::None && m.detail.is_none());
+    assert_eq!(m.mode, Mode::Issues);
+    // The same key closes the list as well.
+    m.update(key("ctrl+e"));
+    assert_eq!(m.mode, Mode::Repos);
+}
+
+// The scroll keys walk the panel's window: never past the top, and never
+// past the bottom, where the hint line already is.
+#[test]
+fn issue_panel_scrolls() {
+    let root = TempDir::new();
+    let (mut m, _) = issue_model(&root);
+    open_issue_list(&mut m);
+    let body: String = (0..40).map(|_| "word ").collect();
+    // The pane is small, so the fold really has somewhere past the window
+    // to go.
+    m.h = 16;
+    open_issue_panel(&mut m, detail_issue(&[(7, &body)]).unwrap());
+
+    m.update(key("up"));
+    assert_eq!(
+        m.detail.as_ref().unwrap().scroll,
+        0,
+        "scrolled past the top"
+    );
+    // j and k scroll the window, the way vim moves: the panel has no query
+    // to type, so the letters are free there.
+    m.update(ch('j'));
+    assert!(m.detail.as_ref().unwrap().scroll > 0, "j did not scroll");
+    m.update(ch('k'));
+    m.update(key("pgdown"));
+    m.update(key("pgdown"));
+    let at = m.detail.as_ref().unwrap().scroll;
+    m.update(key("pgdown"));
+    assert_eq!(
+        m.detail.as_ref().unwrap().scroll,
+        at,
+        "scrolled past the bottom"
+    );
+
+    // Space pages forward, b pages back (shift+space too, where a terminal
+    // reports the shift; less's b is the one every terminal sends), clamped
+    // the same.
+    m.update(ch(' '));
+    assert_ne!(m.detail.as_ref().unwrap().scroll, 0, "space did not page");
+    let at = m.detail.as_ref().unwrap().scroll;
+    m.update(ch('b'));
+    assert_ne!(m.detail.as_ref().unwrap().scroll, at, "b did not page back");
+    m.detail.as_mut().unwrap().scroll = 0;
+    m.update(key("shift+ "));
+    m.update(key("shift+ "));
+    assert_eq!(
+        m.detail.as_ref().unwrap().scroll,
+        0,
+        "shift+space paged past the top"
+    );
+}
+
+// The body and the comments go out as the Markdown they are typed in: rows
+// take their own line, headings and lists take their shapes.
+#[test]
+fn issue_panel_markdown() {
+    let root = TempDir::new();
+    let (mut m, _) = issue_model(&root);
+    m.h = 44;
+    open_issue_list(&mut m);
+    let body = "# The form\n\nfirst line\n\n- one\n- two\n\n`code`\n\n```\nfn main() {}\n```";
+    open_issue_panel(&mut m, detail_issue(&[(7, body)]).unwrap());
+    let panel = text(&screen(&m));
+    for s in ["The form", "first line", "• one", "fn main() {}"] {
+        assert!(panel.contains(s), "{s:?}:\n{panel}");
+    }
+    // The rows stayed rows: a newline is not a character it folded away.
+    let window = panel.lines().collect::<Vec<_>>();
+    let first = window.iter().position(|l| l.contains("first line"));
+    let last = window.iter().position(|l| l.contains("• one"));
+    assert!(first.is_some() && last.is_some(), "{panel}");
+
+    // The hints line sits on the screen's own bottom row, with no frame
+    // under it, naming the chords.
+    let bottom = row_text(&screen(&m), m.h - 1);
+    assert!(bottom.contains("ctrl+y"), "{bottom:?}");
+}
+
+// ctrl-b opens the issue in a browser on a thread, and ctrl-y copies its URL
+// and says so; both are the detail panel's, and answer where its text was.
+#[test]
+fn issue_panel_browser_and_copy() {
+    let root = TempDir::new();
+    let (mut m, _) = issue_model(&root);
+    open_issue_list(&mut m);
+
+    // Nothing is open yet, so the chords belong to the box: ctrl+b is a
+    // cursor move, and both are no-ops on an empty one.
+    m.update(key("ctrl+b"));
+    let empty = m.input.value();
+    assert!(empty.is_empty() && m.over == Overlay::None, "{:?}", m.note);
+    m.update(key("ctrl+y"));
+    let empty = m.input.value();
+    assert!(empty.is_empty(), "{empty:?}");
+
+    let opened = Arc::new(Mutex::new(Vec::new()));
+    let seen = opened.clone();
+    m.open_url = Arc::new(move |u| opened.lock().unwrap().push(u.to_string()));
+    let copied = Arc::new(Mutex::new(Vec::new()));
+    let had = copied.clone();
+    m.copy_url = Arc::new(move |u| {
+        copied.lock().unwrap().push(u.to_string());
+        Ok(())
+    });
+
+    open_issue_panel(&mut m, detail_issue(&[(7, "The form hangs.")]).unwrap());
+    let answer_of = answer(m.update(key("ctrl+b")));
+    assert!(answer_of.is_none(), "the browser task answered again");
+    assert_eq!(
+        seen.lock().unwrap().last().map(String::as_str),
+        Some("https://github.com/acme/alpha/issues/7"),
+        "ctrl-b opened the wrong page or none"
+    );
+    m.update(key("ctrl+y"));
+    assert_eq!(
+        had.lock().unwrap().last().map(String::as_str),
+        Some("https://github.com/acme/alpha/issues/7"),
+        "ctrl-y copied nothing"
+    );
+    assert!(m.note.contains("issue URL copied"), "{:?}", m.note);
+
+    // The copy's answer is where the panel's title was, and closing takes
+    // the note with it.
+    let panel = text(&screen(&m));
+    assert!(panel.contains("issue URL copied"), "{panel}");
+    m.update(key("q"));
+    assert_eq!(m.note, "");
+}
+
+// gh failing or answering nothing leaves the repository list with a reason,
+// the way the pull request list does.
+#[test]
+fn issue_mode_leaves_the_list_alone_on_error() {
+    let root = TempDir::new();
+    let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
+    m.keys.issue = parse_chord("ctrl-e", "ctrl-e").unwrap();
+    m.issues_of = Arc::new(|_| Err("not logged in".into()));
+    let cmds = m.update(key("ctrl+e"));
+    feed(&mut m, cmds);
+    assert!(
+        m.mode == Mode::Repos && m.note.contains("not logged in"),
+        "{:?}",
+        m.note
+    );
+
+    m.issues_of = Arc::new(|_| Ok(vec![]));
+    let cmds = m.update(key("ctrl+e"));
+    feed(&mut m, cmds);
+    assert!(
+        m.mode == Mode::Repos && m.note.contains("no open issues"),
+        "{:?}",
+        m.note
+    );
 }

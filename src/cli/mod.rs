@@ -356,6 +356,7 @@ impl App<'_> {
             worktree: config::parse_chord(&self.cfg.worktree_key, finder::DEFAULT_WORKTREE_KEY)?,
             branch: config::parse_chord(&self.cfg.branch_key, finder::DEFAULT_BRANCH_KEY)?,
             pr: config::parse_chord(&self.cfg.pr_key, finder::DEFAULT_PR_KEY)?,
+            issue: config::parse_chord(&self.cfg.issue_key, finder::DEFAULT_ISSUE_KEY)?,
             remote: config::parse_chord(&self.cfg.remote_key, finder::DEFAULT_REMOTE_KEY)?,
         };
         let mut hist = self.history();

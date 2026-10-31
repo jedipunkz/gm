@@ -13,7 +13,8 @@ A [ghq](https://github.com/x-motemen/ghq)-style repository manager with a
 built-in fuzzy finder.
 
 `Ctrl-G`, type, `Enter`: the shell `cd`s to the repository — or to any of its
-worktrees, branches and pull requests.
+worktrees, branches and pull requests. Its issues read there too, description
+and comments included.
 
 <br clear="left">
 
@@ -22,6 +23,7 @@ worktrees, branches and pull requests.
 - One `host/user/repo` tree for every clone; an existing ghq tree works as is.
 - `Ctrl-G` opens a fuzzy finder, ranked by match then frecency, and `cd`s to the pick.
 - Branches and pull requests open as worktrees, created on demand.
+- Issues read in the finder: the list, then the issue full screen.
 - Create, remove and expire repositories and worktrees without leaving the finder.
 - `gm status` and `/dirty` `/unpushed` find uncommitted or unpushed work.
 - Ten themes; finder keys are configurable.
@@ -50,7 +52,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 |---|---|
 | macOS / Linux (including WSL2) | Always |
 | `git` on `$PATH` | Always |
-| [`gh`](https://cli.github.com/), logged in, with `gh pr checkout --worktree` | Pull request list |
+| [`gh`](https://cli.github.com/), logged in, with `gh pr checkout --worktree` | Pull request and issue lists |
 | True-color terminal | Themes |
 
 ## 🔮 Finder
@@ -61,6 +63,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | Worktrees | `Ctrl-W` | Worktrees of the selected repository | Go there |
 | Branches | `Ctrl-L` | Branches of the selected repository | Go to its worktree, created if missing |
 | Pull requests | `Ctrl-J` | Open pull requests of the selected repository | Go to its worktree, created if missing |
+| Issues | `Ctrl-[` | Open issues of the selected repository | Read one full screen: see the [issue list](#issue-list) |
 
 
 ### Keys
@@ -71,12 +74,15 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `↑` `Ctrl-P` / `↓` `Ctrl-N` | Move | Move |
 | `PgUp` / `PgDn` | Page | Page |
 | `Ctrl-W` / `Ctrl-L` / `Ctrl-J` | Open that list | Open that list; the current list's own key goes back |
+| `Ctrl-[` | Open the issue list; `Esc` goes back | Same (the issue list itself first goes back with the key above, then `Esc`) |
 | `Ctrl-Alt-B` | Open the remote in a browser | Same |
 | `Ctrl-G` | Clear query, then filter | Back to repositories |
 | `Esc` | Clear query, then filter, then quit | Back to repositories |
 | `Ctrl-C` | Quit, print nothing | Same |
 
-- `Ctrl-W`, `Ctrl-L`, `Ctrl-J`, `Ctrl-Alt-B` are configurable: see [Key bindings](#key-bindings).
+- `Ctrl-W`, `Ctrl-L`, `Ctrl-J`, `Ctrl-[`, `Ctrl-Alt-B` are configurable: see [Key bindings](#key-bindings).
+
+- `Ctrl-[` is the byte `Esc` is sent as, so at the repositories, with the query empty and no filter on, `Esc` opens the issue list instead of quitting. `Ctrl-C` always quits.
 
 ### Slash commands
 
@@ -91,7 +97,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `/help` | Command list (`q` / `Esc` closes) |
 | `/get [flags] <repo>` | Close the finder, run [`gm get`](#-commands) in the terminal (progress, passphrase), go to the clone |
 | `/browse` | = `Ctrl-Alt-B` |
-| `/worktrees` `/branches` `/prs` | = `Ctrl-W` `Ctrl-L` `Ctrl-J`. In that list already: nothing |
+| `/worktrees` `/branches` `/prs` `/issues` | = `Ctrl-W` `Ctrl-L` `Ctrl-J` `Ctrl-[`. In that list already: nothing |
 
 #### In Repository list
 
@@ -113,7 +119,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | `/expire <days>d` | Remove every worktree whose HEAD has not moved for that long (its reflog says when), then its branch if `git branch -d` allows. The whole list, not the selected row: the panel names each one. Uncommitted changes keep a worktree |
 | `/dirty` `/unpushed` | Refused |
 
-#### In Branch list, pull request list
+#### In Branch list, pull request list, issue list
 
 | Command | Action |
 |---|---|
@@ -144,6 +150,13 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 - Open pull requests, newest at the bottom, drafts marked `[draft]`. Type `#42` to find one by number.
 - `Enter`: go to its worktree. If none, `gh pr checkout` creates it; `gh` names the branch and, for a fork, sets where it pushes.
 - The worktree is named after the head branch.
+
+### Issue list
+
+- Open issues, newest at the bottom. Type `#42` to find one by number.
+- `Enter` opens the issue full screen: the description and each comment in their own frame, markdown (headings, code, lists, quotes, rules, emphasis, links) drawn, and one hint line on the bottom row.
+- In the detail view: `q` / `Esc` go back, `Space` / `PgDn` page down, `b` / `PgUp` / `Shift-Space` page back (`Shift-Space` needs a terminal that reports keys), `j` / `k` go a line.
+- `Ctrl-B` opens the issue in a browser; `Ctrl-Y` copies its URL (OSC52: tmux needs `set-clipboard`, and some terminals ask first).
 
 ## 🧰 Sub Commands
 
@@ -181,6 +194,7 @@ launch_key   = "ctrl-g"        # shell: open gm
 worktree_key = "ctrl-w"        # finder: worktree list
 branch_key   = "ctrl-l"        # finder: branch list
 pr_key       = "ctrl-j"        # finder: pull request list
+issue_key    = "ctrl-["        # finder: issue list
 remote_key   = "ctrl-alt-b"    # finder: open the remote
 ```
 
@@ -210,7 +224,7 @@ the valid ones.
 | Setting | Works in | Allowed | Rejected |
 |---|---|---|---|
 | `launch_key` | Shell | Plain Ctrl chord | `alt`, `shift`; `ctrl-m` `ctrl-i` `ctrl-j` (Enter, Tab, line feed) |
-| `worktree_key` `branch_key` `pr_key` `remote_key` | Finder | Ctrl, optionally `alt`, `shift` | `ctrl-c` `ctrl-n` `ctrl-p` `ctrl-g`; `ctrl-m` `ctrl-i` with any modifier; a chord another of the four uses |
+| `worktree_key` `branch_key` `pr_key` `issue_key` `remote_key` | Finder | Ctrl, optionally `alt`, `shift`; `issue_key` may also be `ctrl-` `[` | `ctrl-c` `ctrl-n` `ctrl-p` `ctrl-g`; `ctrl-m` `ctrl-i` with any modifier; a chord another of the five uses |
 
 | Chord | Reaches `gm` |
 |---|---|

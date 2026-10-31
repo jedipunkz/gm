@@ -7,11 +7,11 @@ use super::command::split_input;
 use super::score::{find, rank, substring_match};
 use super::worktree::Mode;
 use super::{Cmd, Model, Msg};
-use crate::repo::{Branch, PullRequest, Visit};
+use crate::repo::{Branch, Issue, PullRequest, Visit};
 
-/// Item is one row: a repository in the main list, a worktree, branch or pull
-/// request in the others. label is what is drawn and matched, path is what
-/// Enter yields.
+/// Item is one row: a repository in the main list, a worktree, branch,
+/// pull request or issue in the others. label is what is drawn and matched,
+/// path is what Enter yields.
 #[derive(Debug, Clone, Default)]
 pub struct Item {
     pub label: String,
@@ -24,6 +24,9 @@ pub struct Item {
     /// pr is the pull request a row of the pull request list stands for, with
     /// a path the same way.
     pub pr: PullRequest,
+    /// issue is the issue a row of the issue list stands for. An issue has no
+    /// worktree, so its path is always empty; enter opens its detail panel.
+    pub issue: Issue,
 }
 
 impl Model {

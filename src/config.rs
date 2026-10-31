@@ -12,6 +12,7 @@ use crate::{Error, Result, err, paths};
 /// worktree_key = "ctrl-w"      # the finder key that lists worktrees
 /// branch_key   = "ctrl-l"      # the finder key that lists branches
 /// pr_key       = "ctrl-j"      # the finder key that lists pull requests
+/// issue_key    = "ctrl-["      # the finder key that lists issues
 /// remote_key   = "ctrl-alt-b"  # the finder key that opens the remote
 /// ```
 ///
@@ -24,17 +25,19 @@ pub struct Config {
     pub worktree_key: String,
     pub branch_key: String,
     pub pr_key: String,
+    pub issue_key: String,
     pub remote_key: String,
 }
 
 /// KEYS are every setting gm.toml may hold.
-const KEYS: [&str; 7] = [
+const KEYS: [&str; 8] = [
     "root",
     "theme",
     "launch_key",
     "worktree_key",
     "branch_key",
     "pr_key",
+    "issue_key",
     "remote_key",
 ];
 
@@ -96,6 +99,7 @@ pub fn parse(body: &str) -> Result<Config> {
         worktree_key: string("worktree_key")?,
         branch_key: string("branch_key")?,
         pr_key: string("pr_key")?,
+        issue_key: string("issue_key")?,
         remote_key: string("remote_key")?,
     })
 }
@@ -130,6 +134,8 @@ impl Config {
 /// plain Ctrl chord arrives everywhere. Ctrl-Alt travels as an ESC prefix and
 /// arrives nearly everywhere. Ctrl-Shift needs the Kitty keyboard protocol,
 /// since the legacy encoding sends the same byte for Ctrl-B and Ctrl-Shift-B.
+/// ctrl-[ is the byte ESC is sent as, so it reaches the finder when the
+/// finder's own esc key does.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Chord {
     pub letter: char,    // lowercase, e.g. 'w'
@@ -212,7 +218,7 @@ pub fn parse_chord(s: &str, fallback: &str) -> Result<Chord> {
             "cannot bind {s:?}: use a Ctrl chord such as {fallback}"
         ));
     };
-    if !letter.is_ascii_lowercase() {
+    if !letter.is_ascii_lowercase() && letter != '[' {
         return Err(err!(
             "cannot bind {s:?}: use a Ctrl chord such as {fallback}"
         ));
@@ -288,7 +294,7 @@ mod tests {
         assert_eq!(parse("root = \"/a\"\n").unwrap().theme, "");
 
         let c = parse(
-            "launch_key = \"ctrl-j\"\nworktree_key = \"ctrl-t\"\nbranch_key = \"ctrl-b\"\npr_key = \"ctrl-o\"\nremote_key = \"ctrl-alt-r\"\n",
+            "launch_key = \"ctrl-j\"\nworktree_key = \"ctrl-t\"\nbranch_key = \"ctrl-b\"\npr_key = \"ctrl-o\"\nissue_key = \"ctrl-[\"\nremote_key = \"ctrl-alt-r\"\n",
         )
         .unwrap();
         assert_eq!(
@@ -297,9 +303,17 @@ mod tests {
                 c.worktree_key.as_str(),
                 c.branch_key.as_str(),
                 c.pr_key.as_str(),
+                c.issue_key.as_str(),
                 c.remote_key.as_str()
             ),
-            ("ctrl-j", "ctrl-t", "ctrl-b", "ctrl-o", "ctrl-alt-r")
+            (
+                "ctrl-j",
+                "ctrl-t",
+                "ctrl-b",
+                "ctrl-o",
+                "ctrl-[",
+                "ctrl-alt-r"
+            )
         );
     }
 
@@ -362,6 +376,29 @@ mod tests {
             assert!(parse_chord(bad, "ctrl-w").is_err(), "{bad:?}");
         }
         assert!(parse_chord("ctrl-w", "ctrl-w").unwrap().plain());
+    }
+
+    #[test]
+    fn parse_chord_with_bracket() {
+        // The issue key's default: ctrl-[, the byte ESC arrives as. The
+        // uppercased display keeps the bracket whole.
+        for s in ["ctrl-[", "ctrl+[", "Ctrl-[", "c-[", "^["] {
+            let c = parse_chord(s, "ctrl-e").unwrap();
+            assert_eq!(
+                (
+                    c.letter,
+                    c.display.as_str(),
+                    c.key().as_str(),
+                    c.short().as_str()
+                ),
+                ('[', "Ctrl-[", "ctrl+[", "ctrl-["),
+                "{s:?}"
+            );
+        }
+        // A bracket is the one punctuation the chords take.
+        for bad in ["[", "ctrl-]", "ctrl-2"] {
+            assert!(parse_chord(bad, "ctrl-e").is_err(), "{bad:?}");
+        }
     }
 
     #[test]

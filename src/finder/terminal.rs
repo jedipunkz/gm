@@ -14,6 +14,16 @@ pub struct Term {
     term: ratatui::Terminal<CrosstermBackend<Box<dyn Write>>>,
 }
 
+/// key_flags is what the finder asks the terminal to report. The Kitty
+/// keyboard protocol has to say which space carried a shift, so the issue
+/// panel can page back on it; all keys are reported to that end, since a
+/// terminal that speaks the protocol encodes plain keys the same way and a
+/// terminal that does not ignores the flags whole.
+pub(crate) fn key_flags() -> KeyboardEnhancementFlags {
+    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+}
+
 /// tty is the terminal to draw on: /dev/tty, so $(gm) can capture stdout,
 /// or stderr when there is no controlling terminal.
 fn tty() -> Box<dyn Write> {
@@ -35,16 +45,18 @@ impl Term {
         let opened = (|| -> std::io::Result<Term> {
             let mut out = tty();
             // The Kitty keyboard protocol is what lets Ctrl-Shift chords
-            // through. It is asked for without asking whether the
-            // terminal speaks it: the question is answered on stdout,
-            // which belongs to the shell binding, and a terminal that
-            // does not ignores it.
+            // and modified text keys such as shift+space through (all keys
+            // are reported then, which is the only way a terminal can say
+            // one space from the other). It is asked for without asking
+            // whether the terminal speaks it: the question is answered on
+            // stdout, which belongs to the shell binding, and a terminal
+            // that does not ignores it.
             execute!(
                 out,
                 EnterAlternateScreen,
                 EnableBracketedPaste,
                 cursor::Hide,
-                PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+                PushKeyboardEnhancementFlags(key_flags())
             )?;
             Ok(Term {
                 term: ratatui::Terminal::new(CrosstermBackend::new(out))?,
@@ -112,7 +124,23 @@ pub fn key_of(code: KeyCode, m: KeyModifiers) -> Option<Key> {
     );
     let mut shift = m.contains(KeyModifiers::SHIFT);
     let base = match code {
-        KeyCode::Char(c) if !ctrl && !alt => return Some(Key::char(c)),
+        // Space is typed with and without shift, and both must type in the
+        // box; a terminal speaking the Kitty protocol tells the two apart,
+        // which is what the issue panel pages back on.
+        KeyCode::Char(' ') if !ctrl && !alt => {
+            let mut key = Key::char(' ');
+            if shift {
+                key.name = format!("shift+{}", key.name);
+            }
+            return Some(key);
+        }
+        KeyCode::Char(c) if !ctrl && !alt => {
+            // A Kitty terminal reports the shift on letters too, codes and
+            // text alike; typed text uppercases with it, whichever way it
+            // arrived.
+            let typed = if shift { c.to_ascii_uppercase() } else { c };
+            return Some(Key::char(typed));
+        }
         KeyCode::Char(c) => {
             shift |= c.is_uppercase();
             c.to_lowercase().to_string()
@@ -172,6 +200,12 @@ mod tests {
             key_of(KeyCode::Char('Y'), KeyModifiers::SHIFT),
             Some(Key::char('Y'))
         );
+        // The shift a Kitty terminal reports on a letter uppercases the text
+        // typed with it.
+        assert_eq!(
+            key_of(KeyCode::Char('a'), KeyModifiers::SHIFT),
+            Some(Key::char('A'))
+        );
         // Every name the finder's key map can answer to is spelled here, so a
         // terminal's report never hides behind an untested branch.
         for (c, m, want) in [
@@ -201,10 +235,40 @@ mod tests {
                 "ctrl+shift+m",
             ),
             (KeyCode::Char('x'), KeyModifiers::ALT, "alt+x"),
+            (KeyCode::Char(' '), KeyModifiers::NONE, " "),
+            (KeyCode::Char(' '), KeyModifiers::SHIFT, "shift+ "),
+            (KeyCode::Char(' '), KeyModifiers::CONTROL, "ctrl+ "),
         ] {
             assert_eq!(k(c, m), want, "{c:?} with {m:?}");
         }
+        // Space still types in the box, with the shift a Kitty terminal
+        // reports on it too.
+        assert_eq!(
+            key_of(KeyCode::Char(' '), KeyModifiers::NONE).unwrap().text,
+            Some(' ')
+        );
+        assert_eq!(
+            key_of(KeyCode::Char(' '), KeyModifiers::SHIFT)
+                .unwrap()
+                .text,
+            Some(' ')
+        );
         // A key the finder has no name for is dropped rather than invented.
         assert_eq!(key_of(KeyCode::Null, KeyModifiers::NONE), None);
+    }
+
+    // The flags are what shift+space paging needs: all keys reported, so a
+    // terminal can tell the shift apart.
+    #[test]
+    fn the_flags_ask_for_every_key() {
+        let flags = key_flags();
+        assert!(
+            flags.contains(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES),
+            "modified chords need the ambiguity out"
+        );
+        assert!(
+            flags.contains(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES),
+            "shift+space needs more than the classic encodings"
+        );
     }
 }
