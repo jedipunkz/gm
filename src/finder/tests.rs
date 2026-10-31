@@ -879,6 +879,134 @@ fn ranking_prefers_the_named_repository() {
     assert_eq!(m.matched[&m.view[m.cursor]], vec![at, at + 1]);
 }
 
+#[test]
+fn extended_query_supports_literal_prefix_suffix_and_exclusion_terms() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &[
+            "github.com/acme/alpha-api",
+            "github.com/acme/a-x-l-p-h-a",
+            "github.com/other/acme/alpha-api",
+            "github.com/acme/forked-api",
+        ],
+    );
+    let mut m = new_model(&rs, "");
+
+    set_query(&mut m, "'alpha");
+    assert_eq!(rows(&m).len(), 2);
+    assert!(!rows(&m).contains(&"github.com/acme/a-x-l-p-h-a".to_string()));
+
+    // Prefix and suffix operators address the complete displayed label, not
+    // just the repository-name segment.
+    set_query(&mut m, "^github.com/acme/alpha");
+    assert_eq!(rows(&m), vec!["github.com/acme/alpha-api"]);
+    set_query(&mut m, "alpha-api$");
+    assert_eq!(rows(&m).len(), 2);
+    assert!(rows(&m).contains(&"github.com/acme/alpha-api".to_string()));
+
+    set_query(&mut m, "!fork");
+    assert_eq!(rows(&m).len(), 3);
+    assert!(!rows(&m).contains(&"github.com/acme/forked-api".to_string()));
+}
+
+#[test]
+fn extended_query_ands_terms_and_unions_their_highlights() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &[
+            "github.com/acme/api",
+            "github.com/acme/other",
+            "github.com/other/api",
+        ],
+    );
+    let mut m = new_model(&rs, "");
+
+    set_query(&mut m, "acme api");
+    assert_eq!(rows(&m), vec!["github.com/acme/api"]);
+    let at = "github.com/acme/api".find("acme").unwrap();
+    assert_eq!(
+        m.matched[&m.view[m.cursor]],
+        (at..at + "acme".len())
+            .chain("github.com/acme/api".find("api").unwrap().."github.com/acme/api".len())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn a_plain_single_term_keeps_legacy_ranking_and_highlights() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &[
+            "github.com/jedipunkz/gm-note",
+            "github.com/gmdev/tools",
+            "github.com/jedipunkz/gm",
+        ],
+    );
+    let mut m = new_model(&rs, "");
+
+    set_query(&mut m, "gm");
+    assert_eq!(
+        rows(&m),
+        vec![
+            "github.com/gmdev/tools",
+            "github.com/jedipunkz/gm-note",
+            "github.com/jedipunkz/gm",
+        ]
+    );
+    let at = "github.com/jedipunkz/gm".len() - 2;
+    assert_eq!(m.matched[&m.view[m.cursor]], vec![at, at + 1]);
+}
+
+#[test]
+fn empty_and_escaped_operators_are_literal() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &[
+            "github.com/acme/^",
+            "github.com/acme/!fork",
+            "github.com/acme/alpha$",
+            "github.com/acme/'",
+            "github.com/acme/$",
+            "github.com/acme/forked",
+        ],
+    );
+    let mut m = new_model(&rs, "");
+
+    set_query(&mut m, "^");
+    assert_eq!(rows(&m), vec!["github.com/acme/^"]);
+    set_query(&mut m, "'");
+    assert_eq!(rows(&m), vec!["github.com/acme/'"]);
+    set_query(&mut m, "$ ");
+    assert_eq!(rows(&m).len(), 2);
+    assert!(rows(&m).contains(&"github.com/acme/$".to_string()));
+    set_query(&mut m, "\\!fork");
+    assert_eq!(rows(&m), vec!["github.com/acme/!fork"]);
+    set_query(&mut m, "alpha\\$");
+    assert_eq!(rows(&m), vec!["github.com/acme/alpha$"]);
+}
+
+#[test]
+fn extended_query_keeps_semicolon_and_leading_command_behavior() {
+    let root = TempDir::new();
+    let rs = repos(
+        &root.path(),
+        &["github.com/acme/api", "github.com/other/api"],
+    );
+    let mut m = new_model(&rs, "");
+    for c in "acme api;/help".chars() {
+        m.update(ch(c));
+    }
+    assert_eq!(rows(&m), vec!["github.com/acme/api"]);
+    assert!(command::is_command(&m.input.value()));
+
+    set_query(&mut m, "/help");
+    assert_eq!(m.view.len(), 2, "leading slash remains a command");
+}
+
 // The unselected row on screen carries the lifted colour, not the comment
 // colour the labels still use.
 #[test]
