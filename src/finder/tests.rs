@@ -3330,17 +3330,27 @@ fn issue_mode() {
 }
 
 // An issue row too long for the list keeps its number and cuts the title's
-// tail: the number is what names the issue.
+// tail, and the pane shows the body the listing carried, as Markdown.
 #[test]
-fn issue_row_keeps_its_number() {
+fn issue_row_keeps_its_number_and_the_pane_its_body() {
     let root = TempDir::new();
     let (mut m, _) = issue_model(&root);
-    let long = issue(7, "Add login to every page of the site at once");
+    let mut long = issue(7, "Add login to every page of the site at once");
+    long.body = "# Steps\n\nopen the form\nwait".into();
     m.issues_of = Arc::new(move |_| Ok(vec![long.clone()]));
     open_issue_list(&mut m);
 
     let row = line_text(&m.render_row(0, false, 16));
     assert_eq!(row, "  #7 Add login …");
+
+    let pane = lines_text(&m.info_lines(40));
+    for s in ["body", "Steps", "open the form\nwait"] {
+        assert!(pane.contains(s), "{s:?}:\n{pane}");
+    }
+    // An issue has no worktree: no path, no git status waiting on one.
+    for s in ["path", "git", "loading…"] {
+        assert!(!pane.lines().any(|l| l == s), "{s:?}:\n{pane}");
+    }
 }
 
 // The scroll keys walk the panel's window: never past the top, and never

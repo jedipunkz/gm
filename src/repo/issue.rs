@@ -7,8 +7,8 @@ use super::pr::{GH_LIST_TIMEOUT, gh_command, gh_missing};
 use crate::{Result, err};
 
 /// Issue is a GitHub issue, as much of it as a list row and the detail panel
-/// need. body and comments stay empty on a listing: they are what the detail
-/// panel is for.
+/// need. comments stay empty on a listing: they are what the detail panel is
+/// for. The body comes with the listing, for the pane beside the list.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Issue {
     pub number: u64,
@@ -59,7 +59,7 @@ fn issues_with(gh: &OsStr, timeout: Duration, dir: &str) -> Result<Vec<Issue>> {
     cmd.args([
         "issue", "list", "--state", "open", "--limit", &limit, "--json",
     ])
-    .arg("number,title,state,author,labels,url")
+    .arg("number,title,state,author,labels,url,body")
     .current_dir(dir)
     .env("GH_PROMPT_DISABLED", "1");
     let out = run_deadline(&mut cmd, timeout, "gh issue list", gh_missing)?;
