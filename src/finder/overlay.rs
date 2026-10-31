@@ -3,7 +3,7 @@ use ratatui::text::{Line, Span};
 use super::command::COMMANDS;
 use super::info::{Seg, tildify, wrap_segs};
 use super::worktree::Mode;
-use super::{Cmd, Done, Key, Model, Msg, RemoveDetail};
+use super::{Cmd, Done, ExpireDetail, ExpireScan, Key, Model, Msg, RemoveDetail};
 use crate::repo::{self, Branch, Worktree};
 use crate::{Error, err, paths, plural};
 
@@ -46,7 +46,7 @@ pub struct Pending {
     pub title: String, // "remove", "create worktree"
     pub detail: Vec<String>, // what it will do, a line each
     pub force: bool, // there is work in it and the user has been told
-    pub wait: Option<u64>, // the busy tag of the git status detail is waiting on; so is y
+    pub wait: Option<u64>, // the busy tag of the scan detail is waiting on; so is y
     pub wts: Vec<Worktree>, // the worktrees /expire removes
     pub ssh: bool,   // a created repository's origin is its SSH URL
 }
@@ -181,6 +181,40 @@ impl Model {
         vec![]
     }
 
+    /// fill_expire_detail answers only the /expire question that asked for it.
+    pub(super) fn fill_expire_detail(&mut self, d: ExpireDetail) -> Vec<Cmd> {
+        self.finish_busy(d.busy_tag);
+        if self.over != Overlay::Confirm || self.ask.wait != Some(d.busy_tag) {
+            return vec![];
+        }
+        let scan = match d.result {
+            Ok(scan) => scan,
+            Err(e) => {
+                self.over = Overlay::None;
+                self.ask = Pending::default();
+                self.note = e.0;
+                return vec![];
+            }
+        };
+        if scan.worktrees.is_empty() {
+            self.over = Overlay::None;
+            self.ask = Pending::default();
+            self.note = format!("no worktree idle for {} days", d.days);
+            if let Some(kept) = scan.kept {
+                self.note += &format!("; {kept}");
+            }
+            return vec![];
+        }
+        self.ask.title = format!(
+            "remove {}",
+            plural(scan.worktrees.len(), "worktree", "worktrees")
+        );
+        self.ask.wts = scan.worktrees;
+        self.ask.detail = scan.detail;
+        self.ask.wait = None;
+        vec![]
+    }
+
     /// box_width is how wide a panel may be: narrow enough to leave the list
     /// visible around it, and never wider than the window.
     fn box_width(&self) -> usize {
@@ -290,42 +324,48 @@ impl Model {
                 return vec![];
             }
         };
-        // git is asked now, the way /remove asks: the list may be minutes old.
-        let wts = match (self.worktrees_of)(&self.repo_at) {
-            Ok(w) => w,
-            Err(e) => {
-                self.note = e.0;
-                return vec![];
-            }
-        };
-        let changed = self.changed_of.clone();
-        let (dirty, idle): (Vec<_>, Vec<_>) = repo::expired(&self.repo_at, &wts, days, repo::now())
-            .into_iter()
-            .partition(|w| changed(&w.path) > 0);
-        let kept = (!dirty.is_empty()).then(|| {
-            format!(
-                "kept, uncommitted changes: {}",
-                repo::worktree_labels(&dirty, |p| changed(p))
-            )
-        });
-        if idle.is_empty() {
-            self.note = format!("no worktree idle for {days} days");
-            if let Some(k) = kept {
-                self.note += &format!("; {k}");
-            }
-            return vec![];
-        }
-        let names = idle.iter().map(Worktree::label).collect::<Vec<_>>();
-        let mut detail = vec![format!("idle {days}+ days: {}", names.join(", "))];
-        detail.extend(kept);
-        detail.push("their branches go too where git branch -d allows".into());
-        self.confirm(Pending {
+        // The list, reflogs and each idle worktree's status can all take time;
+        // y must wait until the fresh scan has filled this question.
+        let repo_at = self.repo_at.clone();
+        let (worktrees_of, changed) = (self.worktrees_of.clone(), self.changed_of.clone());
+        let (busy_tag, busy) = self.start_busy("checking for uncommitted work…");
+        let mut cmds = self.confirm(Pending {
             kind: Change::Expire,
-            title: format!("remove {}", plural(idle.len(), "worktree", "worktrees")),
-            detail,
-            wts: idle,
+            title: "remove worktrees".into(),
+            detail: vec!["checking for uncommitted work…".into()],
+            wait: Some(busy_tag),
             ..Default::default()
-        })
+        });
+        cmds.push(busy);
+        cmds.push(Cmd::Task(Box::new(move || {
+            let result = worktrees_of(&repo_at).map(|wts| {
+                let (dirty, idle): (Vec<_>, Vec<_>) =
+                    repo::expired(&repo_at, &wts, days, repo::now())
+                        .into_iter()
+                        .partition(|w| changed(&w.path) > 0);
+                let kept = (!dirty.is_empty()).then(|| {
+                    format!(
+                        "kept, uncommitted changes: {}",
+                        repo::worktree_labels(&dirty, |p| changed(p))
+                    )
+                });
+                let names = idle.iter().map(Worktree::label).collect::<Vec<_>>();
+                let mut detail = vec![format!("idle {days}+ days: {}", names.join(", "))];
+                detail.extend(kept.clone());
+                detail.push("their branches go too where git branch -d allows".into());
+                ExpireScan {
+                    worktrees: idle,
+                    detail,
+                    kept,
+                }
+            });
+            Some(Msg::ExpireDetail(ExpireDetail {
+                busy_tag,
+                days,
+                result,
+            }))
+        })));
+        cmds
     }
 
     /// panel_key is the whole keyboard while a panel is up. Everything it does

@@ -202,6 +202,7 @@ pub enum Msg {
     Issues(Issues),                 // gh's answer about one repository's issues
     IssueDetail(IssueDetail),       // gh's answer about the full text of one issue
     RemoveDetail(RemoveDetail),     // what a /remove waiting on git would lose
+    ExpireDetail(ExpireDetail),     // what /expire waiting on git would remove
     RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
     RepoState(String, repo::State), // one repository scanned again after a change
 }
@@ -258,6 +259,20 @@ pub struct RemoveDetail {
     busy_tag: u64,
     detail: Vec<String>, // the question's lines, in place of "checking…"
     force: bool,         // there is uncommitted work in it
+}
+
+/// ExpireDetail is the scan /expire's question waits for before y can answer.
+pub struct ExpireDetail {
+    busy_tag: u64,
+    days: i64,
+    result: Result<ExpireScan>,
+}
+
+/// ExpireScan names both the worktrees to remove and the work the question must say it will keep.
+pub struct ExpireScan {
+    worktrees: Vec<Worktree>,
+    detail: Vec<String>,
+    kept: Option<String>,
 }
 
 /// Task is work off the UI thread; the message it returns is fed back in.
@@ -483,6 +498,7 @@ impl Model {
             Msg::Issues(i) => self.show_issues(i),
             Msg::IssueDetail(d) => self.show_issue_detail(d),
             Msg::RemoveDetail(d) => self.fill_detail(d),
+            Msg::ExpireDetail(d) => self.fill_expire_detail(d),
             Msg::RepoStates(tag, states) => {
                 // Merged, not replaced: a repository scanned again while this
                 // scan ran may be one it never heard of.

@@ -1,7 +1,8 @@
 //! The finder driven the way the terminal loop drives it: messages in,
 //! commands out, and the screen read back from a buffer.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -2260,7 +2261,8 @@ fn expire_removes_the_idle_worktrees() {
     open_worktrees(&mut m);
     assert_eq!(rows(&m).len(), 4);
 
-    run_slash(&mut m, "/expire 30d");
+    let cmds = run_slash(&mut m, "/expire 30d");
+    feed(&mut m, cmds);
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
     let view = view_text(&m);
     for want in [
@@ -2278,6 +2280,103 @@ fn expire_removes_the_idle_worktrees() {
     assert_eq!(rows(&m).len(), 2);
     assert!(exists(&busy));
     assert!(!exists(&tree.worktree_dir(&r, "old/a")));
+}
+
+#[test]
+fn expire_scan_is_async_and_y_waits_for_its_result() {
+    let root = TempDir::new();
+    let rs = repos(&root.path(), &["github.com/acme/alpha"]);
+    let mut m = new_model(&rs, "");
+    (m.w, m.h) = (90, 16);
+    m.mode = Mode::Worktrees;
+    m.repo_at = rs[0].path();
+
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let release_rx = Mutex::new(release_rx);
+    let old = paths::join(&root.path(), "old");
+    m.worktrees_of = Arc::new(move |_| {
+        started_tx.send(()).unwrap();
+        release_rx.lock().unwrap().recv().unwrap();
+        Ok(vec![Worktree {
+            path: old.clone(),
+            branch: "old".into(),
+            used_at: 1,
+            ..Default::default()
+        }])
+    });
+    m.changed_of = Arc::new(|_| 0);
+
+    // Keep the UI call on a separate thread so a synchronous scan can be
+    // released and reported as a red assertion instead of hanging the test.
+    let (ui_tx, ui_rx) = mpsc::channel();
+    let ui = std::thread::spawn(move || {
+        let cmds = run_slash(&mut m, "/expire 30d");
+        ui_tx.send((m, cmds)).unwrap();
+    });
+    let early = ui_rx.recv_timeout(Duration::from_secs(1)).ok();
+    let returned_early = early.is_some();
+    let (mut m, cmds) = match early {
+        Some(result) => result,
+        None => {
+            release_tx.send(()).unwrap();
+            ui_rx.recv().unwrap()
+        }
+    };
+    ui.join().unwrap();
+    assert!(returned_early, "/expire waited for its worktree scan");
+
+    let view = view_text(&m);
+    assert!(view.contains("checking for uncommitted work"), "{view}");
+    assert!(!view.contains("y do it"), "{view}");
+    assert!(
+        m.update(ch('y')).is_empty(),
+        "y acted before the scan answered"
+    );
+    assert_eq!(m.over, Overlay::Confirm);
+
+    let task = cmds
+        .into_iter()
+        .find_map(|cmd| match cmd {
+            Cmd::Task(task) => Some(task),
+            _ => None,
+        })
+        .expect("/expire did not schedule a scan task");
+    let (answer_tx, answer_rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || answer_tx.send(task()).unwrap());
+    started_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("the scan task did not start");
+
+    // The UI can still process input and render while git's scan is delayed.
+    assert!(
+        m.update(ch('y')).is_empty(),
+        "y acted while the scan was still delayed"
+    );
+    assert!(m.update(Msg::Resize(100, 20)).is_empty());
+    assert_eq!((m.w, m.h), (100, 20));
+    let view = view_text(&m);
+    assert!(view.contains("checking for uncommitted work"), "{view}");
+    assert!(!view.contains("y do it"), "{view}");
+
+    release_tx.send(()).unwrap();
+    let answer = answer_rx.recv().unwrap().expect("the scan had no answer");
+    worker.join().unwrap();
+    m.update(answer);
+    assert_eq!(m.ask.wts.len(), 1);
+    assert!(
+        m.ask
+            .detail
+            .iter()
+            .any(|line| line.contains("idle 30+ days"))
+    );
+    assert!(m.ask.wait.is_none(), "the scan result did not unlock y");
+    assert!(view_text(&m).contains("y do it"));
+    assert!(
+        m.update(ch('y'))
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::Task(_)))
+    );
 }
 
 #[test]
