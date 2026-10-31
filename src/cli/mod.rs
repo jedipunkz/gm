@@ -34,69 +34,269 @@ pub struct App<'a> {
 struct Cmd {
     name: &'static str,
     aliases: &'static [&'static str],
-    usage: &'static str,
+    flags: &'static [Flag],
+    args: &'static str,
+    description: &'static str,
+    verbs: &'static [Verb],
     run: fn(&mut App, &[String]) -> Result<()>,
 }
+
+struct Verb {
+    name: &'static str,
+    flags: &'static [Flag],
+    args: &'static str,
+}
+
+/// Flag is one option a subcommand takes. Every name answers with one dash or
+/// two, the way Go's flag package read them.
+struct Flag {
+    names: &'static [&'static str],
+    value: Option<&'static str>, // what the value is called; None for a switch
+    usage: &'static str,
+}
+
+const GET_FLAGS: &[Flag] = &[
+    Flag {
+        names: &["u", "update"],
+        value: None,
+        usage: "update the repository if it is already cloned",
+    },
+    Flag {
+        names: &["ssh"],
+        value: None,
+        usage: "clone via SSH",
+    },
+    Flag {
+        names: &["shallow"],
+        value: None,
+        usage: "do a shallow clone",
+    },
+    Flag {
+        names: &["s", "silent"],
+        value: None,
+        usage: "clone quietly",
+    },
+    Flag {
+        names: &["l", "look"],
+        value: None,
+        usage: "open a shell in the repository afterwards",
+    },
+    Flag {
+        names: &["no-recursive"],
+        value: None,
+        usage: "do not clone submodules",
+    },
+    Flag {
+        names: &["b", "branch"],
+        value: Some("branch"),
+        usage: "clone a single branch",
+    },
+];
+
+const CREATE_FLAGS: &[Flag] = &[Flag {
+    names: &["ssh"],
+    value: None,
+    usage: "set the origin remote to its SSH URL",
+}];
+
+const LIST_FLAGS: &[Flag] = &[
+    Flag {
+        names: &["p", "full-path"],
+        value: None,
+        usage: "print full paths",
+    },
+    Flag {
+        names: &["e", "exact"],
+        value: None,
+        usage: "match the query exactly",
+    },
+    Flag {
+        names: &["unique"],
+        value: None,
+        usage: "print the shortest unambiguous path",
+    },
+];
+
+const REMOVE_FLAGS: &[Flag] = &[
+    Flag {
+        names: &["dry-run"],
+        value: None,
+        usage: "show what would be removed",
+    },
+    Flag {
+        names: &["y"],
+        value: None,
+        usage: "skip the confirmation prompt",
+    },
+];
+
+const STATUS_FLAGS: &[Flag] = &[
+    Flag {
+        names: &["dirty"],
+        value: None,
+        usage: "only repositories with uncommitted changes",
+    },
+    Flag {
+        names: &["unpushed"],
+        value: None,
+        usage: "only repositories with commits that are not pushed",
+    },
+    Flag {
+        names: &["a"],
+        value: None,
+        usage: "include repositories that are clean and in sync",
+    },
+    Flag {
+        names: &["p", "full-path"],
+        value: None,
+        usage: "print full paths",
+    },
+];
+
+const WT_REMOVE_FLAGS: &[Flag] = &[
+    Flag {
+        names: &["dry-run"],
+        value: None,
+        usage: "show what would be removed",
+    },
+    Flag {
+        names: &["y"],
+        value: None,
+        usage: "skip the confirmation prompt",
+    },
+];
+
+const WT_VERBS: &[Verb] = &[
+    Verb {
+        name: "create",
+        flags: &[],
+        args: "<repo> <branch>",
+    },
+    Verb {
+        name: "remove",
+        flags: WT_REMOVE_FLAGS,
+        args: "<repo> <branch>",
+    },
+    Verb {
+        name: "expire",
+        flags: WT_REMOVE_FLAGS,
+        args: "<repo> <days>d",
+    },
+];
+
+const MIGRATE_FLAGS: &[Flag] = &[
+    Flag {
+        names: &["dry-run"],
+        value: None,
+        usage: "show what would move",
+    },
+    Flag {
+        names: &["y"],
+        value: None,
+        usage: "skip the confirmation prompt",
+    },
+    Flag {
+        names: &["r", "recursive"],
+        value: None,
+        usage: "search the arguments for repositories instead of moving them",
+    },
+];
+
+const ROOT_FLAGS: &[Flag] = &[Flag {
+    names: &["all"],
+    value: None,
+    usage: "show every root",
+}];
 
 const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "get",
         aliases: &["clone"],
-        usage: "get [-u] [--ssh] [--shallow] [--no-recursive] [-b <branch>] [-s] [-l] <repo>...",
+        flags: GET_FLAGS,
+        args: "<repo>...",
+        description: "",
+        verbs: &[],
         run: |a, args| a.get(args),
     },
     Cmd {
         name: "list",
         aliases: &["ls"],
-        usage: "list [-p] [-e] [--unique] [<query>]",
+        flags: LIST_FLAGS,
+        args: "[<query>]",
+        description: "",
+        verbs: &[],
         run: |a, args| a.list(args),
     },
     Cmd {
         name: "remove",
         aliases: &["rm"],
-        usage: "remove [--dry-run] [-y] <repo>...",
+        flags: REMOVE_FLAGS,
+        args: "<repo>...",
+        description: "",
+        verbs: &[],
         run: |a, args| a.remove(args),
     },
     Cmd {
         name: "create",
         aliases: &["new"],
-        usage: "create [--ssh] <repo>",
+        flags: CREATE_FLAGS,
+        args: "<repo>|<user>/<repo>|<host>/<user>/<repo>",
+        description: "",
+        verbs: &[],
         run: |a, args| a.create(args),
     },
     Cmd {
         name: "status",
         aliases: &[],
-        usage: "status [--dirty] [--unpushed] [-a] [-p]",
+        flags: STATUS_FLAGS,
+        args: "",
+        description: "",
+        verbs: &[],
         run: |a, args| a.status(args),
     },
     Cmd {
         name: "wt",
         aliases: &[],
-        usage: "wt create <repo> <branch> | wt remove [--dry-run] [-y] <repo> <branch> | wt expire [--dry-run] [-y] <repo> <days>d",
+        flags: &[],
+        args: "",
+        description: "",
+        verbs: WT_VERBS,
         run: |a, args| a.wt(args),
     },
     Cmd {
         name: "migrate",
         aliases: &[],
-        usage: "migrate [--dry-run] [-y] [-r] <directory>...",
+        flags: MIGRATE_FLAGS,
+        args: "<directory>...",
+        description: "",
+        verbs: &[],
         run: |a, args| a.migrate(args),
     },
     Cmd {
         name: "root",
         aliases: &[],
-        usage: "root [--all]",
+        flags: ROOT_FLAGS,
+        args: "",
+        description: "",
+        verbs: &[],
         run: |a, args| a.root(args),
     },
     Cmd {
         name: "version",
         aliases: &[],
-        usage: "version",
+        flags: &[],
+        args: "",
+        description: "",
+        verbs: &[],
         run: |a, args| a.version(args),
     },
     Cmd {
         name: "shell",
         aliases: &[],
-        usage: "shell <fish|zsh|bash>          print the launch_key binding (Ctrl-G by default)",
+        flags: &[],
+        args: "<fish|zsh|bash>",
+        description: "print the launch_key binding (Ctrl-G by default)",
+        verbs: &[],
         run: |a, args| a.shell(args),
     },
 ];
@@ -220,7 +420,11 @@ pub fn usage() -> String {
         "  gm                                open the fuzzy finder (prints the chosen path)\n",
     );
     for c in COMMANDS {
-        b.push_str(&format!("  gm {}\n", c.usage));
+        b.push_str(&format!("  gm {}", c.syntax()));
+        if !c.description.is_empty() {
+            b.push_str(&format!("          {}", c.description));
+        }
+        b.push('\n');
     }
     b.push_str(
         "
@@ -232,14 +436,6 @@ gm.toml is $XDG_CONFIG_HOME/gm/gm.toml, or ~/.config/gm/gm.toml.
 ",
     );
     b
-}
-
-/// Flag is one option a subcommand takes. Every name answers with one dash or
-/// two, the way Go's flag package read them.
-struct Flag {
-    names: &'static [&'static str],
-    value: Option<&'static str>, // what the value is called; None for a switch
-    usage: &'static str,
 }
 
 /// Parsed is a command line after its flags: the switches that were set, the
@@ -338,6 +534,73 @@ fn flag_usage(cmd: &str, flags: &[Flag]) -> String {
         }
     }
     s
+}
+
+impl Cmd {
+    fn syntax(&self) -> String {
+        if !self.verbs.is_empty() {
+            return self
+                .verbs
+                .iter()
+                .map(|verb| format!("{} {}", self.name, verb.syntax()))
+                .collect::<Vec<_>>()
+                .join(" | ");
+        }
+        simple_syntax(self.name, self.flags, self.args)
+    }
+}
+
+impl Verb {
+    fn syntax(&self) -> String {
+        simple_syntax(self.name, self.flags, self.args)
+    }
+}
+
+fn simple_syntax(name: &str, flags: &[Flag], args: &str) -> String {
+    let options = flags
+        .iter()
+        .map(|flag| {
+            let spellings = flag
+                .names
+                .iter()
+                .map(|name| {
+                    let prefix = if name.len() == 1 { "-" } else { "--" };
+                    let value = flag
+                        .value
+                        .map(|value| format!(" <{value}>"))
+                        .unwrap_or_default();
+                    format!("{prefix}{name}{value}")
+                })
+                .collect::<Vec<_>>()
+                .join("|");
+            format!("[{spellings}]")
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    [name, options.as_str(), args]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn missing_usage(name: &str) -> String {
+    let command = COMMANDS
+        .iter()
+        .find(|command| command.name == name)
+        .expect("every usage error names a command");
+    if command.verbs.is_empty() {
+        return format!("usage: gm {}", command.syntax());
+    }
+    format!(
+        "usage: {}",
+        command
+            .verbs
+            .iter()
+            .map(|verb| format!("gm {} {}", command.name, verb.syntax()))
+            .collect::<Vec<_>>()
+            .join("\n       ")
+    )
 }
 
 impl App<'_> {
