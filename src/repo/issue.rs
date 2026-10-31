@@ -7,8 +7,8 @@ use super::pr::{GH_LIST_TIMEOUT, gh_command, gh_missing};
 use crate::{Result, err};
 
 /// Issue is a GitHub issue, as much of it as a list row and the detail panel
-/// need. body and comments stay empty on a listing: they are what the detail
-/// panel is for.
+/// need. comments stay empty on a listing: they are what the detail panel is
+/// for. The body comes with the listing, for the pane beside the list.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Issue {
     pub number: u64,
@@ -16,6 +16,7 @@ pub struct Issue {
     pub state: String, // OPEN, CLOSED...
     pub author: String,
     pub labels: Vec<String>,
+    pub assignees: Vec<String>, // logins
     pub url: String,
     pub body: String,
     pub comments: Vec<Comment>,
@@ -59,7 +60,7 @@ fn issues_with(gh: &OsStr, timeout: Duration, dir: &str) -> Result<Vec<Issue>> {
     cmd.args([
         "issue", "list", "--state", "open", "--limit", &limit, "--json",
     ])
-    .arg("number,title,state,author,labels,url")
+    .arg("number,title,state,author,labels,assignees,url,body")
     .current_dir(dir)
     .env("GH_PROMPT_DISABLED", "1");
     let out = run_deadline(&mut cmd, timeout, "gh issue list", gh_missing)?;
@@ -78,7 +79,7 @@ fn issue_with(gh: &OsStr, timeout: Duration, dir: &str, number: u64) -> Result<I
     let mut cmd = gh_command(gh);
     let n = number.to_string();
     cmd.args(["issue", "view", &n, "--json"])
-        .arg("number,title,state,author,labels,url,body,comments")
+        .arg("number,title,state,author,labels,assignees,url,body,comments")
         .current_dir(dir)
         .env("GH_PROMPT_DISABLED", "1");
     let out = run_deadline(&mut cmd, timeout, "gh issue view", gh_missing)?;
@@ -133,6 +134,16 @@ fn read_issue(p: &serde_json::Value) -> Issue {
                 .collect()
         })
         .unwrap_or_default();
+    let assignees = p
+        .get("assignees")
+        .and_then(|v| v.as_array())
+        .map(|ls| {
+            ls.iter()
+                .filter_map(|a| a.get("login").and_then(|v| v.as_str()))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
     let comments = p
         .get("comments")
         .and_then(|v| v.as_array())
@@ -159,6 +170,7 @@ fn read_issue(p: &serde_json::Value) -> Issue {
         state: s("state"),
         author: login,
         labels,
+        assignees,
         url: s("url"),
         body: s("body"),
         comments,
@@ -176,7 +188,7 @@ mod tests {
     fn parse_issues_reads_gh() {
         let out = br#"[
             {"number":7,"title":"Add login","state":"OPEN","url":"https://github.com/acme/alpha/issues/7",
-             "author":{"login":"alice"},"labels":[{"name":"bug"}]},
+             "author":{"login":"alice"},"labels":[{"name":"bug"}],"assignees":[{"login":"carol"}]},
             {"number":9,"title":"Fix typo","state":"OPEN","url":"https://github.com/acme/alpha/issues/9",
              "author":{"login":"bob"},"labels":[]}
         ]"#;
@@ -185,6 +197,7 @@ mod tests {
         assert_eq!(issues[0].label(), "#7 Add login");
         assert_eq!(issues[0].author, "alice");
         assert_eq!(issues[0].labels, vec!["bug"]);
+        assert_eq!(issues[0].assignees, vec!["carol"]);
         assert_eq!(issues[0].url, "https://github.com/acme/alpha/issues/7");
         assert!(issues[0].comments.is_empty(), "a listing has no comments");
 
