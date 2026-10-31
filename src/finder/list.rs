@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
@@ -7,11 +7,11 @@ use super::command::split_input;
 use super::score::{find, rank, substring_match};
 use super::worktree::Mode;
 use super::{Cmd, Model, Msg};
-use crate::repo::{Branch, PullRequest, Visit};
+use crate::repo::{Branch, Issue, PullRequest, Visit};
 
-/// Item is one row: a repository in the main list, a worktree, branch or pull
-/// request in the others. label is what is drawn and matched, path is what
-/// Enter yields.
+/// Item is one row: a repository in the main list, a worktree, branch,
+/// pull request or issue in the others. label is what is drawn and matched,
+/// path is what Enter yields.
 #[derive(Debug, Clone, Default)]
 pub struct Item {
     pub label: String,
@@ -24,6 +24,9 @@ pub struct Item {
     /// pr is the pull request a row of the pull request list stands for, with
     /// a path the same way.
     pub pr: PullRequest,
+    /// issue is the issue a row of the issue list stands for. An issue has no
+    /// worktree, so its path is always empty; enter opens its detail panel.
+    pub issue: Issue,
 }
 
 impl Model {
@@ -47,14 +50,21 @@ impl Model {
             None
         };
         self.view_stale = false;
+        // The issue list's qualifiers narrow it; the rest of the query is
+        // the pattern the rows are ranked on.
+        let (pat, quals) = if self.mode == Mode::Issues {
+            split_qualifiers(&q)
+        } else {
+            (q.clone(), Vec::new())
+        };
 
-        let view: Vec<usize> = if q.is_empty() {
+        let view: Vec<usize> = if pat.is_empty() {
             (0..self.all.len()).collect()
         } else {
-            let lower = q.to_lowercase();
+            let lower = pat.to_lowercase();
             let labels: Vec<&str> = self.all.iter().map(|it| it.label.as_str()).collect();
             let mut scored: Vec<(usize, f64)> = Vec::new();
-            for mt in find(&q, &labels) {
+            for mt in find(&pat, &labels) {
                 let rel = labels[mt.index];
                 // fuzzy finds candidates; where it landed the characters is its
                 // own guess, and a literal hit beats that guess every time.
@@ -82,7 +92,7 @@ impl Model {
             scored.into_iter().map(|(i, _)| i).collect()
         };
         self.query = q;
-        self.view = self.keep_repo_filters(view);
+        self.view = self.keep_issue_filters(self.keep_repo_filters(view), &quals);
 
         if let Some(i) = held.and_then(|h| self.view.iter().position(|&x| x == h)) {
             self.cursor = i;
@@ -106,6 +116,27 @@ impl Model {
                 states.get(&self.all[i].path).is_none_or(|state| {
                     (!self.dirty_only || state.dirty > 0)
                         && (!self.unpushed_only || state.has_unpushed())
+                })
+            })
+            .collect()
+    }
+
+    /// keep_issue_filters keeps the issues every qualifier accepts: one of
+    /// its values among the issue's labels, assignees or author, case aside.
+    fn keep_issue_filters(&self, view: Vec<usize>, quals: &[Qualifier]) -> Vec<usize> {
+        if quals.is_empty() {
+            return view;
+        }
+        view.into_iter()
+            .filter(|&i| {
+                let issue = &self.all[i].issue;
+                quals.iter().all(|f| {
+                    let have = match f.field {
+                        Field::Label => &issue.labels[..],
+                        Field::Assignee => &issue.assignees[..],
+                        Field::Author => std::slice::from_ref(&issue.author),
+                    };
+                    have.iter().any(|h| f.any_of.contains(&h.to_lowercase()))
                 })
             })
             .collect()
@@ -156,6 +187,7 @@ impl Model {
             width.saturating_sub(2),
             base,
             hit,
+            self.mode == Mode::Issues,
         ));
         let used: usize = spans.iter().map(Span::width).sum();
         if width > used {
@@ -163,6 +195,53 @@ impl Model {
         }
         Line::from(spans)
     }
+}
+
+/// Qualifier is one `label:`, `assignee:` or `author:` word of the issue
+/// list's query: the values it accepts, lowercased, any one of them enough.
+struct Qualifier {
+    field: Field,
+    any_of: Vec<String>,
+}
+
+/// Field is what of an issue a qualifier looks at.
+enum Field {
+    Label,
+    Assignee,
+    Author,
+}
+
+/// split_qualifiers takes the issue list's qualifiers out of a query and
+/// leaves the words the rows are matched on. The keys are GitHub's —
+/// `label:`, `assignee:` (or `assignees:`) and `author:` — and so is the
+/// meaning: commas are any-of, a repeated qualifier is all-of. A key with no value yet is
+/// dropped, so the list does not empty while it is being typed.
+fn split_qualifiers(q: &str) -> (String, Vec<Qualifier>) {
+    let (mut rest, mut quals) = (Vec::new(), Vec::new());
+    for word in q.split_whitespace() {
+        let qual = word.split_once(':').and_then(|(k, v)| {
+            let field = match k.to_ascii_lowercase().as_str() {
+                "label" => Field::Label,
+                "assignee" | "assignees" => Field::Assignee,
+                "author" => Field::Author,
+                _ => return None,
+            };
+            Some((field, v))
+        });
+        let Some((field, v)) = qual else {
+            rest.push(word);
+            continue;
+        };
+        let any_of: Vec<String> = v
+            .split(',')
+            .filter(|v| !v.is_empty())
+            .map(str::to_lowercase)
+            .collect();
+        if !any_of.is_empty() {
+            quals.push(Qualifier { field, any_of });
+        }
+    }
+    (rest.join(" "), quals)
 }
 
 /// char_indexes converts byte offsets into char positions, which is what
@@ -176,48 +255,62 @@ fn char_indexes(s: &str, byte_idx: &[usize]) -> Vec<usize> {
 }
 
 /// highlight renders s truncated to width display cells, with the chars at
-/// hits in their own style. The tail is kept: the repository name matters more
-/// than the host.
-fn highlight(s: &str, hits: &[usize], width: usize, base: Style, hit: Style) -> Vec<Span<'static>> {
+/// hits in their own style. The tail is kept by default: the repository name
+/// matters more than the host. keep_head keeps the front instead, for rows
+/// that lead with what names them, like an issue's number.
+fn highlight(
+    s: &str,
+    hits: &[usize],
+    width: usize,
+    base: Style,
+    hit: Style,
+    keep_head: bool,
+) -> Vec<Span<'static>> {
     if width <= 1 {
         return Vec::new();
     }
     let chars: Vec<char> = s.chars().collect();
-    let mut spans = Vec::new();
-    let mut off = 0;
-    let text_width: usize = chars.iter().map(|c| Span::raw(c.to_string()).width()).sum();
-    if text_width > width {
-        let suffix_width = width - 1;
-        let mut kept_width = 0;
-        off = chars.len();
-        while off > 0 {
-            let char_width = Span::raw(chars[off - 1].to_string()).width();
-            if kept_width + char_width > suffix_width {
-                break;
+    let cw = |c: char| Span::raw(c.to_string()).width();
+    // The kept chars are chars[lo..hi]; the cut side gets the ellipsis.
+    let (mut lo, mut hi) = (0, chars.len());
+    let cut = chars.iter().map(|&c| cw(c)).sum::<usize>() > width;
+    if cut {
+        let mut kept = 0;
+        if keep_head {
+            hi = 0;
+            while hi < chars.len() && kept + cw(chars[hi]) < width {
+                kept += cw(chars[hi]);
+                hi += 1;
             }
-            kept_width += char_width;
-            off -= 1;
+        } else {
+            lo = chars.len();
+            while lo > 0 && kept + cw(chars[lo - 1]) < width {
+                kept += cw(chars[lo - 1]);
+                lo -= 1;
+            }
         }
+    }
+    let mut spans = Vec::new();
+    if cut && !keep_head {
         spans.push(Span::styled("…", base));
     }
-    let is_hit: HashMap<usize, bool> = hits
-        .iter()
-        .filter(|&&h| h >= off)
-        .map(|&h| (h - off, true))
-        .collect();
+    let is_hit: HashSet<usize> = hits.iter().copied().collect();
     // Runs of same-styled chars, so one span covers many cells.
-    let mut i = 0;
-    while i < chars.len() - off {
-        let on = is_hit.contains_key(&i);
+    let mut i = lo;
+    while i < hi {
+        let on = is_hit.contains(&i);
         let mut j = i;
-        while j < chars.len() - off && is_hit.contains_key(&j) == on {
+        while j < hi && is_hit.contains(&j) == on {
             j += 1;
         }
         spans.push(Span::styled(
-            chars[off + i..off + j].iter().collect::<String>(),
+            chars[i..j].iter().collect::<String>(),
             if on { hit } else { base },
         ));
         i = j;
+    }
+    if cut && keep_head {
+        spans.push(Span::styled("…", base));
     }
     spans
 }

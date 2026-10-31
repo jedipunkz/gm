@@ -62,10 +62,10 @@ pub(crate) const PR_LIMIT: usize = 100;
 /// kind of deadline: a listing moves nothing but names, and a checkout
 /// downloads objects like a fetch. A blackholed network or a stalled auth
 /// helper is hung, not waiting, and the deadline turns it into an error.
-const GH_LIST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const GH_LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const GH_CHECKOUT_TIMEOUT: Duration = FETCH_TIMEOUT;
 
-fn gh_command(program: &OsStr) -> Command {
+pub(crate) fn gh_command(program: &OsStr) -> Command {
     let command = Command::new(program);
     #[cfg(test)]
     let command = {
@@ -158,7 +158,7 @@ pub fn check_out_pull_request_in(
 
 /// gh_missing turns a gh that could not be started into the one line worth
 /// reading.
-fn gh_missing(e: std::io::Error) -> Error {
+pub(crate) fn gh_missing(e: std::io::Error) -> Error {
     if e.kind() == std::io::ErrorKind::NotFound {
         return "gh is not installed: pull requests come from the GitHub CLI".into();
     }

@@ -114,7 +114,7 @@ pub const COMMANDS: &[Command] = &[
         arg: "",
         what: "remove the selected repository or worktree",
         run: |m, _| {
-            if matches!(m.mode, Mode::Branches | Mode::Prs) {
+            if matches!(m.mode, Mode::Branches | Mode::Prs | Mode::Issues) {
                 m.note = "/remove applies to repositories and worktrees".into();
                 return vec![];
             }
@@ -258,6 +258,18 @@ pub const COMMANDS: &[Command] = &[
                 vec![]
             } else {
                 m.switch_to(Mode::Prs)
+            }
+        },
+    },
+    Command {
+        name: "/issues",
+        arg: "",
+        what: "list the open issues of the repository",
+        run: |m, _| {
+            if m.mode == Mode::Issues {
+                vec![]
+            } else {
+                m.switch_to(Mode::Issues)
             }
         },
     },
