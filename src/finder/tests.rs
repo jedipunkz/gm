@@ -3329,6 +3329,20 @@ fn issue_mode() {
     assert_eq!(m.mode, Mode::Repos);
 }
 
+// An issue row too long for the list keeps its number and cuts the title's
+// tail: the number is what names the issue.
+#[test]
+fn issue_row_keeps_its_number() {
+    let root = TempDir::new();
+    let (mut m, _) = issue_model(&root);
+    let long = issue(7, "Add login to every page of the site at once");
+    m.issues_of = Arc::new(move |_| Ok(vec![long.clone()]));
+    open_issue_list(&mut m);
+
+    let row = line_text(&m.render_row(0, false, 16));
+    assert_eq!(row, "  #7 Add login …");
+}
+
 // The scroll keys walk the panel's window: never past the top, and never
 // past the bottom, where the hint line already is.
 #[test]

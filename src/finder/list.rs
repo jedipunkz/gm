@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
@@ -159,6 +159,7 @@ impl Model {
             width.saturating_sub(2),
             base,
             hit,
+            self.mode == Mode::Issues,
         ));
         let used: usize = spans.iter().map(Span::width).sum();
         if width > used {
@@ -179,48 +180,62 @@ fn char_indexes(s: &str, byte_idx: &[usize]) -> Vec<usize> {
 }
 
 /// highlight renders s truncated to width display cells, with the chars at
-/// hits in their own style. The tail is kept: the repository name matters more
-/// than the host.
-fn highlight(s: &str, hits: &[usize], width: usize, base: Style, hit: Style) -> Vec<Span<'static>> {
+/// hits in their own style. The tail is kept by default: the repository name
+/// matters more than the host. keep_head keeps the front instead, for rows
+/// that lead with what names them, like an issue's number.
+fn highlight(
+    s: &str,
+    hits: &[usize],
+    width: usize,
+    base: Style,
+    hit: Style,
+    keep_head: bool,
+) -> Vec<Span<'static>> {
     if width <= 1 {
         return Vec::new();
     }
     let chars: Vec<char> = s.chars().collect();
-    let mut spans = Vec::new();
-    let mut off = 0;
-    let text_width: usize = chars.iter().map(|c| Span::raw(c.to_string()).width()).sum();
-    if text_width > width {
-        let suffix_width = width - 1;
-        let mut kept_width = 0;
-        off = chars.len();
-        while off > 0 {
-            let char_width = Span::raw(chars[off - 1].to_string()).width();
-            if kept_width + char_width > suffix_width {
-                break;
+    let cw = |c: char| Span::raw(c.to_string()).width();
+    // The kept chars are chars[lo..hi]; the cut side gets the ellipsis.
+    let (mut lo, mut hi) = (0, chars.len());
+    let cut = chars.iter().map(|&c| cw(c)).sum::<usize>() > width;
+    if cut {
+        let mut kept = 0;
+        if keep_head {
+            hi = 0;
+            while hi < chars.len() && kept + cw(chars[hi]) < width {
+                kept += cw(chars[hi]);
+                hi += 1;
             }
-            kept_width += char_width;
-            off -= 1;
+        } else {
+            lo = chars.len();
+            while lo > 0 && kept + cw(chars[lo - 1]) < width {
+                kept += cw(chars[lo - 1]);
+                lo -= 1;
+            }
         }
+    }
+    let mut spans = Vec::new();
+    if cut && !keep_head {
         spans.push(Span::styled("…", base));
     }
-    let is_hit: HashMap<usize, bool> = hits
-        .iter()
-        .filter(|&&h| h >= off)
-        .map(|&h| (h - off, true))
-        .collect();
+    let is_hit: HashSet<usize> = hits.iter().copied().collect();
     // Runs of same-styled chars, so one span covers many cells.
-    let mut i = 0;
-    while i < chars.len() - off {
-        let on = is_hit.contains_key(&i);
+    let mut i = lo;
+    while i < hi {
+        let on = is_hit.contains(&i);
         let mut j = i;
-        while j < chars.len() - off && is_hit.contains_key(&j) == on {
+        while j < hi && is_hit.contains(&j) == on {
             j += 1;
         }
         spans.push(Span::styled(
-            chars[off + i..off + j].iter().collect::<String>(),
+            chars[i..j].iter().collect::<String>(),
             if on { hit } else { base },
         ));
         i = j;
+    }
+    if cut && keep_head {
+        spans.push(Span::styled("…", base));
     }
     spans
 }
