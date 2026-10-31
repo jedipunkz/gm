@@ -169,43 +169,64 @@ pub const COMMANDS: &[Command] = &[
                     detail.push(format!("{dirty} uncommitted changes will be lost"));
                 }
                 if worktree {
+                    let removal = repo::worktree_removal_plan(
+                        repo::Worktree {
+                            path: it.path.clone(),
+                            branch: it.branch.name.clone(),
+                            ..Default::default()
+                        },
+                        dirty,
+                    );
                     if !it.branch.name.is_empty() {
                         detail.push(format!(
                             "branch {} goes too if git branch -d allows",
                             it.branch.name
                         ));
                     }
-                } else if let Ok(wts) = worktrees_of(&it.path) {
+                    return Some(Msg::RemoveDetail(RemoveDetail {
+                        busy_tag,
+                        detail,
+                        force: removal.force,
+                    }));
+                }
+
+                if let Ok(wts) = worktrees_of(&it.path) {
                     // The worktrees go with it, so the question has to say so.
                     // The main worktree is the repository itself. git prints
                     // the resolved path, so a mismatch here is one entry too
                     // many rather than a wrong answer.
-                    let others: Vec<repo::Worktree> = wts
-                        .into_iter()
-                        .filter(|w| !repo::same_path(&w.path, &it.path))
-                        .collect();
-                    // They go with --force, so the work in each is named here
-                    // or nowhere.
-                    if !others.is_empty() {
-                        // A checkout outside gm's worktree directory is named
-                        // by its path, which only the question says.
-                        let dir = tree.at(&it.path).map(|r| repo::worktrees_dir(&r));
-                        let labels = match &dir {
-                            Some(d) => repo::worktree_labels_in(d, &others, |p| changed(p)),
-                            None => repo::worktree_labels(&others, |p| changed(p)),
-                        };
-                        detail.push(format!(
-                            "{} will go too: {}",
-                            plural(others.len(), "worktree", "worktrees"),
-                            labels
-                        ));
-                    }
                     if let Some(r) = tree.at(&it.path) {
-                        let strays = repo::strays(&r, &others);
-                        if !strays.is_empty() {
+                        let plan = repo::removal_plan(&r, dirty, &wts, |p| changed(p));
+                        // They go with --force, so the work in each is named
+                        // here or nowhere.
+                        if !plan.worktrees.is_empty() {
+                            // A checkout outside gm's worktree directory is
+                            // named by its path, which only the question says.
+                            let others: Vec<_> = plan
+                                .worktrees
+                                .iter()
+                                .map(|impact| impact.worktree.clone())
+                                .collect();
+                            let labels = repo::worktree_labels_in(
+                                &repo::worktrees_dir(&r),
+                                &others,
+                                |path| {
+                                    plan.worktrees
+                                        .iter()
+                                        .find(|impact| impact.worktree.path == path)
+                                        .map_or(0, |impact| impact.changed)
+                                },
+                            );
+                            detail.push(format!(
+                                "{} will go too: {}",
+                                plural(plan.worktrees.len(), "worktree", "worktrees"),
+                                labels
+                            ));
+                        }
+                        if !plan.strays.is_empty() {
                             detail.push(format!(
                                 "also removed, not a worktree: {}",
-                                strays.join(", ")
+                                plan.strays.join(", ")
                             ));
                         }
                     }

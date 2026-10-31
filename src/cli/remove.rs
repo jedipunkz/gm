@@ -22,21 +22,22 @@ impl App<'_> {
     /// remove_one deletes one repository, warning first when there is work in
     /// it and asking before anything is lost.
     fn remove_one(&mut self, r: &Repo, dry_run: bool, yes: bool) -> Result<()> {
-        if repo::is_dirty(&r.path()).unwrap_or(false) {
+        let dirty = usize::from(repo::is_dirty(&r.path()).unwrap_or(false));
+        let worktrees = repo::worktrees(&r.path()).unwrap_or_default();
+        let plan = repo::removal_plan(r, dirty, &worktrees, repo::changed_files);
+        if plan.dirty > 0 {
             writeln!(self.err, "warning: {} has uncommitted changes", r.rel)?;
         }
         // They go with it, so they have to be said before the question, not
         // discovered afterwards.
-        let wts = repo::other_worktrees(r);
-        if !wts.is_empty() {
-            writeln!(self.err, "warning: {}", worktree_warning(r, &wts))?;
+        if !plan.worktrees.is_empty() {
+            writeln!(self.err, "warning: {}", worktree_warning(r, &plan))?;
         }
-        let strays = repo::strays(r, &wts);
-        if !strays.is_empty() {
+        if !plan.strays.is_empty() {
             writeln!(
                 self.err,
                 "warning: also removed, not a worktree: {}",
-                strays.join(", ")
+                plan.strays.join(", ")
             )?;
         }
         // The warnings are what a dry run is for, so it stops only after them.
@@ -63,19 +64,25 @@ impl App<'_> {
     }
 }
 
-/// worktree_warning names what will be taken along with a repository, and the
-/// work in each of them: they are removed with --force, so git will not stop
-/// for it. A checkout outside gm's worktree directory is named by its path,
-/// which only the warning says.
-fn worktree_warning(r: &Repo, wts: &[repo::Worktree]) -> String {
-    let what = if wts.len() == 1 {
+/// worktree_warning words the impacts the repository layer found. A checkout
+/// outside gm's worktree directory is named by its path, which only this
+/// warning says.
+fn worktree_warning(r: &Repo, plan: &repo::RemovalPlan) -> String {
+    let worktrees: Vec<_> = plan
+        .worktrees
+        .iter()
+        .map(|impact| impact.worktree.clone())
+        .collect();
+    let labels = repo::worktree_labels_in(&repo::worktrees_dir(r), &worktrees, |path| {
+        plan.worktrees
+            .iter()
+            .find(|impact| impact.worktree.path == path)
+            .map_or(0, |impact| impact.changed)
+    });
+    let what = if worktrees.len() == 1 {
         "worktree"
     } else {
         "worktrees"
     };
-    format!(
-        "{} {what} will be removed too: {}",
-        wts.len(),
-        repo::worktree_labels_in(&repo::worktrees_dir(r), wts, repo::changed_files)
-    )
+    format!("{} {what} will go too: {labels}", worktrees.len())
 }
