@@ -120,8 +120,23 @@ fn read_issue(p: &serde_json::Value) -> Issue {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let labels = p
-        .get("labels")
+    Issue {
+        number: p.get("number").and_then(|v| v.as_u64()).unwrap_or(0),
+        title: s("title"),
+        state: s("state"),
+        author: login,
+        labels: read_labels(p),
+        assignees: read_assignees(p),
+        url: s("url"),
+        body: s("body"),
+        comments: read_comments(p),
+    }
+}
+
+/// read_labels takes the label names out of gh's JSON for an issue or a pull
+/// request: both name them the same way.
+pub(super) fn read_labels(p: &serde_json::Value) -> Vec<String> {
+    p.get("labels")
         .and_then(|v| v.as_array())
         .map(|ls| {
             ls.iter()
@@ -134,9 +149,13 @@ fn read_issue(p: &serde_json::Value) -> Issue {
                 .filter(|l| !l.is_empty())
                 .collect()
         })
-        .unwrap_or_default();
-    let assignees = p
-        .get("assignees")
+        .unwrap_or_default()
+}
+
+/// read_assignees takes the assignees' logins out of gh's JSON for an issue
+/// or a pull request: both name them the same way.
+pub(super) fn read_assignees(p: &serde_json::Value) -> Vec<String> {
+    p.get("assignees")
         .and_then(|v| v.as_array())
         .map(|ls| {
             ls.iter()
@@ -144,18 +163,7 @@ fn read_issue(p: &serde_json::Value) -> Issue {
                 .map(str::to_string)
                 .collect()
         })
-        .unwrap_or_default();
-    Issue {
-        number: p.get("number").and_then(|v| v.as_u64()).unwrap_or(0),
-        title: s("title"),
-        state: s("state"),
-        author: login,
-        labels,
-        assignees,
-        url: s("url"),
-        body: s("body"),
-        comments: read_comments(p),
-    }
+        .unwrap_or_default()
 }
 
 /// read_comments takes the comments out of gh's JSON for an issue or a pull
