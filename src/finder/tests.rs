@@ -3013,6 +3013,7 @@ fn pr_model(root: &TempDir) -> (Model, Vec<Repo>) {
 fn pr_in_full(number: u64) -> PullRequest {
     PullRequest {
         body: "Adds the **login** form.".into(),
+        labels: vec!["security".into()],
         comments: vec![repo::Comment {
             author: "carol".into(),
             body: "Looks good.".into(),
@@ -3244,8 +3245,8 @@ fn pr_mode_finds_a_fork_checkout_by_place() {
     assert_eq!(m.current().unwrap().path, "");
 }
 
-// The pane beside the list shows the description the listing carried, as
-// Markdown, ahead of the checkout's fields.
+// The pane beside the list shows the labels and the description the listing
+// carried, as Markdown, ahead of the checkout's fields.
 #[test]
 fn pr_pane_shows_the_body() {
     let root = TempDir::new();
@@ -3253,11 +3254,13 @@ fn pr_pane_shows_the_body() {
     m.prs_of = Arc::new(|_| {
         let mut p = pull_request(7, "Add login", "feat/login", false, false, "acme");
         p.body = "# Why\n\nthe form\nis missing".into();
+        p.labels = vec!["security".into(), "go".into()];
         Ok(vec![p])
     });
     open_pr_list(&mut m);
     let pane = lines_text(&m.info_lines(40));
     for s in [
+        "labels\nsecurity, go",
         "body",
         "Why",
         "the form\nis missing",
@@ -3270,9 +3273,9 @@ fn pr_pane_shows_the_body() {
     assert!(body < path, "the body came after the path:\n{pane}");
 }
 
-// Enter opens the panel: the description and comments are drawn, the hint
-// line leads with check out, q goes back to the list, and nothing is checked
-// out until the panel's own enter.
+// Enter opens the panel: the labels, description and comments are drawn,
+// the hint line leads with check out, q goes back to the list, and nothing is
+// checked out until the panel's own enter.
 #[test]
 fn pr_panel() {
     let root = TempDir::new();
@@ -3288,6 +3291,8 @@ fn pr_panel() {
         "login",
         "Looks good.",
         "─ carol ",
+        "labels",
+        "security",
         "none yet; enter makes one",
         rs[1].rel.as_str(),
     ] {
