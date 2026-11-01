@@ -3066,6 +3066,37 @@ fn pr_row_keeps_its_number() {
     assert_eq!(row, "  #7 Add login …");
 }
 
+// label:, assignee: and author: narrow the pull request list the way they do
+// the issue list; a bot's author is its login as gh names it.
+#[test]
+fn pr_list_qualifiers() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    let mk = |n, title, author: &str, labels: &[&str], who: &[&str]| PullRequest {
+        labels: labels.iter().map(|s| s.to_string()).collect(),
+        assignees: who.iter().map(|s| s.to_string()).collect(),
+        ..pull_request(n, title, &format!("b{n}"), false, false, author)
+    };
+    let list = vec![
+        mk(3, "Bump openssl", "app/dependabot", &["security"], &[]),
+        mk(2, "Bump serde", "app/dependabot", &["dependencies"], &[]),
+        mk(1, "Fix leak", "alice", &["security"], &["jedipunkz"]),
+    ];
+    m.prs_of = Arc::new(move |_| Ok(list.clone()));
+    open_pr_list(&mut m);
+
+    for (q, want) in [
+        ("author:app/dependabot label:security", "#3 Bump openssl"),
+        ("author:App/Dependabot", "#2 Bump serde|#3 Bump openssl"),
+        ("label:security assignee:jedipunkz", "#1 Fix leak"),
+        ("label:security,dependencies serde", "#2 Bump serde"),
+        ("author:dependabot", ""),
+    ] {
+        set_query(&mut m, q);
+        assert_eq!(rows(&m).join("|"), want, "{q:?}");
+    }
+}
+
 // A full page exactly means there were at least that many open pull
 // requests: the hint line says so, so a #42 that is not on the list is not
 // read as "no such pull request".
