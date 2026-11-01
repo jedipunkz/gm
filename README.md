@@ -148,8 +148,9 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 ### Pull request list
 
 - Open pull requests, newest at the bottom, drafts marked `[draft]`. Type `#42` to find one by number.
-- The pane on the right shows the selected pull request's description, markdown drawn.
-- `Enter` opens the pull request full screen, the way the [issue list](#issue-list) does: its branch, where its worktree is, the description and each comment. The same keys scroll, browse and copy its URL.
+- `label:`, `assignee:` and `author:` narrow the list the way they do the [issue list](#issue-list). A bot is named as `gh` names it: `author:app/dependabot label:security`.
+- The pane on the right shows the selected pull request's labels and description, markdown drawn.
+- `Enter` opens the pull request full screen, the way the [issue list](#issue-list) does: its labels, branch, where its worktree is, the description and each comment. The same keys scroll, browse and copy its URL.
 - `Enter` in the detail view: go to its worktree. If none, `gh pr checkout` creates it; `gh` names the branch and, for a fork, sets where it pushes. `q` / `Esc` go back to the list.
 - The worktree is named after the head branch.
 

@@ -242,6 +242,7 @@ impl Model {
             }
             Subject::Pr(p) => {
                 field(&mut out, "author", &p.author, st.remote);
+                field(&mut out, "labels", &p.labels.join(", "), st.branch);
                 field(&mut out, "branch", &pr_branch(p), st.branch);
                 // Where enter goes is what the panel is opened to decide, so
                 // it says whether that is a worktree there already or one gh

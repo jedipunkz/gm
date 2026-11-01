@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use super::deadline::{FETCH_TIMEOUT, run_deadline};
 use super::git::{failure, quiet_result};
-use super::issue::{Comment, read_comments};
+use super::issue::{Comment, read_assignees, read_comments, read_labels};
 use crate::{Error, Result, err, paths};
 
 /// PullRequest is an open pull request, as much of it as a list row, the
@@ -21,6 +21,8 @@ pub struct PullRequest {
     pub author: String,     // author.login
     pub head_owner: String, // headRepositoryOwner.login
     pub state: String,      // OPEN, CLOSED, MERGED
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>, // logins
     pub url: String,
     pub body: String,
     pub comments: Vec<Comment>,
@@ -77,8 +79,8 @@ const PR_VIEW_TIMEOUT: Duration = GH_LIST_TIMEOUT;
 
 /// PR_LIST_FIELDS is what the listing asks gh for; the detail view asks for
 /// the same and the comments, so both go through the same reader.
-const PR_LIST_FIELDS: &str =
-    "number,title,headRefName,isDraft,isCrossRepository,author,headRepositoryOwner,state,url,body";
+const PR_LIST_FIELDS: &str = "number,title,headRefName,isDraft,isCrossRepository,author,\
+     headRepositoryOwner,state,labels,assignees,url,body";
 
 pub(crate) fn gh_command(program: &OsStr) -> Command {
     let command = Command::new(program);
@@ -169,6 +171,8 @@ fn read_pull_request(p: &serde_json::Value) -> PullRequest {
         author: login("author"),
         head_owner: login("headRepositoryOwner"),
         state: s("state"),
+        labels: read_labels(p),
+        assignees: read_assignees(p),
         url: s("url"),
         body: s("body"),
         comments: read_comments(p),
@@ -230,6 +234,7 @@ mod tests {
         let out = br#"[
             {"number":7,"title":"Add login","headRefName":"feat/login","isDraft":false,"isCrossRepository":false,
              "author":{"login":"alice"},"headRepositoryOwner":{"login":"acme"},"state":"OPEN",
+             "labels":[{"name":"security"}],"assignees":[{"login":"carol"}],
              "url":"https://github.com/acme/alpha/pull/7","body":"adds the form"},
             {"number":9,"title":"Fix typo","headRefName":"main","isDraft":true,"isCrossRepository":true,
              "author":{"login":"bob"},"headRepositoryOwner":{"login":"bob"}}
@@ -253,6 +258,10 @@ mod tests {
             ("OPEN", "adds the form")
         );
         assert!(prs[0].comments.is_empty(), "a listing has no comments");
+        assert_eq!(
+            (prs[0].labels.clone(), prs[0].assignees.clone()),
+            (vec!["security".to_string()], vec!["carol".to_string()])
+        );
     }
 
     // gh pr view is asked for the listing's fields and the comments, and its

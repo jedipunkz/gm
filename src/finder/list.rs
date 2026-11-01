@@ -50,9 +50,9 @@ impl Model {
             None
         };
         self.view_stale = false;
-        // The issue list's qualifiers narrow it; the rest of the query is
-        // the pattern the rows are ranked on.
-        let (pat, quals) = if self.mode == Mode::Issues {
+        // The issue and pull request lists' qualifiers narrow them; the rest
+        // of the query is the pattern the rows are ranked on.
+        let (pat, quals) = if matches!(self.mode, Mode::Issues | Mode::Prs) {
             split_qualifiers(&q)
         } else {
             (q.clone(), Vec::new())
@@ -104,7 +104,7 @@ impl Model {
             scored.into_iter().map(|(i, _)| i).collect()
         };
         self.query = q;
-        self.view = self.keep_issue_filters(self.keep_repo_filters(view), &quals);
+        self.view = self.keep_qualified(self.keep_repo_filters(view), &quals);
 
         if let Some(i) = held.and_then(|h| self.view.iter().position(|&x| x == h)) {
             self.cursor = i;
@@ -133,20 +133,27 @@ impl Model {
             .collect()
     }
 
-    /// keep_issue_filters keeps the issues every qualifier accepts: one of
-    /// its values among the issue's labels, assignees or author, case aside.
-    fn keep_issue_filters(&self, view: Vec<usize>, quals: &[Qualifier]) -> Vec<usize> {
+    /// keep_qualified keeps the issues or pull requests every qualifier
+    /// accepts: one of its values among the row's labels, assignees or
+    /// author, case aside.
+    fn keep_qualified(&self, view: Vec<usize>, quals: &[Qualifier]) -> Vec<usize> {
         if quals.is_empty() {
             return view;
         }
+        let prs = self.mode == Mode::Prs;
         view.into_iter()
             .filter(|&i| {
-                let issue = &self.all[i].issue;
+                let it = &self.all[i];
+                let (labels, assignees, author) = if prs {
+                    (&it.pr.labels, &it.pr.assignees, &it.pr.author)
+                } else {
+                    (&it.issue.labels, &it.issue.assignees, &it.issue.author)
+                };
                 quals.iter().all(|f| {
                     let have = match f.field {
-                        Field::Label => &issue.labels[..],
-                        Field::Assignee => &issue.assignees[..],
-                        Field::Author => std::slice::from_ref(&issue.author),
+                        Field::Label => &labels[..],
+                        Field::Assignee => &assignees[..],
+                        Field::Author => std::slice::from_ref(author),
                     };
                     have.iter().any(|h| f.any_of.contains(&h.to_lowercase()))
                 })
@@ -209,22 +216,23 @@ impl Model {
     }
 }
 
-/// Qualifier is one `label:`, `assignee:` or `author:` word of the issue
-/// list's query: the values it accepts, lowercased, any one of them enough.
+/// Qualifier is one `label:`, `assignee:` or `author:` word of the issue or
+/// pull request list's query: the values it accepts, lowercased, any one of
+/// them enough.
 struct Qualifier {
     field: Field,
     any_of: Vec<String>,
 }
 
-/// Field is what of an issue a qualifier looks at.
+/// Field is what of an issue or pull request a qualifier looks at.
 enum Field {
     Label,
     Assignee,
     Author,
 }
 
-/// split_qualifiers takes the issue list's qualifiers out of a query and
-/// leaves the words the rows are matched on. The keys are GitHub's —
+/// split_qualifiers takes the issue or pull request list's qualifiers out of
+/// a query and leaves the words the rows are matched on. The keys are GitHub's —
 /// `label:`, `assignee:` (or `assignees:`) and `author:` — and so is the
 /// meaning: commas are any-of, a repeated qualifier is all-of. A key with no value yet is
 /// dropped, so the list does not empty while it is being typed.

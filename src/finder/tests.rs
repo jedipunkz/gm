@@ -3013,6 +3013,7 @@ fn pr_model(root: &TempDir) -> (Model, Vec<Repo>) {
 fn pr_in_full(number: u64) -> PullRequest {
     PullRequest {
         body: "Adds the **login** form.".into(),
+        labels: vec!["security".into()],
         comments: vec![repo::Comment {
             author: "carol".into(),
             body: "Looks good.".into(),
@@ -3064,6 +3065,37 @@ fn pr_row_keeps_its_number() {
 
     let row = line_text(&m.render_row(0, false, 16));
     assert_eq!(row, "  #7 Add login …");
+}
+
+// label:, assignee: and author: narrow the pull request list the way they do
+// the issue list; a bot's author is its login as gh names it.
+#[test]
+fn pr_list_qualifiers() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    let mk = |n, title, author: &str, labels: &[&str], who: &[&str]| PullRequest {
+        labels: labels.iter().map(|s| s.to_string()).collect(),
+        assignees: who.iter().map(|s| s.to_string()).collect(),
+        ..pull_request(n, title, &format!("b{n}"), false, false, author)
+    };
+    let list = vec![
+        mk(3, "Bump openssl", "app/dependabot", &["security"], &[]),
+        mk(2, "Bump serde", "app/dependabot", &["dependencies"], &[]),
+        mk(1, "Fix leak", "alice", &["security"], &["jedipunkz"]),
+    ];
+    m.prs_of = Arc::new(move |_| Ok(list.clone()));
+    open_pr_list(&mut m);
+
+    for (q, want) in [
+        ("author:app/dependabot label:security", "#3 Bump openssl"),
+        ("author:App/Dependabot", "#2 Bump serde|#3 Bump openssl"),
+        ("label:security assignee:jedipunkz", "#1 Fix leak"),
+        ("label:security,dependencies serde", "#2 Bump serde"),
+        ("author:dependabot", ""),
+    ] {
+        set_query(&mut m, q);
+        assert_eq!(rows(&m).join("|"), want, "{q:?}");
+    }
 }
 
 // A full page exactly means there were at least that many open pull
@@ -3213,8 +3245,8 @@ fn pr_mode_finds_a_fork_checkout_by_place() {
     assert_eq!(m.current().unwrap().path, "");
 }
 
-// The pane beside the list shows the description the listing carried, as
-// Markdown, ahead of the checkout's fields.
+// The pane beside the list shows the labels and the description the listing
+// carried, as Markdown, ahead of the checkout's fields.
 #[test]
 fn pr_pane_shows_the_body() {
     let root = TempDir::new();
@@ -3222,11 +3254,13 @@ fn pr_pane_shows_the_body() {
     m.prs_of = Arc::new(|_| {
         let mut p = pull_request(7, "Add login", "feat/login", false, false, "acme");
         p.body = "# Why\n\nthe form\nis missing".into();
+        p.labels = vec!["security".into(), "go".into()];
         Ok(vec![p])
     });
     open_pr_list(&mut m);
     let pane = lines_text(&m.info_lines(40));
     for s in [
+        "labels\nsecurity, go",
         "body",
         "Why",
         "the form\nis missing",
@@ -3239,9 +3273,9 @@ fn pr_pane_shows_the_body() {
     assert!(body < path, "the body came after the path:\n{pane}");
 }
 
-// Enter opens the panel: the description and comments are drawn, the hint
-// line leads with check out, q goes back to the list, and nothing is checked
-// out until the panel's own enter.
+// Enter opens the panel: the labels, description and comments are drawn,
+// the hint line leads with check out, q goes back to the list, and nothing is
+// checked out until the panel's own enter.
 #[test]
 fn pr_panel() {
     let root = TempDir::new();
@@ -3257,6 +3291,8 @@ fn pr_panel() {
         "login",
         "Looks good.",
         "─ carol ",
+        "labels",
+        "security",
         "none yet; enter makes one",
         rs[1].rel.as_str(),
     ] {
