@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -439,10 +441,10 @@ pub fn worktrees(dir: &str) -> Result<Vec<Worktree>> {
     let used = used_times(dir);
     for w in &mut list {
         w.committed_at = dates.get(&w.branch).copied().unwrap_or(0);
-        w.used_at = used
-            .iter()
-            .find(|(p, _)| super::same_path(p, &w.path))
-            .map_or(0, |&(_, t)| t);
+        w.used_at = canonicalize_worktree_path(Path::new(&w.path))
+            .ok()
+            .and_then(|path| used.get(&path).copied())
+            .unwrap_or(0);
     }
     Ok(list)
 }
@@ -456,36 +458,64 @@ pub fn registered_worktrees(dir: &str) -> Result<Vec<Worktree>> {
 }
 
 /// used_times is when HEAD last moved in each linked worktree of the
-/// repository at dir — its creation, a checkout, a commit — keyed by the
-/// worktree's path. It reads the reflog git keeps for each one beside the
-/// repository, so a worktree whose own .git link is broken still has a time.
-/// The main worktree is not among them.
-fn used_times(dir: &str) -> Vec<(String, i64)> {
+/// repository at dir — its creation, a checkout, a commit — keyed by each
+/// canonical worktree path. It reads only the reflog tail Git keeps beside the
+/// repository, so a broken .git link still has a time without reading its full
+/// history. The main worktree is not among them.
+fn used_times(dir: &str) -> HashMap<PathBuf, i64> {
     let Ok(common) = git_in(
         dir,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
     ) else {
-        return vec![];
+        return HashMap::new();
     };
     let Ok(admins) = std::fs::read_dir(paths::join(&common, "worktrees")) else {
-        return vec![];
+        return HashMap::new();
     };
     admins
         .flatten()
         .filter_map(|e| {
             let admin = e.path().to_string_lossy().into_owned();
-            let read = |name| std::fs::read_to_string(paths::join(&admin, name)).ok();
             // gitdir names the worktree's .git file; worktree.useRelativePaths
             // writes it relative to this directory.
-            let gitdir = read("gitdir")?;
+            let gitdir = std::fs::read_to_string(paths::join(&admin, "gitdir")).ok()?;
             let gitdir = match gitdir.trim() {
                 p if p.starts_with('/') => p.to_string(),
                 p => paths::join(&admin, p),
             };
-            let at = reflog_time(read("logs/HEAD")?.lines().last()?)?;
-            Some((paths::dir(&gitdir), at))
+            let at = reflog_time(&last_reflog_line(&paths::join(&admin, "logs/HEAD"))?)?;
+            let path = canonicalize_worktree_path(Path::new(&paths::dir(&gitdir))).ok()?;
+            Some((path, at))
         })
         .collect()
+}
+
+/// last_reflog_line reads only the tail needed to find the last reflog entry.
+fn last_reflog_line(path: &str) -> Option<String> {
+    const TAIL: u64 = 4096;
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.seek(SeekFrom::End(0)).ok()?;
+    file.seek(SeekFrom::Start(len.saturating_sub(TAIL))).ok()?;
+    let mut bytes = Vec::with_capacity(len.min(TAIL) as usize);
+    file.take(TAIL).read_to_end(&mut bytes).ok()?;
+    String::from_utf8_lossy(&bytes)
+        .lines()
+        .rev()
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+#[cfg(test)]
+thread_local! {
+    static WORKTREE_PATH_CANONICALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// canonicalize_worktree_path resolves one path used to join Git's worktree
+/// list with its administrative reflog metadata.
+fn canonicalize_worktree_path(path: &Path) -> std::io::Result<PathBuf> {
+    #[cfg(test)]
+    WORKTREE_PATH_CANONICALIZATIONS.with(|count| count.set(count.get() + 1));
+    std::fs::canonicalize(path)
 }
 
 /// reflog_time reads the time off one reflog line:
@@ -944,6 +974,48 @@ detached
             .label(),
             "(bare)"
         );
+    }
+
+    #[test]
+    fn last_reflog_line_reads_a_large_log_tail() {
+        let tmp = TempDir::new();
+        let path = paths::join(&tmp.path(), "logs/HEAD");
+        mkdir(&paths::dir(&path));
+        let mut log = "old reflog entry that is not the last one\n".repeat(256);
+        let last = "0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 User <u@example.com> 1234567890 +0000\tcheckout: moving from main to work\n";
+        log.push_str(last);
+        write(&path, &log);
+
+        let line = last_reflog_line(&path).unwrap();
+        assert_eq!(line, last.trim_end());
+        assert_eq!(reflog_time(&line), Some(1_234_567_890));
+    }
+
+    #[test]
+    fn worktrees_canonicalize_paths_linearly() {
+        const COUNT: usize = 50;
+        let tmp = TempDir::new();
+        let r = Repo {
+            root: tmp.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&r.path());
+        let tree = Tree {
+            roots: vec![tmp.path()],
+        };
+        let root = paths::join(&r.root, WORKTREE_ROOT);
+        for i in 0..COUNT {
+            let branch = format!("work-{i:02}");
+            add_worktree(&root, &r.path(), &tree.worktree_dir(&r, &branch), &branch).unwrap();
+        }
+
+        WORKTREE_PATH_CANONICALIZATIONS.with(|count| count.set(0));
+        let got = worktrees(&r.path()).unwrap();
+        let canonicalizations = WORKTREE_PATH_CANONICALIZATIONS.with(std::cell::Cell::get);
+
+        assert_eq!(got.len(), COUNT + 1);
+        assert!(got[1..].iter().all(|w| w.used_at > 0), "{got:?}");
+        assert_eq!(canonicalizations, COUNT * 2 + 1);
     }
 
     #[test]
