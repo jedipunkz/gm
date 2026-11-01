@@ -94,13 +94,18 @@ pub fn normalize_url(reference: &str, ssh: bool) -> Result<Url> {
     if u.hostname().is_empty() || u.path.trim_matches('/').is_empty() {
         return Err(err!("cannot make a repository URL out of {r:?}"));
     }
-    // The host and the path become directories under the root, and a "." or
-    // ".." among them would put the clone somewhere else, outside the root
-    // included. Every command that turns a reference into a place comes
-    // through here, so this is the one check they need.
-    let segments = std::iter::once(u.hostname()).chain(u.path.split('/'));
-    if segments.into_iter().any(|seg| seg == "." || seg == "..") {
+    // Check the exact relative path that becomes directories under the root.
+    // In particular, rel_path_of removes .git first: "..git" must not turn
+    // into a parent segment after this boundary check.
+    let rel = rel_path_of(&u);
+    let segments: Vec<_> = rel.split('/').collect();
+    if segments.iter().any(|seg| *seg == "." || *seg == "..") {
         return Err(err!("{reference:?} has a \".\" or \"..\" in its path"));
+    }
+    if segments.len() < 3 {
+        return Err(err!(
+            "{reference:?} must name a repository below its host and owner"
+        ));
     }
     // Nor does a space or a control character belong in a directory name:
     // "acme/x --shallow" is a typo, not a repository called "x --shallow".
@@ -303,7 +308,12 @@ mod tests {
             "https://github.com/u/./r",
             "https://../u/r",
             "git@github.com:../../evil.git",
+            "github.com/acme/..git",
+            "github.com/acme/...git",
+            "git@github.com:acme/..git",
             "ssh://git@github.com/u/../../evil",
+            "https://example.com/u",
+            "https://example.com/u/.git",
         ] {
             assert!(normalize_url(bad, false).is_err(), "{bad:?} was accepted");
         }
@@ -454,6 +464,10 @@ mod proptests {
                     "host lost: {:?} from {:?}", rel, r
                 );
                 prop_assert!(
+                    segments.len() >= 3,
+                    "repository path is too shallow: {:?} from {:?}", rel, r
+                );
+                prop_assert!(
                     rel.chars().all(|c| !c.is_whitespace() && !c.is_control()),
                     "a space or control character in {:?} from {:?}",
                     rel, r
@@ -463,6 +477,13 @@ mod proptests {
                     prop_assert_ne!(*segment, ".", "{:?} from {:?}", rel, r);
                     prop_assert_ne!(*segment, "..", "{:?} from {:?}", rel, r);
                 }
+                let root = std::path::Path::new("/tmp/gm-root");
+                let user = root.join(host).join(segments[1]);
+                let destination = root.join(&rel);
+                prop_assert!(
+                    destination.starts_with(&user) && destination != user,
+                    "destination escaped its host/user directory: {:?} from {:?}", rel, r
+                );
             }
         }
 
