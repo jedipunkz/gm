@@ -199,7 +199,7 @@ impl Model {
             width.saturating_sub(2),
             base,
             hit,
-            self.mode == Mode::Issues,
+            matches!(self.mode, Mode::Issues | Mode::Prs),
         ));
         let used: usize = spans.iter().map(Span::width).sum();
         if width > used {
