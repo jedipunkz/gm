@@ -3044,6 +3044,28 @@ fn open_pr_list(m: &mut Model) {
     feed(m, cmds);
 }
 
+// A pull request row too long for the list keeps its number and cuts the
+// title's tail, the way an issue row does.
+#[test]
+fn pr_row_keeps_its_number() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    m.prs_of = Arc::new(|_| {
+        Ok(vec![pull_request(
+            7,
+            "Add login to every page of the site at once",
+            "feat/login",
+            false,
+            false,
+            "acme",
+        )])
+    });
+    open_pr_list(&mut m);
+
+    let row = line_text(&m.render_row(0, false, 16));
+    assert_eq!(row, "  #7 Add login …");
+}
+
 // A full page exactly means there were at least that many open pull
 // requests: the hint line says so, so a #42 that is not on the list is not
 // read as "no such pull request".
