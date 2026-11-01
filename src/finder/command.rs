@@ -14,6 +14,18 @@ const COMMAND_PREFIX: &str = "/";
 /// repository and acts on it in one go. No repository path holds one.
 const COMMAND_SEP: &str = ";";
 
+/// look_flag_is_enabled catches the get option that starts a second shell,
+/// whose output would become the outer shell binding's captured path.
+fn look_flag_is_enabled(flag: &str) -> bool {
+    match flag {
+        "-l" | "--look" => true,
+        _ => flag
+            .strip_prefix("-l=")
+            .or_else(|| flag.strip_prefix("--look="))
+            .is_some_and(|value| matches!(value, "1" | "t" | "T" | "TRUE" | "true" | "True")),
+    }
+}
+
 /// Command is one slash command. Adding another is one entry here; the help
 /// popup and the completion both read this table.
 pub struct Command {
@@ -110,7 +122,13 @@ pub const COMMANDS: &[Command] = &[
         name: "/get",
         arg: "[flags] <repo>",
         what: "clone a repository, then go there",
-        run: |m, arg| m.leave_with(Action::Get, arg),
+        run: |m, arg| {
+            if arg.split_whitespace().any(look_flag_is_enabled) {
+                m.note = "-l does not apply inside the finder: /get already goes there".into();
+                return vec![];
+            }
+            m.leave_with(Action::Get, arg)
+        },
     },
     Command {
         name: "/remove",
