@@ -400,7 +400,7 @@ impl Model {
                 // which has nothing to check out, it closes the panel.
                 let is_pr = matches!(
                     self.detail.as_ref().map(|d| &d.subject),
-                    Some(super::issues::Subject::Pr(_))
+                    Some(super::detail::Subject::Pr(_))
                 );
                 match name {
                     "enter" if is_pr => return self.check_out_shown_pr(),

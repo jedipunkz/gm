@@ -1,12 +1,22 @@
 use std::collections::HashMap;
 
+use super::detail::{Detail, Subject};
 use super::info::tildify;
-use super::issues::{Detail, Subject};
 use super::list::Item;
 use super::overlay::{Change, Overlay, Pending};
 use super::worktree::Mode;
 use super::{Action, Cmd, Model, Msg, Outcome, PrDetail, Prs};
 use crate::repo::{self, PullRequest, Tree, Worktree};
+
+/// pr_branch is the head branch as GitHub writes it: a fork's with its
+/// owner in front, so bob:main is not read as the repository's main.
+pub(super) fn pr_branch(p: &PullRequest) -> String {
+    if p.fork {
+        format!("{}:{}", p.head_owner, p.branch)
+    } else {
+        p.branch.clone()
+    }
+}
 
 impl Model {
     /// open_prs asks gh for the selected repository's open pull requests, off

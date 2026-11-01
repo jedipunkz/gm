@@ -55,7 +55,7 @@ impl Model {
                 field(&mut out, "repository", &self.origin, st.dim);
                 field(&mut out, "author", &p.author, st.remote);
                 field(&mut out, "labels", &p.labels.join(", "), st.branch);
-                field(&mut out, "branch", &super::issues::pr_branch(p), st.branch);
+                field(&mut out, "branch", &super::pr::pr_branch(p), st.branch);
                 field(&mut out, "url", &p.url, st.remote);
                 // The description is what the row is picked by, so it comes
                 // before the checkout's own fields, as Markdown the way the
