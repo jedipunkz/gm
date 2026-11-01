@@ -3,7 +3,7 @@ use ratatui::text::{Line, Span};
 use super::command::COMMANDS;
 use super::info::{Seg, tildify, wrap_segs};
 use super::worktree::Mode;
-use super::{Cmd, Done, ExpireDetail, ExpireScan, Key, Model, Msg, RemoveDetail};
+use super::{Cmd, ConfirmDetail, Done, ExpireDetail, ExpireScan, Key, Model, Msg, RemoveDetail};
 use crate::repo::{self, Branch, Worktree};
 use crate::{Error, err, paths, plural};
 
@@ -181,6 +181,27 @@ impl Model {
         vec![]
     }
 
+    /// fill_confirm_detail updates only the confirmation that waited for this
+    /// check; a cancelled or replaced question cannot be changed by a stale task.
+    pub(super) fn fill_confirm_detail(&mut self, d: ConfirmDetail) -> Vec<Cmd> {
+        self.finish_busy(d.busy_tag);
+        if self.over != Overlay::Confirm || self.ask.wait != Some(d.busy_tag) {
+            return vec![];
+        }
+        match d.result {
+            Ok(detail) => {
+                self.ask.detail = detail;
+                self.ask.wait = None;
+            }
+            Err(e) => {
+                self.over = Overlay::None;
+                self.ask = Pending::default();
+                self.note = e.0;
+            }
+        }
+        vec![]
+    }
+
     /// fill_expire_detail answers only the /expire question that asked for it.
     pub(super) fn fill_expire_detail(&mut self, d: ExpireDetail) -> Vec<Cmd> {
         self.finish_busy(d.busy_tag);
@@ -294,19 +315,32 @@ impl Model {
                 return vec![];
             }
         };
-        let start = if repo::branch_exists(&self.repo_at, branch) {
-            "existing branch"
-        } else {
-            "new branch"
-        };
-        self.confirm(Pending {
+        let repo_at = self.repo_at.clone();
+        let branch = branch.to_string();
+        let check_dir = dir.clone();
+        let (busy_tag, busy) = self.start_busy("checking branch…");
+        let mut cmds = self.confirm(Pending {
             kind: Change::AddWorktree,
-            arg: branch.into(),
-            detail: vec![format!("{branch}, {start}"), tildify(&dir)],
+            arg: branch.clone(),
+            detail: vec![format!("{branch}, checking branch…"), tildify(&dir)],
             dir,
             title: "create worktree".into(),
+            wait: Some(busy_tag),
             ..Default::default()
-        })
+        });
+        cmds.push(busy);
+        cmds.push(Cmd::Task(Box::new(move || {
+            let start = if repo::branch_exists(&repo_at, &branch) {
+                "existing branch"
+            } else {
+                "new branch"
+            };
+            Some(Msg::ConfirmDetail(ConfirmDetail {
+                busy_tag,
+                result: Ok(vec![format!("{branch}, {start}"), tildify(&check_dir)]),
+            }))
+        })));
+        cmds
     }
 
     /// confirm_expire asks about removing every worktree of the listed
