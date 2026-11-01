@@ -54,14 +54,22 @@ impl Model {
                 field(&mut out, "pull request", &it.label, st.name);
                 field(&mut out, "repository", &self.origin, st.dim);
                 field(&mut out, "author", &p.author, st.remote);
-                let branch = if p.fork {
-                    format!("{}:{}", p.head_owner, p.branch)
-                } else {
-                    p.branch.clone()
-                };
-                field(&mut out, "branch", &branch, st.branch);
+                field(&mut out, "branch", &super::issues::pr_branch(p), st.branch);
+                field(&mut out, "url", &p.url, st.remote);
+                // The description is what the row is picked by, so it comes
+                // before the checkout's own fields, as Markdown the way the
+                // detail panel draws it.
+                if !p.body.is_empty() {
+                    out.push(Line::from(Span::styled("body", st.label)));
+                    out.extend(super::md::render(&p.body, w, st));
+                }
                 if it.path.is_empty() {
-                    field(&mut out, "worktree", "none yet; enter makes one", st.dim);
+                    field(
+                        &mut out,
+                        "worktree",
+                        "none yet; enter views it, enter again makes one",
+                        st.dim,
+                    );
                     return out;
                 }
             }

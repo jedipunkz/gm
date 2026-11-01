@@ -30,7 +30,8 @@ impl Issue {
     }
 }
 
-/// Comment is one comment on an issue, as the detail panel shows it.
+/// Comment is one comment on an issue or a pull request, as the detail panel
+/// shows it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Comment {
     pub author: String,
@@ -144,8 +145,23 @@ fn read_issue(p: &serde_json::Value) -> Issue {
                 .collect()
         })
         .unwrap_or_default();
-    let comments = p
-        .get("comments")
+    Issue {
+        number: p.get("number").and_then(|v| v.as_u64()).unwrap_or(0),
+        title: s("title"),
+        state: s("state"),
+        author: login,
+        labels,
+        assignees,
+        url: s("url"),
+        body: s("body"),
+        comments: read_comments(p),
+    }
+}
+
+/// read_comments takes the comments out of gh's JSON for an issue or a pull
+/// request: both name them the same way, and a listing has none.
+pub(super) fn read_comments(p: &serde_json::Value) -> Vec<Comment> {
+    p.get("comments")
         .and_then(|v| v.as_array())
         .map(|cs| {
             cs.iter()
@@ -163,18 +179,7 @@ fn read_issue(p: &serde_json::Value) -> Issue {
                 })
                 .collect()
         })
-        .unwrap_or_default();
-    Issue {
-        number: p.get("number").and_then(|v| v.as_u64()).unwrap_or(0),
-        title: s("title"),
-        state: s("state"),
-        author: login,
-        labels,
-        assignees,
-        url: s("url"),
-        body: s("body"),
-        comments,
-    }
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
