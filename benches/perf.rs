@@ -13,6 +13,28 @@ use gm::finder::score;
 use gm::paths;
 use gm::repo::{self, Repo};
 
+struct BranchRefs {
+    out: String,
+    remotes: Vec<String>,
+}
+
+fn branch_refs() -> &'static BranchRefs {
+    static B: OnceLock<BranchRefs> = OnceLock::new();
+    B.get_or_init(|| {
+        let mut out = String::with_capacity(900_000);
+        for i in 0..10_000 {
+            out.push_str(&format!("refs/heads/local-{i:05}\n"));
+        }
+        for i in 0..10_000 {
+            out.push_str(&format!("refs/remotes/origin/remote-{i:05}\n"));
+        }
+        BranchRefs {
+            out,
+            remotes: vec!["origin".into()],
+        }
+    })
+}
+
 // The benchmark data mirrors a real ghq tree: a handful of hosts, dozens of
 // users, tens of repositories each, names the way GitHub spells them.
 const NAMES: [&str; 20] = [
@@ -120,6 +142,12 @@ fn paths_clean() {
 #[divan::bench]
 fn paths_join() {
     paths::join("/home/me/ghq/github.com/user7", ".git");
+}
+
+#[divan::bench]
+fn repo_parse_branches_10k_local_10k_remote() {
+    let refs = branch_refs();
+    repo::parse_branches(&refs.out, &refs.remotes);
 }
 
 #[divan::bench]
