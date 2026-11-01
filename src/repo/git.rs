@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -858,12 +858,13 @@ pub fn branches(dir: &str) -> Result<Vec<Branch>> {
 /// because origin is a remote.
 pub fn parse_branches(out: &str, remotes: &[String]) -> Vec<Branch> {
     let lines: Vec<&str> = out.split('\n').collect();
-    let local: Vec<&str> = lines
+    let local: HashSet<&str> = lines
         .iter()
         .filter_map(|l| l.strip_prefix("refs/heads/"))
         .collect();
+    let prefixes: Vec<String> = remotes.iter().map(|r| format!("{r}/")).collect();
     let mut list = Vec::new();
-    let mut seen: Vec<String> = Vec::new();
+    let mut seen: HashSet<&str> = HashSet::new();
     for l in &lines {
         if let Some(name) = l.strip_prefix("refs/heads/") {
             list.push(Branch {
@@ -875,15 +876,14 @@ pub fn parse_branches(out: &str, remotes: &[String]) -> Vec<Branch> {
         let Some(short) = l.strip_prefix("refs/remotes/") else {
             continue;
         };
-        for r in remotes {
-            let Some(name) = short.strip_prefix(&format!("{r}/")) else {
+        for prefix in &prefixes {
+            let Some(name) = short.strip_prefix(prefix) else {
                 continue;
             };
             // HEAD is a pointer at the remote's default branch, not a branch.
-            if name == "HEAD" || local.contains(&name) || seen.iter().any(|s| s == name) {
+            if name == "HEAD" || local.contains(name) || !seen.insert(name) {
                 continue;
             }
-            seen.push(name.to_string());
             list.push(Branch {
                 name: name.to_string(),
                 remote: short.to_string(),
