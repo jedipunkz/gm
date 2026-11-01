@@ -1,5 +1,8 @@
 //! The shared full-screen detail panel for issues and pull requests.
 
+use std::cell::RefCell;
+use std::sync::Arc;
+
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph, Widget};
@@ -9,6 +12,9 @@ use super::overlay::Overlay;
 use super::{Cmd, Model};
 use crate::plural;
 use crate::repo::{Comment, Issue, PullRequest};
+
+// Width changes wrapping; note changes the line displayed in place of the title.
+pub(super) type CachedLines = (usize, String, Arc<Vec<Line<'static>>>);
 
 impl Model {
     /// scroll_detail moves the panel's window, one line or a pane's worth,
@@ -90,7 +96,28 @@ impl Model {
 
     /// detail_lines is every line the panel holds: the issue or pull request
     /// on top, then its body, then its comments after it.
-    fn detail_lines(&self, w: usize) -> Vec<Line<'static>> {
+    fn detail_lines(&self, w: usize) -> Arc<Vec<Line<'static>>> {
+        let Some(detail) = self.detail.as_ref() else {
+            return Arc::new(vec![]);
+        };
+        let note = &self.note;
+        if let Some((cached_w, cached_note, lines)) = detail.lines.borrow().as_ref()
+            && *cached_w == w
+            && cached_note == note
+        {
+            return Arc::clone(lines);
+        }
+
+        let lines = Arc::new(self.build_detail_lines(w));
+        if let Some(detail) = self.detail.as_ref() {
+            *detail.lines.borrow_mut() = Some((w, note.clone(), Arc::clone(&lines)));
+        }
+        lines
+    }
+
+    fn build_detail_lines(&self, w: usize) -> Vec<Line<'static>> {
+        #[cfg(test)]
+        DETAIL_LINE_BUILDS.with(|count| count.set(count.get() + 1));
         use super::md;
         let st = &self.st;
         let Some(d) = self.detail.as_ref() else {
@@ -202,11 +229,7 @@ impl Model {
         // hint.
         let max = lines.len().saturating_sub(avail);
         let scroll = self.detail.as_ref().map(|d| d.scroll.min(max)).unwrap_or(0);
-        let shown = if lines.len() <= avail {
-            lines
-        } else {
-            lines[scroll..(scroll + avail).min(lines.len())].to_vec()
-        };
+        let shown = lines[scroll..(scroll + avail).min(lines.len())].to_vec();
 
         Clear.render(area, buf);
         // One cell of air at either edge keeps the text off the very
@@ -301,11 +324,18 @@ pub(super) fn framed(
 }
 
 /// Detail is the one issue or pull request the panel is showing, held until
-/// the key that closes it, with the scroll its window is at.
+/// the key that closes it, with the scroll its window is at and the Markdown
+/// lines shared by draws of the same width and note.
 #[derive(Clone)]
 pub struct Detail {
     pub(super) subject: Subject,
     pub(super) scroll: usize,
+    pub(super) lines: RefCell<Option<CachedLines>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static DETAIL_LINE_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Subject is what the detail panel is about. Both kinds share the panel's

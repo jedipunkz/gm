@@ -1157,6 +1157,8 @@ pub fn run(
     let mut timers: Vec<(Instant, Msg)> = Vec::new();
     let mut pending: Vec<Msg> = Vec::new();
     let mut cmds = m.init();
+    // The first frame is mandatory; later frames follow handled messages, not polls.
+    let mut redraw = true;
     loop {
         // Carry out what the last round asked for.
         for cmd in cmds.drain(..) {
@@ -1173,7 +1175,10 @@ pub fn run(
                 }
             }
         }
-        term.draw(&m)?;
+        if redraw {
+            term.draw(&m)?;
+            redraw = false;
+        }
 
         // Wait for a key, a finished task, or the next timer, whichever is
         // first. A task's answer is picked up within a frame.
@@ -1191,6 +1196,7 @@ pub fn run(
         timers = later;
         pending.extend(due.into_iter().map(|(_, msg)| msg));
 
+        redraw |= !pending.is_empty(); // input, task and timer answers can change the screen
         for msg in pending.drain(..) {
             cmds.extend(m.update(msg));
         }

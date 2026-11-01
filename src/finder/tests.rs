@@ -3652,6 +3652,7 @@ fn tiny_terminals_do_not_panic() {
             "A body long enough to fold, and fold again, many times over. ",
         )),
         scroll: 5,
+        lines: std::cell::RefCell::new(None),
     });
     m.over = Overlay::Detail;
     for w in 0..30 {
@@ -3934,6 +3935,37 @@ fn issue_panel_markdown() {
     // under it, naming the chords.
     let bottom = row_text(&screen(&m), m.h - 1);
     assert!(bottom.contains("ctrl+y"), "{bottom:?}");
+}
+
+#[test]
+fn detail_lines_are_cached_until_note_or_width_changes() {
+    let root = TempDir::new();
+    let (mut m, _) = issue_model(&root);
+    m.h = 44;
+    open_issue_list(&mut m);
+    open_issue_panel(&mut m, detail_issue(&[(7, "# title\n\nbody")]).unwrap());
+
+    super::detail::DETAIL_LINE_BUILDS.with(|count| count.set(0));
+    screen(&m);
+    screen(&m); // repeated idle loop draw
+    assert_eq!(
+        super::detail::DETAIL_LINE_BUILDS.with(std::cell::Cell::get),
+        1
+    );
+
+    m.note = "copied".into();
+    screen(&m);
+    assert_eq!(
+        super::detail::DETAIL_LINE_BUILDS.with(std::cell::Cell::get),
+        2
+    );
+
+    m.w += 1;
+    screen(&m);
+    assert_eq!(
+        super::detail::DETAIL_LINE_BUILDS.with(std::cell::Cell::get),
+        3
+    );
 }
 
 // ctrl-b opens the issue in a browser on a thread, and ctrl-y copies its URL
