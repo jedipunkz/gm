@@ -14,6 +14,7 @@ mod branch;
 mod browse;
 mod clipboard;
 mod command;
+mod detail;
 mod info;
 mod input;
 mod issues;
