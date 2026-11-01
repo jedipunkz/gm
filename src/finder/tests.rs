@@ -624,6 +624,24 @@ fn get_leaves_the_finder() {
     );
 }
 
+#[test]
+fn get_refuses_the_look_flag() {
+    let root = TempDir::new();
+    let rs = repos(&root.path(), &["github.com/acme/alpha"]);
+    for flag in ["-l", "--look", "-l=true", "--look=1"] {
+        let mut m = new_model(&rs, "");
+        let cmds = run_slash(&mut m, &format!("/get {flag} acme/x"));
+
+        assert!(cmds.is_empty(), "{flag} left the finder");
+        assert_eq!(m.over, Overlay::None);
+        assert_eq!(m.result.action, Action::None);
+        assert_eq!(
+            m.note,
+            "-l does not apply inside the finder: /get already goes there"
+        );
+    }
+}
+
 // The way out of /dirty: one key, and only once there is nothing left to
 // undo does Esc quit.
 #[test]
