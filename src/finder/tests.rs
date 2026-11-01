@@ -2970,6 +2970,9 @@ fn pull_request(
         fork,
         author: owner.into(),
         head_owner: owner.into(),
+        state: "OPEN".into(),
+        url: format!("https://github.com/acme/alpha/pull/{number}"),
+        ..Default::default()
     }
 }
 
@@ -3001,7 +3004,36 @@ fn pr_model(root: &TempDir) -> (Model, Vec<Repo>) {
             pull_request(7, "Add login", "feat/login", false, false, "acme"),
         ])
     });
+    m.pr_of = Arc::new(|_, n| Ok(pr_in_full(n)));
     (m, rs)
+}
+
+/// pr_in_full is what gh pr view answers for number: the listing's fields,
+/// a body and a comment.
+fn pr_in_full(number: u64) -> PullRequest {
+    PullRequest {
+        body: "Adds the **login** form.".into(),
+        comments: vec![repo::Comment {
+            author: "carol".into(),
+            body: "Looks good.".into(),
+        }],
+        ..pull_request(number, "Add login", "feat/login", false, false, "acme")
+    }
+}
+
+/// open_pr_panel presses enter in the pull request list and feeds gh's view
+/// answer, leaving the panel up.
+fn open_pr_panel(m: &mut Model) {
+    let n = m.current().unwrap().pr.number;
+    let cmds = m.update(key("enter"));
+    assert!(m.busy.contains(&format!("viewing #{n}")), "{:?}", m.busy);
+    assert!(!is_quit(&cmds), "enter in the list left the finder");
+    feed(m, cmds);
+    assert!(
+        m.over == Overlay::Detail,
+        "the panel did not open: {:?}",
+        m.note
+    );
 }
 
 /// open_pr_list presses the key and hands the finder gh's answer.
@@ -3052,7 +3084,7 @@ fn pr_mode() {
     );
     let hints = line_text(&m.help_line(100));
     assert!(
-        hints.contains("enter check out") && hints.contains("ctrl-j/g/esc repos"),
+        hints.contains("enter view") && hints.contains("ctrl-j/g/esc repos"),
         "{hints:?}"
     );
     let pane = lines_text(&m.info_lines(40));
@@ -3062,10 +3094,13 @@ fn pr_mode() {
     // The fork's main is the selected row, and has no worktree of its own.
     assert_eq!(m.current().unwrap().path, "");
 
+    // Enter views; enter in the panel goes to the worktree.
     let mut login = m.clone();
     set_query(&mut login, "login");
+    open_pr_panel(&mut login);
     let cmds = login.update(key("enter"));
     assert!(is_quit(&cmds));
+    assert_eq!(login.over, Overlay::None);
     assert_eq!(
         login.result,
         Outcome {
@@ -3156,6 +3191,130 @@ fn pr_mode_finds_a_fork_checkout_by_place() {
     assert_eq!(m.current().unwrap().path, "");
 }
 
+// The pane beside the list shows the description the listing carried, as
+// Markdown, ahead of the checkout's fields.
+#[test]
+fn pr_pane_shows_the_body() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    m.prs_of = Arc::new(|_| {
+        let mut p = pull_request(7, "Add login", "feat/login", false, false, "acme");
+        p.body = "# Why\n\nthe form\nis missing".into();
+        Ok(vec![p])
+    });
+    open_pr_list(&mut m);
+    let pane = lines_text(&m.info_lines(40));
+    for s in [
+        "body",
+        "Why",
+        "the form\nis missing",
+        "https://github.com/acme/alpha/pull/7",
+    ] {
+        assert!(pane.contains(s), "{s:?}:\n{pane}");
+    }
+    let body = pane.find("body").unwrap();
+    let path = pane.find("\npath\n").expect("no path field");
+    assert!(body < path, "the body came after the path:\n{pane}");
+}
+
+// Enter opens the panel: the description and comments are drawn, the hint
+// line leads with check out, q goes back to the list, and nothing is checked
+// out until the panel's own enter.
+#[test]
+fn pr_panel() {
+    let root = TempDir::new();
+    let (mut m, rs) = pr_model(&root);
+    (m.w, m.h) = (100, 30);
+    open_pr_list(&mut m);
+    // The fork's main, which has no worktree yet.
+    open_pr_panel(&mut m);
+    let panel = text(&screen(&m));
+    for s in [
+        "Add login",
+        "#9 [OPEN]",
+        "login",
+        "Looks good.",
+        "─ carol ",
+        "none yet; enter makes one",
+        rs[1].rel.as_str(),
+    ] {
+        assert!(panel.contains(s), "{s:?}:\n{panel}");
+    }
+    let bottom = row_text(&screen(&m), m.h - 1);
+    assert!(
+        bottom.trim_start().starts_with("enter check out"),
+        "{bottom:?}"
+    );
+
+    // q closes the panel back onto the list, checking nothing out.
+    let cmds = m.update(key("q"));
+    assert!(cmds.is_empty() && m.over == Overlay::None && m.detail.is_none());
+    assert_eq!(m.mode, Mode::Prs);
+
+    // ctrl-b and ctrl-y act on the pull request's URL.
+    let copied = Arc::new(Mutex::new(Vec::new()));
+    let had = copied.clone();
+    m.copy_url = Arc::new(move |u| {
+        copied.lock().unwrap().push(u.to_string());
+        Ok(())
+    });
+    open_pr_panel(&mut m);
+    m.update(key("ctrl+y"));
+    assert_eq!(
+        had.lock().unwrap().last().map(String::as_str),
+        Some("https://github.com/acme/alpha/pull/9")
+    );
+    assert!(m.note.contains("pull request URL copied"), "{:?}", m.note);
+}
+
+// The panel's enter checks out the pull request the panel shows, even when
+// the cursor moved while gh was answering.
+#[test]
+fn pr_panel_checks_out_what_it_shows() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    open_pr_list(&mut m);
+    set_query(&mut m, "login");
+    let cmds = m.update(key("enter"));
+    set_query(&mut m, "typo");
+    feed(&mut m, cmds);
+    assert_eq!(m.over, Overlay::Detail, "{:?}", m.note);
+    let cmds = m.update(key("enter"));
+    assert!(is_quit(&cmds), "{:?}", m.note);
+    assert_eq!(m.result.arg, "/tmp/wt/alpha-login");
+}
+
+// gh failing to read the pull request in full still opens the panel, on
+// what the listing carried, with gh's reason in the title's place: the
+// checkout behind the panel's enter stays reachable.
+#[test]
+fn pr_panel_opens_on_the_listing_when_gh_fails() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    m.pr_of = Arc::new(|_, _| Err("gh pr view: timed out".into()));
+    open_pr_list(&mut m);
+    set_query(&mut m, "login");
+    open_pr_panel(&mut m);
+    let panel = text(&screen(&m));
+    assert!(panel.contains("gh pr view: timed out"), "{panel}");
+    let cmds = m.update(key("enter"));
+    assert!(is_quit(&cmds) && m.result.arg == "/tmp/wt/alpha-login");
+}
+
+// An answer about a list the user has left is dropped, panel and all.
+#[test]
+fn pr_panel_drops_a_stale_answer() {
+    let root = TempDir::new();
+    let (mut m, _) = pr_model(&root);
+    open_pr_list(&mut m);
+    let cmds = m.update(key("enter"));
+    m.update(key("ctrl+j"));
+    assert_eq!(m.mode, Mode::Repos);
+    feed(&mut m, cmds);
+    assert!(m.over == Overlay::None && m.detail.is_none());
+    assert_eq!(m.busy, "");
+}
+
 #[test]
 fn prs_command() {
     let root = TempDir::new();
@@ -3234,7 +3393,9 @@ fn pr_check_out() {
             "acme",
         )])
     });
+    m.pr_of = Arc::new(|_, n| Ok(pr_in_full(n)));
     open_pr_list(&mut m);
+    open_pr_panel(&mut m);
     let cmds = m.update(key("enter"));
     let msg =
         answer(cmds).unwrap_or_else(|| panic!("Enter did not start the checkout: {:?}", m.note));
@@ -3412,13 +3573,13 @@ fn tiny_terminals_do_not_panic() {
     // And with the issue's panel up, detail and scroll included: it is
     // nearly the whole screen, so small terminals clip it hardest.
     m.detail = Some(super::issues::Detail {
-        issue: issue(
+        subject: super::issues::Subject::Issue(issue(
             7,
             "A body long enough to fold, and fold again, many times over. ",
-        ),
+        )),
         scroll: 5,
     });
-    m.over = Overlay::Issue;
+    m.over = Overlay::Detail;
     for w in 0..30 {
         for h in 0..12 {
             (m.w, m.h) = (w, h);
@@ -3499,7 +3660,7 @@ fn open_issue_panel(m: &mut Model, detail: Issue) {
     assert!(m.busy.contains("viewing #7"), "{:?}", m.busy);
     feed(m, cmds);
     assert!(
-        m.over == Overlay::Issue,
+        m.over == Overlay::Detail,
         "the panel did not open: {:?}",
         m.note
     );

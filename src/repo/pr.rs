@@ -4,10 +4,13 @@ use std::time::Duration;
 
 use super::deadline::{FETCH_TIMEOUT, run_deadline};
 use super::git::{failure, quiet_result};
+use super::issue::{Comment, read_comments};
 use crate::{Error, Result, err, paths};
 
-/// PullRequest is an open pull request, as much of it as a list row and the
-/// details pane need.
+/// PullRequest is an open pull request, as much of it as a list row, the
+/// details pane and the detail panel need. comments stay empty on a listing:
+/// they are what the detail panel is for. The body comes with the listing,
+/// for the pane beside the list.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PullRequest {
     pub number: u64,
@@ -17,6 +20,10 @@ pub struct PullRequest {
     pub fork: bool,         // isCrossRepository
     pub author: String,     // author.login
     pub head_owner: String, // headRepositoryOwner.login
+    pub state: String,      // OPEN, CLOSED, MERGED
+    pub url: String,
+    pub body: String,
+    pub comments: Vec<Comment>,
 }
 
 impl PullRequest {
@@ -64,6 +71,14 @@ pub(crate) const PR_LIMIT: usize = 100;
 /// helper is hung, not waiting, and the deadline turns it into an error.
 pub(crate) const GH_LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const GH_CHECKOUT_TIMEOUT: Duration = FETCH_TIMEOUT;
+/// The detail view moves nothing but words, so it waits as long as the
+/// listing does.
+const PR_VIEW_TIMEOUT: Duration = GH_LIST_TIMEOUT;
+
+/// PR_LIST_FIELDS is what the listing asks gh for; the detail view asks for
+/// the same and the comments, so both go through the same reader.
+const PR_LIST_FIELDS: &str =
+    "number,title,headRefName,isDraft,isCrossRepository,author,headRepositoryOwner,state,url,body";
 
 pub(crate) fn gh_command(program: &OsStr) -> Command {
     let command = Command::new(program);
@@ -87,7 +102,7 @@ fn pull_requests_with(gh: &OsStr, timeout: Duration, dir: &str) -> Result<Vec<Pu
     let mut cmd = gh_command(gh);
     let limit = PR_LIMIT.to_string();
     cmd.args(["pr", "list", "--state", "open", "--limit", &limit, "--json"])
-        .arg("number,title,headRefName,isDraft,isCrossRepository,author,headRepositoryOwner")
+        .arg(PR_LIST_FIELDS)
         .current_dir(dir)
         .env("GH_PROMPT_DISABLED", "1");
     let out = run_deadline(&mut cmd, timeout, "gh pr list", gh_missing)?;
@@ -97,31 +112,67 @@ fn pull_requests_with(gh: &OsStr, timeout: Duration, dir: &str) -> Result<Vec<Pu
     parse_pull_requests(&out.stdout)
 }
 
+/// pull_request asks gh for one pull request in full: its body and its
+/// comments.
+pub fn pull_request(dir: &str, number: u64) -> Result<PullRequest> {
+    pull_request_with(OsStr::new("gh"), PR_VIEW_TIMEOUT, dir, number)
+}
+
+fn pull_request_with(gh: &OsStr, timeout: Duration, dir: &str, number: u64) -> Result<PullRequest> {
+    let mut cmd = gh_command(gh);
+    let n = number.to_string();
+    cmd.args(["pr", "view", &n, "--json"])
+        .arg(format!("{PR_LIST_FIELDS},comments"))
+        .current_dir(dir)
+        .env("GH_PROMPT_DISABLED", "1");
+    let out = run_deadline(&mut cmd, timeout, "gh pr view", gh_missing)?;
+    if !out.status.success() {
+        return Err(failure(&out.stderr, &out.status));
+    }
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).map_err(|e| err!("gh pr view: {e}"))?;
+    if !v.is_object() {
+        return Err(err!("gh pr view: not a pull request"));
+    }
+    let pr = read_pull_request(&v);
+    // The panel's enter checks out the pull request it shows, so an answer
+    // about another one is a defect, not something to show.
+    if pr.number != number {
+        return Err(err!("gh pr view: asked for #{n}, got #{}", pr.number));
+    }
+    Ok(pr)
+}
+
 pub fn parse_pull_requests(out: &[u8]) -> Result<Vec<PullRequest>> {
     let v: serde_json::Value = serde_json::from_slice(out).map_err(|e| err!("gh pr list: {e}"))?;
     let list = v.as_array().ok_or_else(|| err!("gh pr list: not a list"))?;
-    Ok(list
-        .iter()
-        .map(|p| {
-            let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let b = |k: &str| p.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
-            let login = |k: &str| {
-                p.pointer(&format!("/{k}/login"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string()
-            };
-            PullRequest {
-                number: p.get("number").and_then(|v| v.as_u64()).unwrap_or(0),
-                title: s("title"),
-                branch: s("headRefName"),
-                draft: b("isDraft"),
-                fork: b("isCrossRepository"),
-                author: login("author"),
-                head_owner: login("headRepositoryOwner"),
-            }
-        })
-        .collect())
+    Ok(list.iter().map(read_pull_request).collect())
+}
+
+/// read_pull_request takes one pull request out of gh's JSON, whichever
+/// command it answered.
+fn read_pull_request(p: &serde_json::Value) -> PullRequest {
+    let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let b = |k: &str| p.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
+    let login = |k: &str| {
+        p.pointer(&format!("/{k}/login"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    PullRequest {
+        number: p.get("number").and_then(|v| v.as_u64()).unwrap_or(0),
+        title: s("title"),
+        branch: s("headRefName"),
+        draft: b("isDraft"),
+        fork: b("isCrossRepository"),
+        author: login("author"),
+        head_owner: login("headRepositoryOwner"),
+        state: s("state"),
+        url: s("url"),
+        body: s("body"),
+        comments: read_comments(p),
+    }
 }
 
 /// check_out_pull_request has gh check the pull request out as a worktree at
@@ -178,7 +229,8 @@ mod tests {
     fn parse_pull_requests_reads_gh() {
         let out = br#"[
             {"number":7,"title":"Add login","headRefName":"feat/login","isDraft":false,"isCrossRepository":false,
-             "author":{"login":"alice"},"headRepositoryOwner":{"login":"acme"}},
+             "author":{"login":"alice"},"headRepositoryOwner":{"login":"acme"},"state":"OPEN",
+             "url":"https://github.com/acme/alpha/pull/7","body":"adds the form"},
             {"number":9,"title":"Fix typo","headRefName":"main","isDraft":true,"isCrossRepository":true,
              "author":{"login":"bob"},"headRepositoryOwner":{"login":"bob"}}
         ]"#;
@@ -195,6 +247,49 @@ mod tests {
         assert_eq!(prs[0].worktree_name(), "feat/login");
         assert_eq!(prs[1].worktree_name(), ".forks/bob/main");
         assert_eq!(prs[1].author, "bob");
+        assert_eq!(prs[0].url, "https://github.com/acme/alpha/pull/7");
+        assert_eq!(
+            (prs[0].state.as_str(), prs[0].body.as_str()),
+            ("OPEN", "adds the form")
+        );
+        assert!(prs[0].comments.is_empty(), "a listing has no comments");
+    }
+
+    // gh pr view is asked for the listing's fields and the comments, and its
+    // answer is read the way the listing's is.
+    #[test]
+    fn pull_request_reads_gh_pr_view() {
+        let tmp = TempDir::new();
+        let gh = script(
+            &tmp.path(),
+            r#"#!/bin/sh
+echo "$@" > "$0.args"
+echo '{"number":7,"title":"Add login","headRefName":"feat/login","state":"OPEN",
+ "url":"https://github.com/acme/alpha/pull/7","body":"adds the form",
+ "comments":[{"author":{"login":"carol"},"body":"looks good"}]}'
+"#,
+        );
+        let repo = tmp.join("repo");
+        crate::testutil::mkdir(&repo);
+        let pr = pull_request_with(OsStr::new(&gh), Duration::from_secs(10), &repo, 7).unwrap();
+        assert_eq!((pr.number, pr.branch.as_str()), (7, "feat/login"));
+        assert_eq!(pr.body, "adds the form");
+        assert_eq!(pr.comments.len(), 1);
+        assert_eq!(pr.comments[0].author, "carol");
+        let args = std::fs::read_to_string(format!("{gh}.args")).unwrap();
+        assert_eq!(
+            args.trim(),
+            format!("pr view 7 --json {PR_LIST_FIELDS},comments")
+        );
+
+        // An answer about another pull request is refused: the panel's enter
+        // would check out the wrong one.
+        let e = pull_request_with(OsStr::new(&gh), Duration::from_secs(10), &repo, 8).unwrap_err();
+        assert!(e.0.contains("asked for #8, got #7"), "{e}");
+
+        let gh = script(&tmp.path(), "#!/bin/sh\necho '[]'\n");
+        let e = pull_request_with(OsStr::new(&gh), Duration::from_secs(10), &repo, 7).unwrap_err();
+        assert!(e.0.contains("not a pull request"), "{e}");
     }
 
     fn script(dir: &str, body: &str) -> String {
@@ -274,6 +369,8 @@ mod tests {
         let repo = tmp.join("repo");
         git_repo(&repo);
         let e = pull_requests_with(OsStr::new(&gh), Duration::from_secs(10), &repo).unwrap_err();
+        assert!(e.0.contains("not logged in"), "{e}");
+        let e = pull_request_with(OsStr::new(&gh), Duration::from_secs(10), &repo, 7).unwrap_err();
         assert!(e.0.contains("not logged in"), "{e}");
 
         // A gh that is not there at all is named as the thing to install.

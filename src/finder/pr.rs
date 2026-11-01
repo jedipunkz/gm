@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use super::info::tildify;
+use super::issues::{Detail, Subject};
 use super::list::Item;
-use super::overlay::{Change, Pending};
+use super::overlay::{Change, Overlay, Pending};
 use super::worktree::Mode;
-use super::{Action, Cmd, Model, Msg, Outcome, Prs};
+use super::{Action, Cmd, Model, Msg, Outcome, PrDetail, Prs};
 use crate::repo::{self, PullRequest, Tree, Worktree};
 
 impl Model {
@@ -85,12 +86,84 @@ impl Model {
         self.load_status().into_iter().collect()
     }
 
-    /// check_out_pr is Enter in the pull request list: go to the pull
-    /// request's worktree, having gh make it first when there is none.
-    pub(super) fn check_out_pr(&mut self) -> Vec<Cmd> {
+    /// view_pr is Enter in the pull request list: gh is asked for the one
+    /// pull request in full, off the UI thread, and the panel opens once it
+    /// is back. Checking it out is the panel's enter, not the list's.
+    pub(super) fn view_pr(&mut self) -> Vec<Cmd> {
         let Some(it) = self.current().cloned() else {
             return vec![];
         };
+        let n = it.pr.number;
+        let (busy_tag, busy) = self.start_busy(&format!("viewing #{n}…"));
+        let (pr_of, path) = (self.pr_of.clone(), self.repo_at.clone());
+        vec![
+            busy,
+            Cmd::Task(Box::new(move || {
+                let pr = pr_of(&path, n);
+                Some(Msg::PrDetail(PrDetail {
+                    path,
+                    busy_tag,
+                    number: n,
+                    pr,
+                }))
+            })),
+        ]
+    }
+
+    /// show_pr_detail puts the panel up, if the answer is still about the
+    /// pull request list on screen. When gh fails the panel still opens, on
+    /// what the listing carried, with gh's reason where the title goes:
+    /// checking out is behind the panel's enter, and a failed read of the
+    /// comments must not take that away.
+    pub(super) fn show_pr_detail(&mut self, msg: PrDetail) -> Vec<Cmd> {
+        self.finish_busy(msg.busy_tag);
+        if self.mode != Mode::Prs || msg.path != self.repo_at {
+            return vec![];
+        }
+        let (pr, note) = match msg.pr {
+            Ok(pr) => (pr, String::new()),
+            Err(e) => match self.pr_row(msg.number) {
+                Some(it) => (it.pr.clone(), e.0),
+                None => {
+                    self.note = e.0;
+                    return vec![];
+                }
+            },
+        };
+        self.detail = Some(Detail {
+            subject: Subject::Pr(pr),
+            scroll: 0,
+        });
+        self.over = Overlay::Detail;
+        self.note = note;
+        vec![]
+    }
+
+    /// pr_row is the pull request list's row for number. The panel goes by
+    /// number, not by the cursor: the cursor can move while gh is answering.
+    pub(super) fn pr_row(&self, number: u64) -> Option<&Item> {
+        if self.mode != Mode::Prs {
+            return None;
+        }
+        self.all.iter().find(|it| it.pr.number == number)
+    }
+
+    /// check_out_shown_pr is Enter in a pull request's detail panel: the
+    /// panel comes down and the pull request it showed is checked out.
+    pub(super) fn check_out_shown_pr(&mut self) -> Vec<Cmd> {
+        let Some(n) = self.detail.as_ref().map(|d| d.subject.number()) else {
+            return vec![];
+        };
+        let Some(it) = self.pr_row(n).cloned() else {
+            return vec![];
+        };
+        self.close_detail();
+        self.check_out_pr(it)
+    }
+
+    /// check_out_pr goes to the pull request's worktree, having gh make it
+    /// first when there is none.
+    fn check_out_pr(&mut self, it: Item) -> Vec<Cmd> {
         if !it.path.is_empty() {
             self.result = Outcome {
                 action: Action::Jump,

@@ -14,7 +14,7 @@ pub enum Overlay {
     None,
     Help,
     Confirm,
-    Issue, // the detail panel of one issue
+    Detail, // the detail panel of one issue or pull request
 }
 
 /// Change is what a confirmation will carry out. It is not an Action: none of
@@ -391,12 +391,19 @@ impl Model {
             Overlay::Help if matches!(name, "q" | "esc" | "ctrl+c" | "enter") => {
                 self.over = Overlay::None
             }
-            Overlay::Issue => {
-                // The issue's detail panel answers for itself: q closes it,
-                // the scroll keys window its text, and its two chords act on
-                // the URL the issue lives at. j and k scroll the way vim
-                // moves, since the panel has no box to type a query into.
+            Overlay::Detail => {
+                // The detail panel answers for itself: q closes it, the
+                // scroll keys window its text, and its two chords act on the
+                // URL the issue or pull request lives at. j and k scroll the
+                // way vim moves, since the panel has no box to type a query
+                // into. Enter on a pull request checks it out; on an issue,
+                // which has nothing to check out, it closes the panel.
+                let is_pr = matches!(
+                    self.detail.as_ref().map(|d| &d.subject),
+                    Some(super::issues::Subject::Pr(_))
+                );
                 match name {
+                    "enter" if is_pr => return self.check_out_shown_pr(),
                     "q" | "esc" | "ctrl+c" | "enter" | "ctrl+g" => self.close_detail(),
                     "up" | "k" => self.scroll_detail(false, false),
                     "down" | "j" => self.scroll_detail(false, true),
@@ -409,8 +416,8 @@ impl Model {
                     "b" => self.scroll_detail(true, false),
                     "pgup" => self.scroll_detail(true, false),
                     "pgdown" => self.scroll_detail(true, true),
-                    "ctrl+b" => return self.open_issue_in_browser(),
-                    "ctrl+y" => return self.copy_issue_url(),
+                    "ctrl+b" => return self.open_detail_in_browser(),
+                    "ctrl+y" => return self.copy_detail_url(),
                     _ => {}
                 }
             }

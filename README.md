@@ -62,7 +62,7 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 | Repositories | `gm` / `Ctrl-G` | Clones under the roots | Go there |
 | Worktrees | `Ctrl-W` | Worktrees of the selected repository | Go there |
 | Branches | `Ctrl-L` | Branches of the selected repository | Go to its worktree, created if missing |
-| Pull requests | `Ctrl-J` | Open pull requests of the selected repository | Go to its worktree, created if missing |
+| Pull requests | `Ctrl-J` | Open pull requests of the selected repository | Read one full screen, then `Enter` again goes to its worktree: see the [pull request list](#pull-request-list) |
 | Issues | `Ctrl-[` | Open issues of the selected repository | Read one full screen: see the [issue list](#issue-list) |
 
 
@@ -148,7 +148,9 @@ Then `gm get jedipunkz/gm`, press `Ctrl-G`, type, `Enter`: the shell `cd`s there
 ### Pull request list
 
 - Open pull requests, newest at the bottom, drafts marked `[draft]`. Type `#42` to find one by number.
-- `Enter`: go to its worktree. If none, `gh pr checkout` creates it; `gh` names the branch and, for a fork, sets where it pushes.
+- The pane on the right shows the selected pull request's description, markdown drawn.
+- `Enter` opens the pull request full screen, the way the [issue list](#issue-list) does: its branch, where its worktree is, the description and each comment. The same keys scroll, browse and copy its URL.
+- `Enter` in the detail view: go to its worktree. If none, `gh pr checkout` creates it; `gh` names the branch and, for a fork, sets where it pushes. `q` / `Esc` go back to the list.
 - The worktree is named after the head branch.
 
 ### Issue list

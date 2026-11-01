@@ -201,6 +201,7 @@ pub enum Msg {
     Prs(Prs),                       // gh's answer about one repository
     Issues(Issues),                 // gh's answer about one repository's issues
     IssueDetail(IssueDetail),       // gh's answer about the full text of one issue
+    PrDetail(PrDetail),             // gh's answer about the full text of one pull request
     RemoveDetail(RemoveDetail),     // what a /remove waiting on git would lose
     ExpireDetail(ExpireDetail),     // what /expire waiting on git would remove
     RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
@@ -253,6 +254,14 @@ pub struct IssueDetail {
     issue: Result<crate::repo::Issue>,
 }
 
+/// PrDetail carries the full text of one pull request.
+pub struct PrDetail {
+    path: String, // the repository it was asked about
+    busy_tag: u64,
+    number: u64, // the pull request it was asked about, kept for when gh fails
+    pr: Result<PullRequest>,
+}
+
 /// RemoveDetail is git's account of what a /remove would lose, for the
 /// question already on screen.
 pub struct RemoveDetail {
@@ -297,6 +306,8 @@ type StateScan = Arc<dyn Fn(&[String]) -> HashMap<String, repo::State> + Send + 
 /// IssueOf asks gh for one issue's full text, the repository dir and the
 /// number in hand; the tests stand in for it.
 type IssueOf = Arc<dyn Fn(&str, u64) -> Result<crate::repo::Issue> + Send + Sync>;
+/// PrOf asks gh for one pull request's full text, the same way.
+type PrOf = Arc<dyn Fn(&str, u64) -> Result<PullRequest> + Send + Sync>;
 /// CopyOf puts a string on the clipboard the terminal remembers.
 type CopyOf = Arc<dyn Fn(&str) -> std::io::Result<()> + Send + Sync>;
 
@@ -324,8 +335,8 @@ pub struct Model {
     query: String, // the query the view was built from; a command is not one
     over: Overlay, // the panel drawn over the list, if any
     ask: Pending,  // what a confirmation is waiting on
-    /// detail is the one issue the panel is showing, held while Overlay::Issue
-    /// is up.
+    /// detail is the one issue or pull request the panel is showing, held
+    /// while Overlay::Detail is up.
     detail: Option<issues::Detail>,
     /// repo_states holds the bulk status scan once one of the repository
     /// filters needs it. Both filters share the same result.
@@ -345,6 +356,8 @@ pub struct Model {
     branches_of: Seam<Result<Vec<Branch>>>,
     remote_branches_of: Seam<(Vec<Branch>, Option<Error>)>,
     prs_of: Seam<Result<Vec<PullRequest>>>,
+    /// pr_of reads one pull request in full, for its detail panel.
+    pr_of: PrOf,
     /// issues_of lists a repository's open issues, issue_of reads one in
     /// full; both gh's to answer, so the tests can stand in for them.
     issues_of: Seam<Result<Vec<crate::repo::Issue>>>,
@@ -420,6 +433,7 @@ impl Model {
             branches_of: Arc::new(repo::branches),
             remote_branches_of: Arc::new(repo::remote_branches),
             prs_of: Arc::new(repo::pull_requests),
+            pr_of: Arc::new(repo::pull_request),
             issues_of: Arc::new(repo::issues),
             issue_of: Arc::new(repo::issue),
             state_scan_of: Arc::new(|ps: &[String]| {
@@ -497,6 +511,7 @@ impl Model {
             Msg::Prs(p) => self.show_prs(p),
             Msg::Issues(i) => self.show_issues(i),
             Msg::IssueDetail(d) => self.show_issue_detail(d),
+            Msg::PrDetail(d) => self.show_pr_detail(d),
             Msg::RemoveDetail(d) => self.fill_detail(d),
             Msg::ExpireDetail(d) => self.fill_expire_detail(d),
             Msg::RepoStates(tag, states) => {
@@ -763,7 +778,7 @@ impl Model {
                 }
                 match self.mode {
                     Mode::Branches => return self.check_out(),
-                    Mode::Prs => return self.check_out_pr(),
+                    Mode::Prs => return self.view_pr(),
                     Mode::Issues => return self.view_issue(),
                     _ => {}
                 }
@@ -959,7 +974,7 @@ impl Model {
             ],
             Mode::Prs => vec![
                 mv,
-                ("enter".into(), "check out"),
+                ("enter".into(), "view"),
                 (format!("{pr}/g/esc"), "repos"),
                 (rm, "browse"),
                 (wt, "worktrees"),
@@ -1083,7 +1098,7 @@ impl Model {
         match self.over {
             Overlay::Help => self.overlay(buf, self.help_box()),
             Overlay::Confirm => self.overlay(buf, self.confirm_box()),
-            Overlay::Issue => self.render_issue(buf),
+            Overlay::Detail => self.render_detail(buf),
             Overlay::None => {}
         }
     }
