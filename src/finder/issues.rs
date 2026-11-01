@@ -108,6 +108,7 @@ impl Model {
                 self.detail = Some(Detail {
                     subject: Subject::Issue(issue),
                     scroll: 0,
+                    lines: std::cell::RefCell::new(None),
                 });
                 self.over = Overlay::Detail;
                 self.note.clear();
