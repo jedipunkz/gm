@@ -17,18 +17,17 @@ pub(crate) fn git_command() -> Command {
 }
 
 /// git_command_with is git_command for a caller that supplies the executable.
+/// Disabling fsmonitor keeps commands gm starts from executing a repository's
+/// own hook while reading its status.
 pub(crate) fn git_command_with(program: &OsStr) -> Command {
     #[cfg(test)]
     if program == OsStr::new("git") {
         GIT_SPAWNS.fetch_add(1, Ordering::Relaxed);
     }
-    let command = Command::new(program);
+    let mut command = Command::new(program);
+    command.args(["-c", "core.fsmonitor=false"]);
     #[cfg(test)]
-    let command = {
-        let mut command = command;
-        isolate_git_config(&mut command);
-        command
-    };
+    isolate_git_config(&mut command);
     command
 }
 
@@ -1167,6 +1166,36 @@ detached
         assert_eq!(got[&clean].dirty, 0);
         assert_eq!(got[&plain].dirty, 0);
         assert!(status_map(&[], status_of).is_empty());
+    }
+
+    #[test]
+    fn read_only_status_does_not_run_a_repository_fsmonitor() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::new();
+        let dir = tmp.join("repo");
+        let marker = tmp.join("ran-fsmonitor");
+        let hook = tmp.join("fsmonitor");
+        git_repo(&dir);
+        write(
+            &hook,
+            &format!("#!/bin/sh\n/usr/bin/touch '{}'\nexit 1\n", marker),
+        );
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::testutil::git(&dir, &["config", "core.fsmonitor", &hook]);
+
+        assert!(!crate::testutil::exists(&marker));
+        let _ = status_of(&dir);
+        assert!(
+            !crate::testutil::exists(&marker),
+            "status_of ran the repository's fsmonitor"
+        );
+
+        let _ = super::describe(&dir);
+        assert!(
+            !crate::testutil::exists(&marker),
+            "describe ran the repository's fsmonitor"
+        );
     }
 
     // The bug where /dirty hid a repository whose only work was in one of its
