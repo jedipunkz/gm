@@ -129,19 +129,29 @@ pub fn git_message(out: &[u8]) -> String {
     first.to_string()
 }
 
-/// valid_branch reports whether git would take this as a branch name. gm asks
-/// before it builds a path out of one: a name like "../.." would otherwise
-/// make a directory outside the tree before git ever saw it.
+/// valid_branch checks git's documented branch-name rules without starting a
+/// process. gm asks before it builds a path out of one: a name like "../.."
+/// would otherwise make a directory outside the tree before git ever saw it.
 pub fn valid_branch(name: &str) -> bool {
-    if name.is_empty() || name.starts_with('-') || name.contains("..") {
+    if name.is_empty()
+        || name.starts_with('-')
+        || name.starts_with('/')
+        || name.ends_with('/')
+        || name.contains("//")
+        || name.contains("..")
+        || name.contains("@{")
+    {
         return false;
     }
-    git_command()
-        .args(["check-ref-format", "--branch", name])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    name.split('/').all(|part| {
+        !part.is_empty()
+            && !part.starts_with('.')
+            && !part.ends_with('.')
+            && !part.ends_with(".lock")
+            && !part
+                .bytes()
+                .any(|b| b <= b' ' || b == 0x7f || b"~^:?*[\\".contains(&b))
+    })
 }
 
 /// git_in runs git inside dir and returns its trimmed output.
@@ -1235,19 +1245,36 @@ detached
 
     #[test]
     fn valid_branch_refuses_what_git_would() {
-        for ok in ["main", "feat/login", "release-1.2"] {
-            assert!(valid_branch(ok), "{ok}");
-        }
-        for bad in [
+        for name in [
+            "main",
+            "feat/login",
+            "release-1.2",
+            "équipe/été",
+            "a.b",
             "",
             "-force",
+            "@",
             "../../escaped",
             "a..b",
             "feat login",
             "~x",
             "x:y",
+            "a//b",
+            "/main",
+            "main/",
+            ".hidden",
+            "branch.lock",
+            "a@{b",
+            "line\nfeed",
         ] {
-            assert!(!valid_branch(bad), "{bad}");
+            let git_accepts = git_command()
+                .args(["check-ref-format", "--branch", name])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success();
+            assert_eq!(valid_branch(name), git_accepts, "{name:?}");
         }
 
         // And nothing is created on the way to finding out.

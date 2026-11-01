@@ -1,7 +1,7 @@
 use super::info::tildify;
 use super::overlay::{Change, Overlay, Pending};
 use super::worktree::Mode;
-use super::{Action, Cmd, Model, Msg, Outcome, RemoveDetail};
+use super::{Action, Cmd, ConfirmDetail, Model, Msg, Outcome, RemoveDetail};
 use crate::plural;
 use crate::repo;
 
@@ -79,28 +79,31 @@ pub const COMMANDS: &[Command] = &[
                 m.note = "/create --ssh needs a repository".into();
                 return vec![];
             }
-            let u = match repo::normalize_url(arg, ssh) {
-                Ok(u) => u,
-                Err(e) => {
-                    m.note = e.0;
-                    return vec![];
-                }
-            };
-            let rel = repo::rel_path_of(&u);
-            // Asked now, so the panel never offers to make a second copy.
-            if let Err(e) = m.tree.refuse_existing(&rel) {
-                m.note = e.0;
-                return vec![];
-            }
-            let dst = m.tree.path_for(&rel);
-            m.confirm(Pending {
+            let reference = arg.to_string();
+            let tree = m.tree.clone();
+            let (busy_tag, busy) = m.start_busy("resolving repository…");
+            let mut cmds = m.confirm(Pending {
                 kind: Change::Create,
                 arg: arg.into(),
                 ssh,
                 title: "create repository".into(),
-                detail: vec![tildify(&dst), format!("origin {u}")],
+                detail: vec!["resolving repository…".into()],
+                wait: Some(busy_tag),
                 ..Default::default()
-            })
+            });
+            cmds.push(busy);
+            cmds.push(Cmd::Task(Box::new(move || {
+                let result = (|| {
+                    let u = repo::normalize_url(&reference, ssh)?;
+                    let rel = repo::rel_path_of(&u);
+                    // The question must not offer to create a second copy.
+                    tree.refuse_existing(&rel)?;
+                    let dst = tree.path_for(&rel);
+                    Ok(vec![tildify(&dst), format!("origin {u}")])
+                })();
+                Some(Msg::ConfirmDetail(ConfirmDetail { busy_tag, result }))
+            })));
+            cmds
         },
     },
     Command {

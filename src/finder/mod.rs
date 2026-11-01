@@ -203,6 +203,7 @@ pub enum Msg {
     Issues(Issues),                 // gh's answer about one repository's issues
     IssueDetail(IssueDetail),       // gh's answer about the full text of one issue
     PrDetail(PrDetail),             // gh's answer about the full text of one pull request
+    ConfirmDetail(ConfirmDetail),   // a branch or repository check for a question
     RemoveDetail(RemoveDetail),     // what a /remove waiting on git would lose
     ExpireDetail(ExpireDetail),     // what /expire waiting on git would remove
     RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
@@ -261,6 +262,12 @@ pub struct PrDetail {
     busy_tag: u64,
     number: u64, // the pull request it was asked about, kept for when gh fails
     pr: Result<PullRequest>,
+}
+
+/// ConfirmDetail carries work a confirmation needs before y can answer it.
+pub struct ConfirmDetail {
+    busy_tag: u64,
+    result: Result<Vec<String>>,
 }
 
 /// RemoveDetail is git's account of what a /remove would lose, for the
@@ -513,6 +520,7 @@ impl Model {
             Msg::Issues(i) => self.show_issues(i),
             Msg::IssueDetail(d) => self.show_issue_detail(d),
             Msg::PrDetail(d) => self.show_pr_detail(d),
+            Msg::ConfirmDetail(d) => self.fill_confirm_detail(d),
             Msg::RemoveDetail(d) => self.fill_detail(d),
             Msg::ExpireDetail(d) => self.fill_expire_detail(d),
             Msg::RepoStates(tag, states) => {

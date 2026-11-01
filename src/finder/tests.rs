@@ -151,7 +151,8 @@ fn slash_commands_answer_their_own_edges() {
 
     run_slash(&mut m, "/create --ssh");
     assert_eq!(m.note, "/create --ssh needs a repository", "{}", m.note);
-    run_slash(&mut m, "/create https://ho\u{7}st/x");
+    let cmds = run_slash(&mut m, "/create https://ho\u{7}st/x");
+    feed(&mut m, cmds);
     assert!(m.note.contains("invalid character"), "{}", m.note);
 
     // Branch mode: /remove applies to repositories and worktrees.
@@ -1285,7 +1286,8 @@ fn a_repository_created_under_a_filter_is_scanned() {
     feed(&mut m, cmds);
     dirty_everywhere(&mut m);
 
-    run_slash(&mut m, "/create acme/delta");
+    let cmds = run_slash(&mut m, "/create acme/delta");
+    feed(&mut m, cmds);
     let cmds = m.update(ch('y'));
     let rescan = feed(&mut m, cmds);
     // Until git has answered for it, the new row is not hidden.
@@ -1588,8 +1590,10 @@ fn confirm_create() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     (m.w, m.h) = (90, 16);
-    run_slash(&mut m, "/create acme/bravo");
+    let cmds = run_slash(&mut m, "/create acme/bravo");
     assert_eq!(m.over, Overlay::Confirm);
+    assert!(m.ask.wait.is_some());
+    feed(&mut m, cmds);
     assert_eq!(m.ask.arg, "acme/bravo");
     let view = view_text(&m);
     for want in ["create", "origin https://github.com/acme/bravo"] {
@@ -1620,8 +1624,9 @@ fn confirm_create_over_ssh() {
     run_slash(&mut m, "/create --ssh");
     assert!(m.note.contains("needs a repository"), "{:?}", m.note);
 
-    run_slash(&mut m, "/create --ssh acme/bravo");
+    let cmds = run_slash(&mut m, "/create --ssh acme/bravo");
     assert_eq!(m.over, Overlay::Confirm);
+    feed(&mut m, cmds);
     assert_eq!(m.ask.arg, "acme/bravo");
     let view = view_text(&m);
     assert!(
@@ -1655,7 +1660,8 @@ fn create_refuses_a_repository_under_another_root() {
         &theme(),
         test_keys(),
     );
-    run_slash(&mut m, "/create acme/bravo");
+    let cmds = run_slash(&mut m, "/create acme/bravo");
+    feed(&mut m, cmds);
     assert_eq!(m.over, Overlay::None);
     assert!(m.note.contains(&rs[0].path()), "{:?}", m.note);
 }
@@ -1674,7 +1680,8 @@ fn created_repository_lands_where_its_slot_is() {
         "",
     );
     (m.w, m.h) = (90, 16);
-    run_slash(&mut m, "/create acme/alpha");
+    let cmds = run_slash(&mut m, "/create acme/alpha");
+    feed(&mut m, cmds);
     let cmds = m.update(ch('y'));
     feed(&mut m, cmds);
 
@@ -1749,8 +1756,10 @@ fn created_worktree_keeps_the_main_worktree_last() {
     open_worktrees(&mut m);
     assert_eq!(label(&m), "main", "the main worktree starts at the bottom");
 
-    run_slash(&mut m, "/create feat/login");
+    let cmds = run_slash(&mut m, "/create feat/login");
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
+    assert!(m.ask.wait.is_some());
+    feed(&mut m, cmds);
     let cmds = m.update(ch('y'));
     feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees, "{:?}", m.note);
@@ -2313,9 +2322,12 @@ fn worktree_create_and_remove() {
     open_worktrees(&mut m); // the real repo::worktrees, not a stub
     assert!(m.mode == Mode::Worktrees && m.view.len() == 1);
 
-    run_slash(&mut m, "/create feat/login");
+    let cmds = run_slash(&mut m, "/create feat/login");
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
     assert!(m.ask.dir.contains(repo::WORKTREE_ROOT), "{:?}", m.ask.dir);
+    assert!(m.update(ch('y')).is_empty(), "y must wait for git");
+    assert!(m.ask.wait.is_some());
+    feed(&mut m, cmds);
     let view = view_text(&m);
     for want in ["create worktree", "feat/login, new branch"] {
         assert!(view.contains(want), "{want:?}:\n{view}");
@@ -2790,7 +2802,8 @@ fn add_worktree_updates_branch_row_and_invalidates_status() {
     set_query(&mut m, "timeout");
     assert_eq!(label(&m), "fix/timeout");
 
-    run_slash(&mut m, "/create fix/timeout");
+    let cmds = run_slash(&mut m, "/create fix/timeout");
+    feed(&mut m, cmds);
     assert_eq!(m.ask.mode, Mode::Branches);
     assert_eq!(m.ask.repo_at, r.path());
     let cmds = m.update(ch('y'));
@@ -2819,7 +2832,8 @@ fn add_worktree_updates_pull_request_row() {
     set_query(&mut m, "parser");
     assert!(label(&m).contains("Try a new parser"));
 
-    run_slash(&mut m, "/create exp/parser");
+    let cmds = run_slash(&mut m, "/create exp/parser");
+    feed(&mut m, cmds);
     let msg = answer(m.update(ch('y'))).expect("confirmed worktree did not run");
     m.update(msg);
 
@@ -2836,7 +2850,8 @@ fn create_updates_saved_repository_list_only() {
     let rs = repos(&root.path(), &["github.com/acme/alpha"]);
     let mut m = new_model(&rs, "");
     only_main(&mut m);
-    run_slash(&mut m, "/create acme/bravo");
+    let cmds = run_slash(&mut m, "/create acme/bravo");
+    feed(&mut m, cmds);
     let cmds = m.update(ch('y'));
     assert!(m.busy.contains("creat"), "{:?}", m.busy);
 
@@ -3595,7 +3610,8 @@ fn repo_scan_and_done_only_clear_their_own_busy_line() {
         rel: "github.com/acme/charlie".into(),
     };
     let mut m = new_model(std::slice::from_ref(&r), "");
-    run_slash(&mut m, "/create acme/delta");
+    let cmds = run_slash(&mut m, "/create acme/delta");
+    feed(&mut m, cmds);
     let cmds = m.update(ch('y'));
     assert!(m.busy.contains("creating"), "{:?}", m.busy);
     let Some(Msg::Done(done)) = answer(cmds) else {
