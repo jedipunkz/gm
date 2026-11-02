@@ -1,11 +1,19 @@
 //! The checkouts of a repository: listing them, dating them, and making
 //! and removing the ones gm keeps under its worktree directory.
 
+mod expire;
+mod strays;
+
+pub use expire::*;
+pub use strays::*;
+
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::repo::{Repo, Tree, branch_exists, git_in, git_quiet, valid_branch};
+use crate::repo::{
+    Repo, Tree, branch_exists, git_in, git_quiet, prune_empty_parents, same_path, valid_branch,
+};
 use crate::{Result, err, paths};
 
 /// worktree_labels names checkouts for a warning, each with the work that
@@ -301,11 +309,53 @@ pub fn remove_worktree(repo_dir: &str, dir: &str, force: bool) -> Result<()> {
     git_quiet(&args)
 }
 
+/// remove_worktree_and_branch takes a checkout away, removes any empty
+/// directories it leaves under the root's worktree directory, and then its
+/// branch where git branch -d allows: a branch not merged stays, so force
+/// never reaches the commits. It answers whether the branch went. An empty
+/// branch is a detached HEAD, which has none.
+pub fn remove_worktree_and_branch(r: &Repo, dir: &str, branch: &str, force: bool) -> Result<bool> {
+    remove_worktree(&r.path(), dir, force)?;
+    prune_empty_parents(&paths::join(&r.root, WORKTREE_ROOT), paths::dir(dir));
+    Ok(!branch.is_empty() && git_quiet(&["-C", &r.path(), "branch", "-d", "--", branch]).is_ok())
+}
+
+/// other_worktrees are the checkouts of r that are not r itself. A repository
+/// git cannot answer for has none, which is the right answer for a directory
+/// that is about to be deleted.
+pub fn other_worktrees(r: &Repo) -> Vec<Worktree> {
+    other_worktrees_of(&r.path())
+}
+
+/// other_worktrees_of is the same thing for a path, which is all describe has.
+pub fn other_worktrees_of(dir: &str) -> Vec<Worktree> {
+    exclude_main_worktree(worktrees(dir).unwrap_or_default(), dir)
+}
+
+/// live_worktrees_of is every checkout Git registers for dir, including the
+/// main one. Git's list, not a directory walk, decides whether a path is a
+/// worktree; an unavailable repository has none.
+pub fn live_worktrees_of(dir: &str) -> Vec<Worktree> {
+    registered_worktrees(dir).unwrap_or_default()
+}
+
+/// other_live_worktrees_of is the registered list without the main checkout.
+/// Status and the finder use it so both see exactly the paths Git reports.
+pub fn other_live_worktrees_of(dir: &str) -> Vec<Worktree> {
+    exclude_main_worktree(live_worktrees_of(dir), dir)
+}
+
+fn exclude_main_worktree(wts: Vec<Worktree>, dir: &str) -> Vec<Worktree> {
+    wts.into_iter()
+        .filter(|w| !same_path(&w.path, dir)) // the main worktree is the repository
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::repo::{Branch, branches};
-    use crate::testutil::{TempDir, git_repo, mkdir, write};
+    use crate::testutil::{TempDir, exists, git_repo, mkdir, write};
 
     #[test]
     fn parse_worktrees_reads_porcelain() {
@@ -446,5 +496,35 @@ detached
         let got = worktrees(&tmp.path()).unwrap();
         assert_eq!(got[0].branch, "main");
         assert!(got[0].committed_at > 0, "{got:?}");
+    }
+
+    // A branch with commits nothing else has stays when its worktree goes,
+    // however the worktree was removed.
+    #[test]
+    fn remove_worktree_keeps_an_unmerged_branch() {
+        let base = TempDir::new();
+        let r = Repo {
+            root: base.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&r.path());
+        let dir = Tree {
+            roots: vec![base.path()],
+        }
+        .worktree_dir(&r, "work");
+        add_worktree(
+            &paths::join(&r.root, WORKTREE_ROOT),
+            &r.path(),
+            &dir,
+            "work",
+        )
+        .unwrap();
+        crate::testutil::git(&dir, &["commit", "-q", "--allow-empty", "-m", "only here"]);
+
+        assert_eq!(
+            remove_worktree_and_branch(&r, &dir, "work", true),
+            Ok(false)
+        );
+        assert!(!exists(&dir) && branch_exists(&r.path(), "work"));
     }
 }
