@@ -51,6 +51,14 @@ pub struct Pending {
     pub ssh: bool,   // a created repository's origin is its SSH URL
 }
 
+/// under_root is Tree::at for a confirmed change: the repository at path, by
+/// the root it sits under, and a path under none of them is the error the
+/// note shows.
+fn under_root(tree: &repo::Tree, path: &str) -> Result<repo::Repo, Error> {
+    tree.at(path)
+        .ok_or_else(|| err!("{path} is not under any root"))
+}
+
 impl Model {
     /// perform carries out a confirmed change, off the UI thread.
     pub(super) fn perform(&self, a: Pending, busy_tag: u64) -> Cmd {
@@ -74,9 +82,8 @@ impl Model {
                 }))
             };
             match kind {
-                Change::Remove => done(match tree.at(&a.arg) {
-                    None => Err(err!("{} is not under any root", a.arg)),
-                    Some(r) => repo::delete(&r).map(|left| {
+                Change::Remove => done(under_root(&tree, &a.arg).and_then(|r| {
+                    repo::delete(&r).map(|left| {
                         // A checkout outside gm's worktree directory stays
                         // where it is, and the note is where that is said.
                         let mut label = r.rel.clone();
@@ -84,8 +91,8 @@ impl Model {
                             label += &format!("; kept {}", left.join(", "));
                         }
                         (r.path(), label)
-                    }),
-                }),
+                    })
+                })),
                 Change::Create => done(tree.create(&a.arg, a.ssh).map(|r| (r.path(), r.rel))),
                 Change::AddWorktree | Change::CheckOut => done((|| {
                     if a.fetch {
@@ -96,9 +103,7 @@ impl Model {
                         };
                         repo::fetch_branch(&a.repo_at, &b)?;
                     }
-                    let r = tree
-                        .at(&a.repo_at)
-                        .ok_or_else(|| err!("{} is not under any root", a.repo_at))?;
+                    let r = under_root(&tree, &a.repo_at)?;
                     let root = paths::join(&r.root, repo::WORKTREE_ROOT);
                     repo::add_worktree_from(&root, &a.repo_at, &a.dir, &a.arg, &a.from)?;
                     Ok((a.dir.clone(), a.arg.clone()))
@@ -108,32 +113,28 @@ impl Model {
                         .arg
                         .parse()
                         .map_err(|_| err!("{:?} is not a pull request", a.arg))?;
-                    let r = tree
-                        .at(&a.repo_at)
-                        .ok_or_else(|| err!("{} is not under any root", a.repo_at))?;
+                    let r = under_root(&tree, &a.repo_at)?;
                     let root = paths::join(&r.root, repo::WORKTREE_ROOT);
                     repo::check_out_pull_request_in(&root, &gh, &a.repo_at, &a.dir, n)?;
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
                 Change::RemoveWorktree => done(
-                    match tree.at(&a.repo_at) {
-                        None => Err(err!("{} is not under any root", a.repo_at)),
-                        Some(r) => repo::remove_worktree_and_branch(&r, &a.dir, &a.arg, a.force),
-                    }
-                    .map(|gone| {
-                        // The label finishes the note: what became of the branch.
-                        let said = match (a.arg.as_str(), gone) {
-                            ("", _) => String::new(),
-                            (b, true) => format!(", deleted branch {b}"),
-                            (b, false) => format!(", kept branch {b}: not merged"),
-                        };
-                        (a.dir.clone(), said)
-                    }),
+                    under_root(&tree, &a.repo_at)
+                        .and_then(|r| repo::remove_worktree_and_branch(&r, &a.dir, &a.arg, a.force))
+                        .map(|gone| {
+                            // The label finishes the note: what became of the branch.
+                            let said = match (a.arg.as_str(), gone) {
+                                ("", _) => String::new(),
+                                (b, true) => format!(", deleted branch {b}"),
+                                (b, false) => format!(", kept branch {b}: not merged"),
+                            };
+                            (a.dir.clone(), said)
+                        }),
                 ),
                 Change::Expire => {
-                    let gone = tree.at(&a.repo_at).map(|r| repo::expire(&r, &a.wts));
-                    let Some(gone) = gone else {
-                        return done(Err(err!("{} is not under any root", a.repo_at)));
+                    let gone = match under_root(&tree, &a.repo_at) {
+                        Ok(r) => repo::expire(&r, &a.wts),
+                        Err(e) => return done(Err(e)),
                     };
                     // A refusal is one worktree's news, not the whole command's:
                     // the rest are gone either way, so it goes in the label.
