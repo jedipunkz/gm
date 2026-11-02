@@ -1,9 +1,10 @@
 use ratatui::text::{Line, Span};
 
 use super::command::COMMANDS;
-use super::info::{Seg, tildify, wrap_segs};
+use super::info::{self, Seg, tildify, wrap_segs};
+use super::list::Item;
 use super::worktree::Mode;
-use super::{Cmd, Key, Model, Msg};
+use super::{Action, Cmd, Key, Model, Msg, Outcome};
 use crate::repo::{self, Branch, Worktree};
 use crate::{Error, err, paths, plural};
 
@@ -198,6 +199,153 @@ impl Model {
                 Change::None => None,
             }
         }))
+    }
+
+    pub(super) fn done(&mut self, d: Done) -> Vec<Cmd> {
+        self.finish_busy(d.busy_tag);
+        if let Some(e) = d.err {
+            self.note = e.0;
+            return vec![];
+        }
+        let status_path = if d.repo_at.is_empty() {
+            match d.kind {
+                Change::Create | Change::Remove => d.path.as_str(),
+                _ => "",
+            }
+        } else {
+            d.repo_at.as_str()
+        };
+        if !status_path.is_empty() {
+            self.status.remove(status_path);
+            self.probing.remove(status_path);
+        }
+        // A repository made, or whose worktrees changed, is scanned again once
+        // the status filters have scanned at all: otherwise they would answer
+        // for it as it was, or not at all.
+        let rescan = (!status_path.is_empty()
+            && d.kind != Change::Remove
+            && (self.repo_states.is_some() || self.scanning_states))
+            .then(|| self.rescan_repo_state(status_path));
+
+        match d.kind {
+            Change::Remove | Change::RemoveWorktree | Change::Create | Change::AddWorktree => {
+                let changed = |all: &mut Vec<Item>| match d.kind {
+                    Change::Remove | Change::RemoveWorktree => {
+                        let before = all.len();
+                        all.retain(|it| it.path != d.path);
+                        all.len() != before
+                    }
+                    Change::Create => {
+                        // The repository list is ascending by frecency, best
+                        // last, and a fresh clone has no visits — so its row
+                        // belongs at the top, not at the end a push would
+                        // give it, which is the best spot in the list.
+                        let it = Item {
+                            label: d.label.clone(),
+                            path: d.path.clone(),
+                            ..Default::default()
+                        };
+                        let mut at = 0;
+                        while at < all.len()
+                            && (all[at].score < it.score
+                                || (all[at].score == it.score && all[at].label <= it.label))
+                        {
+                            at += 1;
+                        }
+                        all.insert(at, it);
+                        true
+                    }
+                    Change::AddWorktree => {
+                        let existing = match d.mode {
+                            Mode::Branches => all.iter_mut().find(|it| {
+                                it.branch.name == d.label || it.branch.label() == d.label
+                            }),
+                            Mode::Prs => all
+                                .iter_mut()
+                                .find(|it| it.pr.checkout() == d.label || it.pr.branch == d.label),
+                            _ => all.iter_mut().find(|it| it.label == d.label),
+                        };
+                        if let Some(it) = existing {
+                            it.path = d.path.clone();
+                        } else {
+                            // In the worktree list the main worktree belongs
+                            // to the bottom row, and the rest read newest
+                            // first, so a new worktree goes at the top. The
+                            // branch and pull request lists keep the row a
+                            // branch was: those are updated in place above.
+                            let at = if d.mode == Mode::Worktrees {
+                                0
+                            } else {
+                                all.len()
+                            };
+                            all.insert(
+                                at,
+                                Item {
+                                    label: d.label.clone(),
+                                    path: d.path.clone(),
+                                    branch: crate::repo::Branch {
+                                        name: d.label.clone(),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                        true
+                    }
+                    _ => false,
+                };
+                let active =
+                    self.mode == d.mode && (d.mode == Mode::Repos || self.repo_at == d.repo_at);
+                if active {
+                    if changed(&mut self.all) {
+                        self.view_stale = true;
+                        self.filter();
+                        // The created row is the selection, wherever its
+                        // ordering put it; standing on the bottom row would
+                        // be right only when it was pushed to the end.
+                        if !matches!(d.kind, Change::Remove | Change::RemoveWorktree)
+                            && let Some(i) =
+                                self.view.iter().position(|&x| self.all[x].path == d.path)
+                        {
+                            self.cursor = i;
+                        }
+                    }
+                } else if d.mode == Mode::Repos
+                    && self.mode != Mode::Repos
+                    && let Some(saved) = self.saved.as_mut()
+                {
+                    saved.update(changed);
+                }
+                self.note = match d.kind {
+                    Change::Remove => format!("removed {}{}", info::tildify(&d.path), d.label),
+                    Change::RemoveWorktree => {
+                        format!("removed {}{}", info::tildify(&d.path), d.label)
+                    }
+                    Change::Create | Change::AddWorktree => {
+                        format!("created {}", info::tildify(&d.path))
+                    }
+                    _ => unreachable!(),
+                };
+            }
+            Change::Expire => {
+                if self.mode == d.mode && self.repo_at == d.repo_at {
+                    self.all.retain(|it| !d.gone.contains(&it.path));
+                    self.view_stale = true;
+                    self.filter();
+                }
+                self.note = d.label;
+            }
+            Change::CheckOut | Change::CheckOutPr => {
+                self.result = Outcome {
+                    action: Action::Jump,
+                    arg: d.path,
+                };
+                return vec![Cmd::Quit];
+            }
+            Change::None => {}
+        }
+        rescan.into_iter().chain(self.load_status()).collect()
     }
 
     /// confirm puts the question on screen. Nothing happens until it is

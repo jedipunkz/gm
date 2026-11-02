@@ -8,6 +8,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 
+use super::overlay::Change;
 use super::theme::{ROW_LIFT, blend, rgb};
 use super::*;
 use crate::config::parse_chord;
