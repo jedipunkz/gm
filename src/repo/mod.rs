@@ -11,14 +11,33 @@ mod removal;
 mod url;
 mod worktree;
 
-pub use gh::*;
-pub(crate) use git::git_command;
-pub use git::*;
-pub use history::*;
-pub use remote::*;
-pub use removal::*;
-pub use url::*;
-pub use worktree::*;
+pub use gh::{
+    Comment, FORK_DIR, Issue, PullRequest, check_out_pull_request, check_out_pull_request_in,
+    issue, issues, parse_issues, parse_pull_requests, pull_request, pull_requests,
+};
+pub(crate) use gh::{ISSUE_LIMIT, PR_LIMIT};
+#[cfg(test)]
+pub use git::git_spawns_reset;
+pub use git::{
+    Branch, Commit, Ref, RefKind, State, Status, branch_exists, branches, changed_files, describe,
+    git, git_config_all, git_in, git_message, git_quiet, is_dirty, origin_url, parse_branches,
+    parse_commits, parse_status, remotes, status_map, status_of, status_with_worktrees,
+    valid_branch,
+};
+pub(crate) use git::{exit_error, git_command};
+pub use history::{History, Visit, history_file, now};
+pub use remote::{fetch_branch, parse_ls_remote, remote_branches};
+pub use removal::{
+    ExpiryPlan, RemovalPlan, WorktreeImpact, WorktreeRemovalPlan, expiry_plan, removal_plan,
+    worktree_removal_plan,
+};
+pub use url::{Url, browse_url, normalize_url, rel_path_of};
+pub use worktree::{
+    Expiry, WORKTREE_ROOT, Worktree, add_worktree, add_worktree_from, expire, expired,
+    live_worktrees_of, other_live_worktrees_of, other_worktrees, other_worktrees_of, parse_days,
+    parse_worktrees, registered_worktrees, remove_worktree, remove_worktree_and_branch,
+    repair_worktrees, strays, worktree_labels, worktree_labels_in, worktrees, worktrees_dir,
+};
 
 use crate::config::Config;
 use crate::{Result, err, paths};

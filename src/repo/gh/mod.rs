@@ -4,8 +4,13 @@
 mod issue;
 mod pr;
 
-pub use issue::*;
-pub use pr::*;
+pub(crate) use issue::ISSUE_LIMIT;
+pub use issue::{Comment, Issue, issue, issues, parse_issues};
+pub(crate) use pr::PR_LIMIT;
+pub use pr::{
+    FORK_DIR, PullRequest, check_out_pull_request, check_out_pull_request_in, parse_pull_requests,
+    pull_request, pull_requests,
+};
 
 use std::ffi::OsStr;
 use std::process::Command;

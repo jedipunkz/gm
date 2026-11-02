@@ -5,9 +5,11 @@ mod branch;
 mod describe;
 mod status;
 
-pub use branch::*;
-pub use describe::*;
-pub use status::*;
+pub use branch::{Branch, branch_exists, branches, parse_branches, valid_branch};
+pub use describe::{Commit, Ref, RefKind, Status, describe, parse_commits};
+pub use status::{
+    State, changed_files, is_dirty, parse_status, status_map, status_of, status_with_worktrees,
+};
 
 use std::ffi::OsStr;
 use std::process::{Command, Output, Stdio};

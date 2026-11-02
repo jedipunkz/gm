@@ -4,8 +4,8 @@
 mod expire;
 mod strays;
 
-pub use expire::*;
-pub use strays::*;
+pub use expire::{Expiry, expire, expired, parse_days};
+pub use strays::strays;
 
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
