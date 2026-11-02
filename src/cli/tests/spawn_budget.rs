@@ -38,11 +38,17 @@ fn git_spawn_budgets_hold() {
                 .env(SPAWN_BUDGET_OP, op)
                 .output()
                 .unwrap();
+            let stdout = String::from_utf8_lossy(&out.stdout);
             assert!(
                 out.status.success(),
-                "git spawn budget for {op}:\n{}\n{}",
-                String::from_utf8_lossy(&out.stdout),
+                "git spawn budget for {op}:\n{stdout}\n{}",
                 String::from_utf8_lossy(&out.stderr)
+            );
+            // A filter that matches nothing passes too: the child must have
+            // run this test, or a renamed module would measure nothing.
+            assert!(
+                stdout.contains("test result: ok. 1 passed;"),
+                "git spawn budget for {op} ran no test named {SPAWN_BUDGET_TEST}:\n{stdout}"
             );
         }
         return;
