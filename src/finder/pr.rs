@@ -42,7 +42,10 @@ impl Model {
             return vec![];
         };
         let (busy_tag, busy) = self.start_busy(&format!("asking GitHub about {}…", it.label));
-        let (prs_of, worktrees_of) = (self.prs_of.clone(), self.worktrees_of.clone());
+        let (prs_of, worktrees_of) = (
+            self.backend.prs_of.clone(),
+            self.backend.worktrees_of.clone(),
+        );
         let (tree, path) = (self.tree.clone(), it.path);
         vec![
             busy,
@@ -120,7 +123,7 @@ impl Model {
         };
         let n = it.pr.number;
         let (busy_tag, busy) = self.start_busy(&format!("viewing #{n}…"));
-        let (pr_of, path) = (self.pr_of.clone(), self.repo_at.clone());
+        let (pr_of, path) = (self.backend.pr_of.clone(), self.repo_at.clone());
         vec![
             busy,
             Cmd::Task(Box::new(move || {

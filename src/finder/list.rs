@@ -165,7 +165,7 @@ impl Model {
     /// thread. The result serves both the dirty and unpushed filters.
     pub(super) fn scan_repo_states(&self, busy_tag: u64) -> Cmd {
         let paths: Vec<String> = self.all.iter().map(|it| it.path.clone()).collect();
-        let scan = self.state_scan_of.clone();
+        let scan = self.backend.state_scan_of.clone();
         Cmd::Task(Box::new(move || {
             Some(Msg::RepoStates(busy_tag, scan(&paths)))
         }))
@@ -175,7 +175,7 @@ impl Model {
     /// the finder touched, so the status filters answer for it as it is now.
     pub(super) fn rescan_repo_state(&self, path: &str) -> Cmd {
         let path = path.to_string();
-        let scan = self.state_scan_of.clone();
+        let scan = self.backend.state_scan_of.clone();
         Cmd::Task(Box::new(move || {
             let state = scan(std::slice::from_ref(&path))
                 .remove(&path)

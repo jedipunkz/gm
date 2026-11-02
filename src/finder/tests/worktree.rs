@@ -15,7 +15,7 @@ fn worktree_mode() {
     let mut m = new_model(&rs, "");
     set_query(&mut m, "bravo");
     let want = rs[1].path();
-    m.worktrees_of = Arc::new(move |dir| {
+    m.backend.worktrees_of = Arc::new(move |dir| {
         assert_eq!(dir, want, "asked for the wrong repository's worktrees");
         let w = |p: &str, b: &str| Worktree {
             path: p.into(),
@@ -107,7 +107,7 @@ fn worktree_mode_keys_go_back() {
 fn worktree_mode_leaves_the_list_alone_on_error() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
-    m.worktrees_of = Arc::new(|_| Err("not a git repository".into()));
+    m.backend.worktrees_of = Arc::new(|_| Err("not a git repository".into()));
     open_worktrees(&mut m);
     assert!(m.mode == Mode::Repos && m.view.len() == 1);
     assert!(m.note.contains("not a git repository"), "{:?}", m.note);
@@ -119,7 +119,7 @@ fn worktree_mode_leaves_the_list_alone_on_error() {
 fn empty_lists_are_named() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
-    m.branches_of = Arc::new(|_| Ok(vec![]));
+    m.backend.branches_of = Arc::new(|_| Ok(vec![]));
     open_branches(&mut m);
     assert!(m.mode == Mode::Repos, "{:?}", m.note);
     assert!(
@@ -128,7 +128,7 @@ fn empty_lists_are_named() {
         m.note
     );
 
-    m.worktrees_of = Arc::new(|_| Ok(vec![]));
+    m.backend.worktrees_of = Arc::new(|_| Ok(vec![]));
     open_worktrees(&mut m);
     assert!(
         m.note.contains("no worktrees in github.com/acme/alpha"),
@@ -219,7 +219,7 @@ fn expire_removes_the_idle_worktrees() {
     let busy = tree.worktree_dir(&r, "busy");
     let mut m = new_model(std::slice::from_ref(&r), "");
     (m.w, m.h) = (90, 24);
-    m.worktrees_of = Arc::new(|dir| {
+    m.backend.worktrees_of = Arc::new(|dir| {
         let mut wts = repo::worktrees(dir)?;
         for w in wts.iter_mut().filter(|w| w.used_at > 0) {
             w.used_at = 1;
@@ -227,7 +227,7 @@ fn expire_removes_the_idle_worktrees() {
         Ok(wts)
     });
     let dirty = busy.clone();
-    m.changed_of = Arc::new(move |p| usize::from(repo::same_path(p, &dirty)));
+    m.backend.changed_of = Arc::new(move |p| usize::from(repo::same_path(p, &dirty)));
     open_worktrees(&mut m);
     assert_eq!(rows(&m).len(), 4);
 
@@ -265,7 +265,7 @@ fn expire_scan_is_async_and_y_waits_for_its_result() {
     let (release_tx, release_rx) = mpsc::channel();
     let release_rx = Mutex::new(release_rx);
     let old = paths::join(&root.path(), "old");
-    m.worktrees_of = Arc::new(move |_| {
+    m.backend.worktrees_of = Arc::new(move |_| {
         started_tx.send(()).unwrap();
         release_rx.lock().unwrap().recv().unwrap();
         Ok(vec![Worktree {
@@ -275,7 +275,7 @@ fn expire_scan_is_async_and_y_waits_for_its_result() {
             ..Default::default()
         }])
     });
-    m.changed_of = Arc::new(|_| 0);
+    m.backend.changed_of = Arc::new(|_| 0);
 
     // Keep the UI call on a separate thread so a synchronous scan can be
     // released and reported as a red assertion instead of hanging the test.
@@ -420,7 +420,7 @@ fn remove_refuses_the_main_worktree_behind_a_symlink() {
     std::os::unix::fs::symlink(&real, &link).unwrap();
 
     let mut m = new_model(&repos(&link, &["github.com/acme/alpha"]), "");
-    m.worktrees_of = Arc::new(|dir| {
+    m.backend.worktrees_of = Arc::new(|dir| {
         Ok(vec![Worktree {
             path: std::fs::canonicalize(dir)
                 .unwrap()

@@ -37,7 +37,7 @@ fn issue_model(root: &TempDir) -> (Model, Vec<Repo>) {
         vec![issue(7, "Add login"), issue(9, "Crash on start")],
         rs[1].path(),
     );
-    m.issues_of = Arc::new(move |dir| {
+    m.backend.issues_of = Arc::new(move |dir| {
         assert_eq!(dir, at);
         Ok(list.clone())
     });
@@ -55,7 +55,7 @@ fn open_issue_list(m: &mut Model) {
 /// open_issue_panel presses enter in the issue list and feeds gh's view
 /// answer, leaving the panel up.
 fn open_issue_panel(m: &mut Model, detail: Issue) {
-    m.issue_of = Arc::new(move |_, _| Ok(detail.clone()));
+    m.backend.issue_of = Arc::new(move |_, _| Ok(detail.clone()));
     let cmds = m.update(key("enter"));
     assert!(m.busy.contains("viewing #7"), "{:?}", m.busy);
     feed(m, cmds);
@@ -126,7 +126,7 @@ fn issue_row_keeps_its_number_and_the_pane_its_body() {
     let (mut m, _) = issue_model(&root);
     let mut long = issue(7, "Add login to every page of the site at once");
     long.body = "# Steps\n\nopen the form\nwait".into();
-    m.issues_of = Arc::new(move |_| Ok(vec![long.clone()]));
+    m.backend.issues_of = Arc::new(move |_| Ok(vec![long.clone()]));
     open_issue_list(&mut m);
 
     let row = line_text(&m.render_row(0, false, 16));
@@ -160,7 +160,7 @@ fn issue_list_qualifiers() {
         mk(2, "Typo", &["docs"], &[]),
         mk(3, "Bump", &["foo", "security"], &["bob"]),
     ];
-    m.issues_of = Arc::new(move |_| Ok(list.clone()));
+    m.backend.issues_of = Arc::new(move |_| Ok(list.clone()));
     open_issue_list(&mut m);
 
     for (q, want) in [
@@ -312,10 +312,10 @@ fn issue_panel_browser_and_copy() {
 
     let opened = Arc::new(Mutex::new(Vec::new()));
     let seen = opened.clone();
-    m.open_url = Arc::new(move |u| opened.lock().unwrap().push(u.to_string()));
+    m.backend.open_url = Arc::new(move |u| opened.lock().unwrap().push(u.to_string()));
     let copied = Arc::new(Mutex::new(Vec::new()));
     let had = copied.clone();
-    m.copy_url = Arc::new(move |u| {
+    m.backend.copy_url = Arc::new(move |u| {
         copied.lock().unwrap().push(u.to_string());
         Ok(())
     });
@@ -351,7 +351,7 @@ fn issue_mode_leaves_the_list_alone_on_error() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     m.keys.issue = parse_chord("ctrl-e", "ctrl-e").unwrap();
-    m.issues_of = Arc::new(|_| Err("not logged in".into()));
+    m.backend.issues_of = Arc::new(|_| Err("not logged in".into()));
     let cmds = m.update(key("ctrl+e"));
     feed(&mut m, cmds);
     assert!(
@@ -360,7 +360,7 @@ fn issue_mode_leaves_the_list_alone_on_error() {
         m.note
     );
 
-    m.issues_of = Arc::new(|_| Ok(vec![]));
+    m.backend.issues_of = Arc::new(|_| Ok(vec![]));
     let cmds = m.update(key("ctrl+e"));
     feed(&mut m, cmds);
     assert!(

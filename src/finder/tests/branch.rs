@@ -253,7 +253,7 @@ fn remote_branches_join_the_list() {
 fn remote_branches_say_why_not() {
     let root = TempDir::new();
     let (mut m, _) = branch_model(&root);
-    m.remote_branches_of = Arc::new(|_| {
+    m.backend.remote_branches_of = Arc::new(|_| {
         (
             vec![],
             Some("origin: Could not read from remote repository.".into()),

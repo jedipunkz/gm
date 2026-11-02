@@ -54,7 +54,7 @@ impl Model {
         if url.is_empty() {
             return vec![];
         }
-        let open = self.open_url.clone();
+        let open = self.backend.open_url.clone();
         let n = d.subject.number();
         self.note = format!("opening #{n} in the browser…");
         vec![Cmd::Task(Box::new(move || {
@@ -75,7 +75,7 @@ impl Model {
             return vec![];
         }
         let (n, what) = (d.subject.number(), d.subject.noun());
-        self.note = match (self.copy_url)(&url) {
+        self.note = match (self.backend.copy_url)(&url) {
             Ok(()) => format!("#{n}: {what} URL copied"),
             Err(e) => format!("could not copy the {what} URL: {e}"),
         };

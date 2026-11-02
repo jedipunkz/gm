@@ -249,7 +249,7 @@ fn open_remote() {
     let mut m = new_model(&rs, "");
     let opened = Arc::new(Mutex::new(Vec::<String>::new()));
     let sink = opened.clone();
-    m.open_url = Arc::new(move |u| sink.lock().unwrap().push(u.to_string()));
+    m.backend.open_url = Arc::new(move |u| sink.lock().unwrap().push(u.to_string()));
     m.status.insert(
         rs[0].path(),
         Status {
@@ -350,7 +350,7 @@ fn esc_opens_the_issue_list() {
     let root = TempDir::new();
     let rs = repos(&root.path(), &["github.com/acme/alpha"]);
     let mut m = new_model(&rs, "");
-    m.issues_of = Arc::new(|_| Ok(vec![issue(7, "Add login")]));
+    m.backend.issues_of = Arc::new(|_| Ok(vec![issue(7, "Add login")]));
     let cmds = m.update(key("esc"));
     assert!(!is_quit(&cmds), "esc quit instead of opening the issues");
     feed(&mut m, cmds);

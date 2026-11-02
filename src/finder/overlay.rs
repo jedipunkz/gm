@@ -104,7 +104,7 @@ fn under_root(tree: &repo::Tree, path: &str) -> Result<repo::Repo, Error> {
 impl Model {
     /// perform carries out a confirmed change, off the UI thread.
     pub(super) fn perform(&self, a: Pending, busy_tag: u64) -> Cmd {
-        let (tree, gh) = (self.tree.clone(), self.gh.clone());
+        let (tree, gh) = (self.tree.clone(), self.backend.gh.clone());
         Cmd::Task(Box::new(move || {
             let kind = a.kind;
             let done = |res: Result<(String, String), Error>| {
@@ -551,7 +551,10 @@ impl Model {
         // The list, reflogs and each idle worktree's status can all take time;
         // y must wait until the fresh scan has filled this question.
         let repo_at = self.repo_at.clone();
-        let (worktrees_of, changed) = (self.worktrees_of.clone(), self.changed_of.clone());
+        let (worktrees_of, changed) = (
+            self.backend.worktrees_of.clone(),
+            self.backend.changed_of.clone(),
+        );
         let (busy_tag, busy) = self.start_busy("checking for uncommitted work…");
         let mut cmds = self.confirm(Pending {
             kind: Change::Expire,

@@ -55,7 +55,7 @@ impl Model {
             return vec![];
         };
         let (busy_tag, busy) = self.start_busy(&format!("listing the worktrees of {}…", it.label));
-        let (worktrees_of, path) = (self.worktrees_of.clone(), it.path);
+        let (worktrees_of, path) = (self.backend.worktrees_of.clone(), it.path);
         vec![
             busy,
             Cmd::Task(Box::new(move || {

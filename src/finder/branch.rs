@@ -36,7 +36,10 @@ impl Model {
             return vec![];
         };
         let (busy_tag, busy) = self.start_busy(&format!("listing the branches of {}…", it.label));
-        let (branches_of, worktrees_of) = (self.branches_of.clone(), self.worktrees_of.clone());
+        let (branches_of, worktrees_of) = (
+            self.backend.branches_of.clone(),
+            self.backend.worktrees_of.clone(),
+        );
         let path = it.path;
         vec![
             busy,
@@ -109,7 +112,7 @@ impl Model {
             "asking the remotes of {} for their branches…",
             it.label
         ));
-        let (remote_of, path) = (self.remote_branches_of.clone(), it.path.clone());
+        let (remote_of, path) = (self.backend.remote_branches_of.clone(), it.path.clone());
         let mut cmds: Vec<Cmd> = self.load_status().into_iter().collect();
         cmds.push(busy);
         cmds.push(Cmd::Task(Box::new(move || {

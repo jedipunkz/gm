@@ -180,7 +180,8 @@ pub const COMMANDS: &[Command] = &[
                     ..pending
                 }
             });
-            let (changed, worktrees_of) = (m.changed_of.clone(), m.worktrees_of.clone());
+            let (changed, worktrees_of) =
+                (m.backend.changed_of.clone(), m.backend.worktrees_of.clone());
             let tree = m.tree.clone();
             cmds.push(busy);
             cmds.push(Cmd::Task(Box::new(move || {

@@ -10,6 +10,7 @@
 //! Work that talks to git or GitHub runs on a thread and comes back as a
 //! message, so the list never freezes.
 
+mod backend;
 mod branch;
 mod browse;
 mod clipboard;
@@ -29,7 +30,6 @@ mod worktree;
 
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
-use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -41,8 +41,9 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget};
 pub use theme::{Theme, lookup_theme};
 
 use crate::config::{self, Chord};
-use crate::repo::{self, Branch, History, PullRequest, Repo, Status, Tree, Worktree};
-use crate::{Error, Result, err};
+use crate::repo::{self, History, Repo, Status, Tree};
+use crate::{Result, err};
+use backend::Backend;
 use branch::{Branches, RemoteBranches};
 use command::{completions, is_command, split_input};
 use info::{Seg, wrap_segs};
@@ -217,18 +218,6 @@ pub enum Cmd {
 /// nothing and the row the eye stops on is described right away.
 const STATUS_DELAY: Duration = Duration::from_millis(100);
 
-/// Seam is a git or GitHub call the model makes through a field, so the tests
-/// can replace it; every real run uses the repo function of the same name.
-type Seam<T> = Arc<dyn Fn(&str) -> T + Send + Sync>;
-type StateScan = Arc<dyn Fn(&[String]) -> HashMap<String, repo::State> + Send + Sync>;
-/// IssueOf asks gh for one issue's full text, the repository dir and the
-/// number in hand; the tests stand in for it.
-type IssueOf = Arc<dyn Fn(&str, u64) -> Result<crate::repo::Issue> + Send + Sync>;
-/// PrOf asks gh for one pull request's full text, the same way.
-type PrOf = Arc<dyn Fn(&str, u64) -> Result<PullRequest> + Send + Sync>;
-/// CopyOf puts a string on the clipboard the terminal remembers.
-type CopyOf = Arc<dyn Fn(&str) -> std::io::Result<()> + Send + Sync>;
-
 #[derive(Clone)]
 pub struct Model {
     all: Vec<Item>,                      // ascending by frecency: the best is last
@@ -270,23 +259,7 @@ pub struct Model {
     busy_since: Instant,
     spin: Spinner,
 
-    worktrees_of: Seam<Result<Vec<Worktree>>>,
-    branches_of: Seam<Result<Vec<Branch>>>,
-    remote_branches_of: Seam<(Vec<Branch>, Option<Error>)>,
-    prs_of: Seam<Result<Vec<PullRequest>>>,
-    /// pr_of reads one pull request in full, for its detail panel.
-    pr_of: PrOf,
-    /// issues_of lists a repository's open issues, issue_of reads one in
-    /// full; both gh's to answer, so the tests can stand in for them.
-    issues_of: Seam<Result<Vec<crate::repo::Issue>>>,
-    issue_of: IssueOf,
-    state_scan_of: StateScan,
-    changed_of: Seam<usize>,
-    open_url: Arc<dyn Fn(&str) + Send + Sync>,
-    /// copy_url puts a string on the clipboard the terminal remembers, by
-    /// OSC52, so a test can watch for it instead of a tty.
-    copy_url: CopyOf,
-    gh: String, // the program that checks pull requests out
+    backend: Backend,
 }
 
 impl Model {
@@ -347,22 +320,7 @@ impl Model {
             busy: String::new(),
             busy_since: Instant::now(),
             spin: Spinner::default(),
-            worktrees_of: Arc::new(repo::worktrees),
-            branches_of: Arc::new(repo::branches),
-            remote_branches_of: Arc::new(repo::remote_branches),
-            prs_of: Arc::new(repo::pull_requests),
-            pr_of: Arc::new(repo::pull_request),
-            issues_of: Arc::new(repo::issues),
-            issue_of: Arc::new(repo::issue),
-            state_scan_of: Arc::new(|ps: &[String]| {
-                repo::status_map(ps, repo::status_with_worktrees)
-            }),
-            changed_of: Arc::new(repo::changed_files),
-            open_url: Arc::new(|u| {
-                let _ = browse::open_url(u);
-            }),
-            copy_url: Arc::new(clipboard::copy),
-            gh: "gh".into(),
+            backend: Backend::default(),
         };
         m.filter();
         m
@@ -618,7 +576,7 @@ impl Model {
             .get(&path)
             .map(|s| s.remote.clone())
             .unwrap_or_default();
-        let open = self.open_url.clone();
+        let open = self.backend.open_url.clone();
         Some(Cmd::Task(Box::new(move || {
             // Not fetched yet for this row; ask git now rather than making the
             // key do nothing on the first press.
