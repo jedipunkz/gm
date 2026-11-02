@@ -5,7 +5,9 @@
 
 mod get;
 mod list;
+mod migrate;
 mod remove;
+mod wt;
 
 #[cfg(test)]
 mod tests;
