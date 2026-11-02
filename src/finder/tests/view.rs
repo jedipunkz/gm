@@ -146,6 +146,33 @@ fn reserved_keys_are_refused() {
     assert!(keys.check().is_ok());
 }
 
+// gm.toml's keys reach the finder through Keys::from_config: a key it sets is
+// that chord, a key it leaves out is the default, and one that does not parse
+// is the error the user reads.
+#[test]
+fn keys_come_from_the_config() {
+    let cfg = crate::config::Config {
+        worktree_key: "ctrl-t".into(),
+        ..Default::default()
+    };
+    let keys = Keys::from_config(&cfg).unwrap();
+    assert_eq!(
+        keys.worktree,
+        parse_chord("ctrl-t", DEFAULT_WORKTREE_KEY).unwrap()
+    );
+    let defaults = test_keys();
+    assert_eq!(keys.branch, defaults.branch);
+    assert_eq!(keys.pr, defaults.pr);
+    assert_eq!(keys.issue, defaults.issue);
+    assert_eq!(keys.remote, defaults.remote);
+
+    let bad = crate::config::Config {
+        pr_key: "ctrl-".into(),
+        ..Default::default()
+    };
+    assert!(Keys::from_config(&bad).is_err());
+}
+
 // The two places the configured chord has to reach: the key that opens the
 // list, and the hint line that names it.
 #[test]

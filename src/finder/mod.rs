@@ -89,6 +89,18 @@ pub struct Keys {
 }
 
 impl Keys {
+    /// from_config reads the finder keys gm.toml sets, each falling back to
+    /// its DEFAULT_*_KEY when gm.toml says nothing.
+    pub fn from_config(cfg: &config::Config) -> Result<Keys> {
+        Ok(Keys {
+            worktree: config::parse_chord(&cfg.worktree_key, DEFAULT_WORKTREE_KEY)?,
+            branch: config::parse_chord(&cfg.branch_key, DEFAULT_BRANCH_KEY)?,
+            pr: config::parse_chord(&cfg.pr_key, DEFAULT_PR_KEY)?,
+            issue: config::parse_chord(&cfg.issue_key, DEFAULT_ISSUE_KEY)?,
+            remote: config::parse_chord(&cfg.remote_key, DEFAULT_REMOTE_KEY)?,
+        })
+    }
+
     /// check refuses a binding that would shadow one of the finder's fixed
     /// keys, or that two actions would answer to at once.
     fn check(&self) -> Result<()> {
