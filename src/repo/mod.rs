@@ -10,6 +10,7 @@ mod pr;
 mod remote;
 mod removal;
 mod url;
+mod worktree;
 
 pub(crate) use git::git_command;
 pub use git::*;
@@ -19,6 +20,7 @@ pub use pr::*;
 pub use remote::*;
 pub use removal::*;
 pub use url::*;
+pub use worktree::*;
 
 use crate::config::Config;
 use crate::{Result, err, paths};

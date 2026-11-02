@@ -8,7 +8,7 @@ module where it lives today.
 
 Every repository lives at a single shape: `<root>/<host>/<user>/<repo>`, and
 the checkouts gm makes for it live at `<root>/.worktrees/<host>/<user>/<repo>/<branch>`
-(`repo/git.rs`, `WORKTREE_ROOT`). The leading dot matters: the walk that lists
+(`repo/worktree/mod.rs`, `WORKTREE_ROOT`). The leading dot matters: the walk that lists
 repositories never descends into a dotted directory, so gm's own worktree
 storage stays out of the repository list. Where a URL lands under a root is
 decided by exactly one function, `repo/url.rs`'s `rel_path_of`, and every
@@ -83,7 +83,7 @@ shape.
 commits (`git_repo`), and state questions — worktrees, reflogs, dirty
 status — are answered by real git in a temporary directory, not by stubs.
 Where git itself is the seam, the environment is isolated per child process
-(`repo/git.rs`'s `git_command`) so tests run in parallel without touching
+(`repo/git/mod.rs`'s `git_command`) so tests run in parallel without touching
 each other's configuration. Run-state means something here; a fake would
 test the fake.
 

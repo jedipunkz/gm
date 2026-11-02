@@ -136,7 +136,8 @@ pub fn fetch_branch(dir: &str, b: &Branch) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repo::git::{add_worktree_from, git_quiet};
+    use crate::repo::add_worktree_from;
+    use crate::repo::git::git_quiet;
     use crate::testutil::{TempDir, git_repo};
     use std::os::unix::fs::PermissionsExt;
 
