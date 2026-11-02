@@ -47,22 +47,26 @@ leaves the one worktree git refused rather than deleting it on a guess.
 
 The split runs through the whole of `repo` and `cli`: `repo::delete` asks
 nothing and checks nothing — "It asks nothing: the caller has already
-confirmed." The CLI side owns the question. `gm remove`, `gm wt remove`,
-`gm wt expire` and `gm wt mv` all print what they are about to take —
-warnings for uncommitted work, for the worktrees going along, for strays —
-before asking, and `-y` ("skip the confirmation prompt") is the only way
-around the question. A closed stdin answers "no" (`App::confirm`,
-`cli/mod.rs`). The finder's own create/remove sit behind the same pattern:
-they confirm before they act, and their result is carried out after the
-alternate screen is gone.
+confirmed." The front ends own the question. `gm remove`, `gm wt remove`
+and `gm wt expire` all print what they are about to take — warnings for
+uncommitted work, for the worktrees going along, for strays — before asking,
+and `-y` ("skip the confirmation prompt") is the only way around the
+question. A closed stdin answers "no" (`App::confirm`, `cli/mod.rs`). The
+finder's own changes sit behind the same pattern: its confirmation panel
+names the same warnings, and y cannot answer it before they are known.
 
-## The finder shows state; the CLI mutates it
+## The finder confirms; repo carries out
 
-The finder is a viewer. It ranks, filters and describes; the changes it
-carries out under confirmation (create, remove, check out) end in an
-`Outcome` (`finder/mod.rs`), and `cli/mod.rs`'s `act` mutates the tree once
-the terminal is back — which is also where clone progress, password prompts
-and confirmations belong. A visitor's repository history is recorded by
+The finder ranks, filters and describes, and the changes it offers — create,
+remove, add or remove a worktree, expire, check out — happen only behind its
+confirmation panel. A confirmed change is a `Task` (`finder/overlay.rs`'s
+`perform`) calling the same `repo` function the CLI calls (`repo::delete`,
+`Tree::create`, `add_worktree_from`, `remove_worktree_and_branch`, `expire`),
+so each change has one implementation, and the two front ends differ only in
+how they ask and how they word the answer. What needs the user's terminal
+leaves the finder as an `Outcome` (`finder/mod.rs`): `cli/mod.rs`'s `act`
+clones a repository asked for with `/get` once the alternate screen is gone,
+which is where clone progress and password prompts belong. A visitor's repository history is recorded by
 whatever fetched, made or moved it, and by the finder only for a chosen row,
 so a visit is never counted twice.
 

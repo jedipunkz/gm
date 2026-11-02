@@ -1,7 +1,7 @@
 //! The direction the module dependencies point, held by reading the source
 //! rather than by review: docs/design.md places the cli above the finder,
 //! the finder above the repository and config, and nothing below reaching
-//! back up ("The finder shows state; the CLI mutates it", "repo::delete asks
+//! back up ("The finder confirms; repo carries out", "repo::delete asks
 //! nothing"). The compiler cannot see the direction — every module compiles
 //! into one crate — so the tree is walked, and a line in violation fails the
 //! test with the file, the line, the import, and the layer the code belongs
@@ -119,6 +119,6 @@ fn the_finder_and_config_never_reach_for_the_cli() {
     check(
         &["src/finder", "src/config.rs"],
         "crate::cli",
-        "the finder shows state; the cli mutates it — anything that changes, prompts or draws on the terminal belongs in the cli.",
+        "the finder confirms and repo carries out; the cli owns the terminal — anything that prompts, prints or parses arguments belongs in the cli.",
     );
 }
