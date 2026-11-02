@@ -43,12 +43,17 @@ pub use theme::{Theme, lookup_theme};
 use crate::config::{self, Chord};
 use crate::repo::{self, Branch, History, PullRequest, Repo, Status, Tree, Worktree};
 use crate::{Error, Result, err};
+use branch::{Branches, RemoteBranches};
 use command::{completions, is_command, split_input};
 use info::{Seg, wrap_segs};
 use input::{Input, SPINNER_INTERVAL, Spinner};
+use issues::{IssueDetail, Issues};
 use list::Item;
 use overlay::{Change, Overlay, Pending};
+use overlay::{ConfirmDetail, Done, ExpireDetail, RemoveDetail};
+use pr::{PrDetail, Prs};
 use theme::Styles;
+use worktree::Worktrees;
 use worktree::{Mode, Stash};
 
 /// The finder keys gm.toml can move: DEFAULT_WORKTREE_KEY opens the worktree
@@ -171,19 +176,6 @@ impl Key {
     }
 }
 
-/// Done is the outcome of a confirmed change, back on the UI thread.
-#[derive(Debug, Clone)]
-pub struct Done {
-    kind: Change,
-    mode: Mode,
-    repo_at: String,
-    label: String, // how the new row reads, if one was made
-    path: String,
-    busy_tag: u64,
-    err: Option<Error>,
-    gone: Vec<String>, // the paths /expire removed
-}
-
 /// Msg is everything update answers to.
 pub enum Msg {
     Key(Key),
@@ -208,88 +200,6 @@ pub enum Msg {
     ExpireDetail(ExpireDetail),     // what /expire waiting on git would remove
     RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
     RepoState(String, repo::State), // one repository scanned again after a change
-}
-
-/// Worktrees carries git's worktree list for one repository.
-pub struct Worktrees {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    wts: Result<Vec<Worktree>>,
-}
-
-/// Branches carries git's branch list for one repository, and where each
-/// branch that is checked out is.
-pub struct Branches {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    branches: Result<Vec<Branch>>,
-    at: HashMap<String, String>, // branch name -> worktree path
-}
-
-/// RemoteBranches carries what the remotes of one repository have that the
-/// last fetch did not bring.
-pub struct RemoteBranches {
-    path: String,
-    branches: Vec<Branch>,
-    busy_tag: u64,
-    err: Option<Error>,
-}
-
-/// Prs carries gh's answer about one repository.
-pub struct Prs {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    prs: Result<Vec<(PullRequest, String)>>, // each with where it is checked out, if anywhere
-}
-
-/// Issues carries gh's answer about one repository.
-pub struct Issues {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    issues: Result<Vec<crate::repo::Issue>>,
-}
-
-/// IssueDetail carries the full text of one issue.
-pub struct IssueDetail {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    issue: Result<crate::repo::Issue>,
-}
-
-/// PrDetail carries the full text of one pull request.
-pub struct PrDetail {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    number: u64, // the pull request it was asked about, kept for when gh fails
-    pr: Result<PullRequest>,
-}
-
-/// ConfirmDetail carries work a confirmation needs before y can answer it.
-pub struct ConfirmDetail {
-    busy_tag: u64,
-    result: Result<Vec<String>>,
-}
-
-/// RemoveDetail is git's account of what a /remove would lose, for the
-/// question already on screen.
-pub struct RemoveDetail {
-    busy_tag: u64,
-    detail: Vec<String>, // the question's lines, in place of "checking…"
-    force: bool,         // there is uncommitted work in it
-}
-
-/// ExpireDetail is the scan /expire's question waits for before y can answer.
-pub struct ExpireDetail {
-    busy_tag: u64,
-    days: i64,
-    result: Result<ExpireScan>,
-}
-
-/// ExpireScan names both the worktrees to remove and the work the question must say it will keep.
-pub struct ExpireScan {
-    worktrees: Vec<Worktree>,
-    detail: Vec<String>,
-    kept: Option<String>,
 }
 
 /// Task is work off the UI thread; the message it returns is fed back in.

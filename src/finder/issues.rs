@@ -4,8 +4,22 @@ pub(super) use super::detail::{Detail, Subject};
 use super::list::Item;
 use super::overlay::Overlay;
 use super::worktree::Mode;
-use super::{Cmd, IssueDetail, Issues, Model, Msg};
+use super::{Cmd, Model, Msg};
 use crate::repo;
+
+/// Issues carries gh's answer about one repository.
+pub struct Issues {
+    pub(super) path: String, // the repository it was asked about
+    pub(super) busy_tag: u64,
+    pub(super) issues: crate::Result<Vec<crate::repo::Issue>>,
+}
+
+/// IssueDetail carries the full text of one issue.
+pub struct IssueDetail {
+    pub(super) path: String, // the repository it was asked about
+    pub(super) busy_tag: u64,
+    pub(super) issue: crate::Result<crate::repo::Issue>,
+}
 
 impl Model {
     /// open_issues asks gh for the selected repository's open issues, off the

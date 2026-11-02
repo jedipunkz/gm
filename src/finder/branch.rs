@@ -4,8 +4,28 @@ use super::info::tildify;
 use super::list::Item;
 use super::overlay::{Change, Pending};
 use super::worktree::Mode;
-use super::{Action, Branches, Cmd, Model, Msg, Outcome, RemoteBranches};
+use super::{Action, Cmd, Model, Msg, Outcome};
+use crate::Error;
 use crate::repo;
+use crate::repo::Branch;
+
+/// Branches carries git's branch list for one repository, and where each
+/// branch that is checked out is.
+pub struct Branches {
+    pub(super) path: String, // the repository it was asked about
+    pub(super) busy_tag: u64,
+    pub(super) branches: crate::Result<Vec<Branch>>,
+    pub(super) at: HashMap<String, String>, // branch name -> worktree path
+}
+
+/// RemoteBranches carries what the remotes of one repository have that the
+/// last fetch did not bring.
+pub struct RemoteBranches {
+    pub(super) path: String,
+    pub(super) branches: Vec<Branch>,
+    pub(super) busy_tag: u64,
+    pub(super) err: Option<Error>,
+}
 
 impl Model {
     /// open_branches asks git for the branches of the selected repository,

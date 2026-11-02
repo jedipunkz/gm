@@ -3,7 +3,7 @@ use ratatui::text::{Line, Span};
 use super::command::COMMANDS;
 use super::info::{Seg, tildify, wrap_segs};
 use super::worktree::Mode;
-use super::{Cmd, ConfirmDetail, Done, ExpireDetail, ExpireScan, Key, Model, Msg, RemoveDetail};
+use super::{Cmd, Key, Model, Msg};
 use crate::repo::{self, Branch, Worktree};
 use crate::{Error, err, paths, plural};
 
@@ -49,6 +49,47 @@ pub struct Pending {
     pub wait: Option<u64>, // the busy tag of the scan detail is waiting on; so is y
     pub wts: Vec<Worktree>, // the worktrees /expire removes
     pub ssh: bool,   // a created repository's origin is its SSH URL
+}
+
+/// Done is the outcome of a confirmed change, back on the UI thread.
+#[derive(Debug, Clone)]
+pub struct Done {
+    pub(super) kind: Change,
+    pub(super) mode: Mode,
+    pub(super) repo_at: String,
+    pub(super) label: String, // how the new row reads, if one was made
+    pub(super) path: String,
+    pub(super) busy_tag: u64,
+    pub(super) err: Option<Error>,
+    pub(super) gone: Vec<String>, // the paths /expire removed
+}
+
+/// ConfirmDetail carries work a confirmation needs before y can answer it.
+pub struct ConfirmDetail {
+    pub(super) busy_tag: u64,
+    pub(super) result: crate::Result<Vec<String>>,
+}
+
+/// RemoveDetail is git's account of what a /remove would lose, for the
+/// question already on screen.
+pub struct RemoveDetail {
+    pub(super) busy_tag: u64,
+    pub(super) detail: Vec<String>, // the question's lines, in place of "checking…"
+    pub(super) force: bool,         // there is uncommitted work in it
+}
+
+/// ExpireDetail is the scan /expire's question waits for before y can answer.
+pub struct ExpireDetail {
+    pub(super) busy_tag: u64,
+    pub(super) days: i64,
+    pub(super) result: crate::Result<ExpireScan>,
+}
+
+/// ExpireScan names both the worktrees to remove and the work the question must say it will keep.
+pub struct ExpireScan {
+    pub(super) worktrees: Vec<Worktree>,
+    pub(super) detail: Vec<String>,
+    pub(super) kept: Option<String>,
 }
 
 /// under_root is Tree::at for a confirmed change: the repository at path, by
