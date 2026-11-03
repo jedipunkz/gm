@@ -66,9 +66,9 @@ so each change has one implementation, and the two front ends differ only in
 how they ask and how they word the answer. What needs the user's terminal
 leaves the finder as an `Outcome` (`finder/mod.rs`): `cli/mod.rs`'s `act`
 clones a repository asked for with `/get` once the alternate screen is gone,
-which is where clone progress and password prompts belong. A visitor's repository history is recorded by
-whatever fetched, made or moved it, and by the finder only for a chosen row,
-so a visit is never counted twice.
+which is where clone progress and password prompts belong. A visitor's
+repository history is recorded by whatever fetched, made or moved it, and by
+the finder only for a chosen row, so a visit is never counted twice.
 
 ## Nothing long-running on the UI thread
 
