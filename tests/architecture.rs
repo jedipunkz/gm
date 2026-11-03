@@ -95,21 +95,53 @@ fn ident(s: &str) -> &str {
     &s[..end]
 }
 
+// rooted is code with every super:: chain that climbs to the crate root
+// written as crate::, so "super::super::cli" and "super::super::{x, cli}"
+// from repo::git are read as the crate:: paths they are. An inline module's
+// super:: is counted from its file, which is one level short; the code under
+// these rules has no inline module that climbs.
+fn rooted(code: &str, module: &[String]) -> String {
+    let mut out = String::with_capacity(code.len());
+    let mut at = 0;
+    while let Some(found) = code[at..].find("super::") {
+        let start = at + found;
+        let starts_chain = start == 0 || {
+            let before = code[..start].chars().next_back().unwrap_or(' ');
+            !(before.is_ascii_alphanumeric() || before == '_' || before == ':')
+        };
+        let mut rest = &code[start..];
+        let mut climbs = 0;
+        while let Some(after) = rest.strip_prefix("super::") {
+            climbs += 1;
+            rest = after;
+        }
+        let end = code.len() - rest.len();
+        out.push_str(&code[at..start]);
+        // Only a chain that climbs to the crate root can come down into a
+        // top-level module; one that climbs past it does not compile.
+        if starts_chain && climbs == module.len() {
+            out.push_str("crate::");
+        } else {
+            out.push_str(&code[start..end]);
+        }
+        at = end;
+    }
+    out.push_str(&code[at..]);
+    out
+}
+
 // reaches is the first line of text that names the target module, and the
-// spelling it used. Four spellings reach a module: the path itself
-// ("crate::cli"), a group that starts with it ("crate::{Result, cli::App}",
-// across lines too), a super:: chain that climbs to the crate root and
-// comes down into it ("super::super::cli" from repo::git), and an alias of
-// the crate, which hides every path after it and so is refused outright.
-// An inline module's super:: is counted from its file, which is one level
-// short; the code under these rules has no inline module that climbs.
+// spelling it used. Three spellings reach a module once super:: chains are
+// rooted: the path itself ("crate::cli"), a group that starts with it
+// ("crate::{Result, cli::App}", across lines too), and an alias of the
+// crate, which hides every path after it and so is refused outright.
 fn reaches(text: &str, module: &[String], target: &str) -> Option<(usize, String)> {
     let direct = format!("crate::{target}");
     // depth is how deep the scan is inside a crate::{ group; a name right
     // after the group's "{" or one of its commas is a path's first segment.
     let (mut depth, mut first) = (0usize, false);
     for (number, line) in text.lines().enumerate() {
-        let code = code_part(line);
+        let code = &rooted(code_part(line), module);
         // "crate::client" is not crate::cli: the name has to end there.
         if code
             .match_indices(&direct)
@@ -119,26 +151,6 @@ fn reaches(text: &str, module: &[String], target: &str) -> Option<(usize, String
         }
         if code.contains("crate as ") || code.contains("extern crate self") {
             return Some((number, "an alias of the crate".into()));
-        }
-        let mut at = 0;
-        while let Some(found) = code[at..].find("super::") {
-            let start = at + found;
-            let starts_chain = start == 0 || {
-                let before = code[..start].chars().next_back().unwrap_or(' ');
-                !(before.is_ascii_alphanumeric() || before == '_' || before == ':')
-            };
-            let mut rest = &code[start..];
-            let mut climbs = 0;
-            while let Some(after) = rest.strip_prefix("super::") {
-                climbs += 1;
-                rest = after;
-            }
-            at = code.len() - rest.len();
-            // Only a chain that climbs to the crate root can come down into
-            // a top-level module; one that climbs past it does not compile.
-            if starts_chain && climbs == module.len() && ident(rest) == target {
-                return Some((number, code[start..at].to_string() + target));
-            }
         }
         let mut chars = code.char_indices().peekable();
         while let Some((i, c)) = chars.next() {
@@ -204,6 +216,9 @@ fn reaches_sees_every_spelling() {
         ("use super::cli;", &repo[..]),
         ("use crate as gm;", &repo[..]),
         ("extern crate self as gm;", &repo[..]),
+        ("use super::super::{cli, x};", &repo_git[..]),
+        ("use super::super::{\n    x,\n    cli,\n};", &repo_git[..]),
+        ("use super::{Result, cli};", &repo[..]),
     ];
     for (text, module) in caught {
         assert!(reaches(text, module, "cli").is_some(), "missed: {text}");
@@ -213,6 +228,7 @@ fn reaches_sees_every_spelling() {
         ("use crate::{repo::{cli_like, x}, paths};", &repo[..]),
         ("use crate::client::X;", &repo[..]),
         ("use super::cli;", &repo_git[..]),
+        ("use super::{Result, cli};", &repo_git[..]),
         ("use super::*;", &repo_git[..]),
         ("// use crate::cli::App;", &repo[..]),
         ("let u = \"https://x\"; // crate::cli", &repo[..]),
