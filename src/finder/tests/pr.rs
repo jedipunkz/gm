@@ -23,7 +23,7 @@ fn open_pr_panel(m: &mut Model) {
 fn pr_row_keeps_its_number() {
     let root = TempDir::new();
     let (mut m, _) = pr_model(&root);
-    m.prs_of = Arc::new(|_| {
+    m.backend.prs_of = Arc::new(|_| {
         Ok(vec![pull_request(
             7,
             "Add login to every page of the site at once",
@@ -55,7 +55,7 @@ fn pr_list_qualifiers() {
         mk(2, "Bump serde", "app/dependabot", &["dependencies"], &[]),
         mk(1, "Fix leak", "alice", &["security"], &["jedipunkz"]),
     ];
-    m.prs_of = Arc::new(move |_| Ok(list.clone()));
+    m.backend.prs_of = Arc::new(move |_| Ok(list.clone()));
     open_pr_list(&mut m);
 
     for (q, want) in [
@@ -82,7 +82,7 @@ fn pr_list_says_when_it_is_cut_short() {
         .map(|n| pull_request(n, "Change something", "feat/x", false, false, "acme"))
         .collect();
     let _want = rs[1].path();
-    m.prs_of = Arc::new(move |_| Ok(page.clone()));
+    m.backend.prs_of = Arc::new(move |_| Ok(page.clone()));
 
     open_pr_list(&mut m);
     assert!(m.mode == Mode::Prs && m.view.len() == repo::PR_LIMIT);
@@ -147,7 +147,7 @@ fn pr_mode_asks_git_off_the_ui_thread() {
     let root = TempDir::new();
     let (mut m, _) = pr_model(&root);
     let msg = answer(m.update(key("ctrl+j"))).expect("no answer from gh");
-    m.worktrees_of = Arc::new(|_| panic!("git was asked on the UI thread"));
+    m.backend.worktrees_of = Arc::new(|_| panic!("git was asked on the UI thread"));
     m.update(msg);
     assert_eq!(m.mode, Mode::Prs, "{:?}", m.note);
     set_query(&mut m, "login");
@@ -178,7 +178,7 @@ fn pr_mode_finds_a_fork_checkout_by_place() {
     let mut m = new_model(&rs, "");
     (m.w, m.h) = (100, 16);
     let (f, l) = (fork.clone(), local.clone());
-    m.worktrees_of = Arc::new(move |dir| {
+    m.backend.worktrees_of = Arc::new(move |dir| {
         let w = |p: &str, b: &str| Worktree {
             path: p.into(),
             branch: b.into(),
@@ -186,7 +186,7 @@ fn pr_mode_finds_a_fork_checkout_by_place() {
         };
         Ok(vec![w(dir, "main"), w(&l, "bob/main"), w(&f, "bob-main")])
     });
-    m.prs_of = Arc::new(|_| {
+    m.backend.prs_of = Arc::new(|_| {
         Ok(vec![pull_request(
             9, "Fix typo", "main", false, true, "bob",
         )])
@@ -198,7 +198,7 @@ fn pr_mode_finds_a_fork_checkout_by_place() {
 
     // Without the fork's own checkout, the local bob/main is not offered.
     let l = local.clone();
-    m.worktrees_of = Arc::new(move |dir| {
+    m.backend.worktrees_of = Arc::new(move |dir| {
         Ok(vec![
             Worktree {
                 path: dir.into(),
@@ -223,7 +223,7 @@ fn pr_mode_finds_a_fork_checkout_by_place() {
 fn pr_pane_shows_the_body() {
     let root = TempDir::new();
     let (mut m, _) = pr_model(&root);
-    m.prs_of = Arc::new(|_| {
+    m.backend.prs_of = Arc::new(|_| {
         let mut p = pull_request(7, "Add login", "feat/login", false, false, "acme");
         p.body = "# Why\n\nthe form\nis missing".into();
         p.labels = vec!["security".into(), "go".into()];
@@ -284,7 +284,7 @@ fn pr_panel() {
     // ctrl-b and ctrl-y act on the pull request's URL.
     let copied = Arc::new(Mutex::new(Vec::new()));
     let had = copied.clone();
-    m.copy_url = Arc::new(move |u| {
+    m.backend.copy_url = Arc::new(move |u| {
         copied.lock().unwrap().push(u.to_string());
         Ok(())
     });
@@ -321,7 +321,7 @@ fn pr_panel_checks_out_what_it_shows() {
 fn pr_panel_opens_on_the_listing_when_gh_fails() {
     let root = TempDir::new();
     let (mut m, _) = pr_model(&root);
-    m.pr_of = Arc::new(|_, _| Err("gh pr view: timed out".into()));
+    m.backend.pr_of = Arc::new(|_, _| Err("gh pr view: timed out".into()));
     open_pr_list(&mut m);
     set_query(&mut m, "login");
     open_pr_panel(&mut m);
@@ -381,7 +381,7 @@ fn pr_mode_says_why_not() {
     ] {
         let (mut m, _) = pr_model(&root);
         let res: crate::Result<Vec<PullRequest>> = res;
-        m.prs_of = Arc::new(move |_| res.clone());
+        m.backend.prs_of = Arc::new(move |_| res.clone());
         open_pr_list(&mut m);
         assert!(
             m.mode == Mode::Repos && m.note.contains(note),
@@ -412,8 +412,8 @@ fn pr_check_out() {
     std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let mut m = new_model(std::slice::from_ref(&r), "");
-    m.gh = gh;
-    m.prs_of = Arc::new(|_| {
+    m.backend.gh = gh;
+    m.backend.prs_of = Arc::new(|_| {
         Ok(vec![pull_request(
             7,
             "Add login",
@@ -423,7 +423,7 @@ fn pr_check_out() {
             "acme",
         )])
     });
-    m.pr_of = Arc::new(|_, n| Ok(pr_in_full(n)));
+    m.backend.pr_of = Arc::new(|_, n| Ok(pr_in_full(n)));
     open_pr_list(&mut m);
     open_pr_panel(&mut m);
     let cmds = m.update(key("enter"));
@@ -486,7 +486,7 @@ fn stale_busy_answers_do_not_clear_newer_work() {
     let root = TempDir::new();
     let (mut m, r) = branch_model(&root);
     let want = r.path();
-    m.prs_of = Arc::new(move |dir| {
+    m.backend.prs_of = Arc::new(move |dir| {
         assert_eq!(dir, want);
         Ok(vec![pull_request(
             7,
@@ -513,7 +513,7 @@ fn stale_busy_answers_do_not_clear_newer_work() {
 
     let (mut m, r) = branch_model(&root);
     let want = r.path();
-    m.prs_of = Arc::new(move |dir| {
+    m.backend.prs_of = Arc::new(move |dir| {
         assert_eq!(dir, want);
         Ok(vec![pull_request(
             7,

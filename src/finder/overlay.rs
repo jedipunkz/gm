@@ -1,9 +1,10 @@
 use ratatui::text::{Line, Span};
 
 use super::command::COMMANDS;
-use super::info::{Seg, tildify, wrap_segs};
+use super::info::{self, Seg, tildify, wrap_segs};
+use super::list::Item;
 use super::worktree::Mode;
-use super::{Cmd, ConfirmDetail, Done, ExpireDetail, ExpireScan, Key, Model, Msg, RemoveDetail};
+use super::{Action, Cmd, Key, Model, Msg, Outcome};
 use crate::repo::{self, Branch, Worktree};
 use crate::{Error, err, paths, plural};
 
@@ -51,10 +52,59 @@ pub struct Pending {
     pub ssh: bool,   // a created repository's origin is its SSH URL
 }
 
+/// Done is the outcome of a confirmed change, back on the UI thread.
+#[derive(Debug, Clone)]
+pub struct Done {
+    pub(super) kind: Change,
+    pub(super) mode: Mode,
+    pub(super) repo_at: String,
+    pub(super) label: String, // how the new row reads, if one was made
+    pub(super) path: String,
+    pub(super) busy_tag: u64,
+    pub(super) err: Option<Error>,
+    pub(super) gone: Vec<String>, // the paths /expire removed
+}
+
+/// ConfirmDetail carries work a confirmation needs before y can answer it.
+pub struct ConfirmDetail {
+    pub(super) busy_tag: u64,
+    pub(super) result: crate::Result<Vec<String>>,
+}
+
+/// RemoveDetail is git's account of what a /remove would lose, for the
+/// question already on screen.
+pub struct RemoveDetail {
+    pub(super) busy_tag: u64,
+    pub(super) detail: Vec<String>, // the question's lines, in place of "checking…"
+    pub(super) force: bool,         // there is uncommitted work in it
+}
+
+/// ExpireDetail is the scan /expire's question waits for before y can answer.
+pub struct ExpireDetail {
+    pub(super) busy_tag: u64,
+    pub(super) days: i64,
+    pub(super) result: crate::Result<ExpireScan>,
+}
+
+/// ExpireScan names both the worktrees to remove and the work the question must say it will keep.
+pub struct ExpireScan {
+    pub(super) worktrees: Vec<Worktree>,
+    pub(super) detail: Vec<String>,
+    pub(super) kept: Option<String>,
+}
+
+/// under_root is Tree::at for a confirmed change: the repository at path, by
+/// the root it sits under, and a path under none of them is the error the
+/// note shows.
+fn under_root(tree: &repo::Tree, path: &str) -> Result<repo::Repo, Error> {
+    tree.at(path)
+        .ok_or_else(|| err!("{path} is not under any root"))
+}
+
 impl Model {
     /// perform carries out a confirmed change, off the UI thread.
     pub(super) fn perform(&self, a: Pending, busy_tag: u64) -> Cmd {
-        let (tree, gh) = (self.tree.clone(), self.gh.clone());
+        let (tree, gh) = (self.tree.clone(), self.backend.gh.clone());
         Cmd::Task(Box::new(move || {
             let kind = a.kind;
             let done = |res: Result<(String, String), Error>| {
@@ -74,9 +124,8 @@ impl Model {
                 }))
             };
             match kind {
-                Change::Remove => done(match tree.at(&a.arg) {
-                    None => Err(err!("{} is not under any root", a.arg)),
-                    Some(r) => repo::delete(&r).map(|left| {
+                Change::Remove => done(under_root(&tree, &a.arg).and_then(|r| {
+                    repo::delete(&r).map(|left| {
                         // A checkout outside gm's worktree directory stays
                         // where it is, and the note is where that is said.
                         let mut label = r.rel.clone();
@@ -84,8 +133,8 @@ impl Model {
                             label += &format!("; kept {}", left.join(", "));
                         }
                         (r.path(), label)
-                    }),
-                }),
+                    })
+                })),
                 Change::Create => done(tree.create(&a.arg, a.ssh).map(|r| (r.path(), r.rel))),
                 Change::AddWorktree | Change::CheckOut => done((|| {
                     if a.fetch {
@@ -96,9 +145,7 @@ impl Model {
                         };
                         repo::fetch_branch(&a.repo_at, &b)?;
                     }
-                    let r = tree
-                        .at(&a.repo_at)
-                        .ok_or_else(|| err!("{} is not under any root", a.repo_at))?;
+                    let r = under_root(&tree, &a.repo_at)?;
                     let root = paths::join(&r.root, repo::WORKTREE_ROOT);
                     repo::add_worktree_from(&root, &a.repo_at, &a.dir, &a.arg, &a.from)?;
                     Ok((a.dir.clone(), a.arg.clone()))
@@ -108,32 +155,28 @@ impl Model {
                         .arg
                         .parse()
                         .map_err(|_| err!("{:?} is not a pull request", a.arg))?;
-                    let r = tree
-                        .at(&a.repo_at)
-                        .ok_or_else(|| err!("{} is not under any root", a.repo_at))?;
+                    let r = under_root(&tree, &a.repo_at)?;
                     let root = paths::join(&r.root, repo::WORKTREE_ROOT);
                     repo::check_out_pull_request_in(&root, &gh, &a.repo_at, &a.dir, n)?;
                     Ok((a.dir.clone(), a.arg.clone()))
                 })()),
                 Change::RemoveWorktree => done(
-                    match tree.at(&a.repo_at) {
-                        None => Err(err!("{} is not under any root", a.repo_at)),
-                        Some(r) => repo::remove_worktree_and_branch(&r, &a.dir, &a.arg, a.force),
-                    }
-                    .map(|gone| {
-                        // The label finishes the note: what became of the branch.
-                        let said = match (a.arg.as_str(), gone) {
-                            ("", _) => String::new(),
-                            (b, true) => format!(", deleted branch {b}"),
-                            (b, false) => format!(", kept branch {b}: not merged"),
-                        };
-                        (a.dir.clone(), said)
-                    }),
+                    under_root(&tree, &a.repo_at)
+                        .and_then(|r| repo::remove_worktree_and_branch(&r, &a.dir, &a.arg, a.force))
+                        .map(|gone| {
+                            // The label finishes the note: what became of the branch.
+                            let said = match (a.arg.as_str(), gone) {
+                                ("", _) => String::new(),
+                                (b, true) => format!(", deleted branch {b}"),
+                                (b, false) => format!(", kept branch {b}: not merged"),
+                            };
+                            (a.dir.clone(), said)
+                        }),
                 ),
                 Change::Expire => {
-                    let gone = tree.at(&a.repo_at).map(|r| repo::expire(&r, &a.wts));
-                    let Some(gone) = gone else {
-                        return done(Err(err!("{} is not under any root", a.repo_at)));
+                    let gone = match under_root(&tree, &a.repo_at) {
+                        Ok(r) => repo::expire(&r, &a.wts),
+                        Err(e) => return done(Err(e)),
                     };
                     // A refusal is one worktree's news, not the whole command's:
                     // the rest are gone either way, so it goes in the label.
@@ -156,6 +199,153 @@ impl Model {
                 Change::None => None,
             }
         }))
+    }
+
+    pub(super) fn done(&mut self, d: Done) -> Vec<Cmd> {
+        self.finish_busy(d.busy_tag);
+        if let Some(e) = d.err {
+            self.note = e.0;
+            return vec![];
+        }
+        let status_path = if d.repo_at.is_empty() {
+            match d.kind {
+                Change::Create | Change::Remove => d.path.as_str(),
+                _ => "",
+            }
+        } else {
+            d.repo_at.as_str()
+        };
+        if !status_path.is_empty() {
+            self.status.remove(status_path);
+            self.probing.remove(status_path);
+        }
+        // A repository made, or whose worktrees changed, is scanned again once
+        // the status filters have scanned at all: otherwise they would answer
+        // for it as it was, or not at all.
+        let rescan = (!status_path.is_empty()
+            && d.kind != Change::Remove
+            && (self.repo_states.is_some() || self.scanning_states))
+            .then(|| self.rescan_repo_state(status_path));
+
+        match d.kind {
+            Change::Remove | Change::RemoveWorktree | Change::Create | Change::AddWorktree => {
+                let changed = |all: &mut Vec<Item>| match d.kind {
+                    Change::Remove | Change::RemoveWorktree => {
+                        let before = all.len();
+                        all.retain(|it| it.path != d.path);
+                        all.len() != before
+                    }
+                    Change::Create => {
+                        // The repository list is ascending by frecency, best
+                        // last, and a fresh clone has no visits — so its row
+                        // belongs at the top, not at the end a push would
+                        // give it, which is the best spot in the list.
+                        let it = Item {
+                            label: d.label.clone(),
+                            path: d.path.clone(),
+                            ..Default::default()
+                        };
+                        let mut at = 0;
+                        while at < all.len()
+                            && (all[at].score < it.score
+                                || (all[at].score == it.score && all[at].label <= it.label))
+                        {
+                            at += 1;
+                        }
+                        all.insert(at, it);
+                        true
+                    }
+                    Change::AddWorktree => {
+                        let existing = match d.mode {
+                            Mode::Branches => all.iter_mut().find(|it| {
+                                it.branch.name == d.label || it.branch.label() == d.label
+                            }),
+                            Mode::Prs => all
+                                .iter_mut()
+                                .find(|it| it.pr.checkout() == d.label || it.pr.branch == d.label),
+                            _ => all.iter_mut().find(|it| it.label == d.label),
+                        };
+                        if let Some(it) = existing {
+                            it.path = d.path.clone();
+                        } else {
+                            // In the worktree list the main worktree belongs
+                            // to the bottom row, and the rest read newest
+                            // first, so a new worktree goes at the top. The
+                            // branch and pull request lists keep the row a
+                            // branch was: those are updated in place above.
+                            let at = if d.mode == Mode::Worktrees {
+                                0
+                            } else {
+                                all.len()
+                            };
+                            all.insert(
+                                at,
+                                Item {
+                                    label: d.label.clone(),
+                                    path: d.path.clone(),
+                                    branch: crate::repo::Branch {
+                                        name: d.label.clone(),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                        true
+                    }
+                    _ => false,
+                };
+                let active =
+                    self.mode == d.mode && (d.mode == Mode::Repos || self.repo_at == d.repo_at);
+                if active {
+                    if changed(&mut self.all) {
+                        self.view_stale = true;
+                        self.filter();
+                        // The created row is the selection, wherever its
+                        // ordering put it; standing on the bottom row would
+                        // be right only when it was pushed to the end.
+                        if !matches!(d.kind, Change::Remove | Change::RemoveWorktree)
+                            && let Some(i) =
+                                self.view.iter().position(|&x| self.all[x].path == d.path)
+                        {
+                            self.cursor = i;
+                        }
+                    }
+                } else if d.mode == Mode::Repos
+                    && self.mode != Mode::Repos
+                    && let Some(saved) = self.saved.as_mut()
+                {
+                    saved.update(changed);
+                }
+                self.note = match d.kind {
+                    Change::Remove => format!("removed {}{}", info::tildify(&d.path), d.label),
+                    Change::RemoveWorktree => {
+                        format!("removed {}{}", info::tildify(&d.path), d.label)
+                    }
+                    Change::Create | Change::AddWorktree => {
+                        format!("created {}", info::tildify(&d.path))
+                    }
+                    _ => unreachable!(),
+                };
+            }
+            Change::Expire => {
+                if self.mode == d.mode && self.repo_at == d.repo_at {
+                    self.all.retain(|it| !d.gone.contains(&it.path));
+                    self.view_stale = true;
+                    self.filter();
+                }
+                self.note = d.label;
+            }
+            Change::CheckOut | Change::CheckOutPr => {
+                self.result = Outcome {
+                    action: Action::Jump,
+                    arg: d.path,
+                };
+                return vec![Cmd::Quit];
+            }
+            Change::None => {}
+        }
+        rescan.into_iter().chain(self.load_status()).collect()
     }
 
     /// confirm puts the question on screen. Nothing happens until it is
@@ -361,7 +551,10 @@ impl Model {
         // The list, reflogs and each idle worktree's status can all take time;
         // y must wait until the fresh scan has filled this question.
         let repo_at = self.repo_at.clone();
-        let (worktrees_of, changed) = (self.worktrees_of.clone(), self.changed_of.clone());
+        let (worktrees_of, changed) = (
+            self.backend.worktrees_of.clone(),
+            self.backend.changed_of.clone(),
+        );
         let (busy_tag, busy) = self.start_busy("checking for uncommitted work…");
         let mut cmds = self.confirm(Pending {
             kind: Change::Expire,

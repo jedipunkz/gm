@@ -5,7 +5,9 @@
 
 mod get;
 mod list;
+mod migrate;
 mod remove;
+mod wt;
 
 #[cfg(test)]
 mod tests;
@@ -615,13 +617,7 @@ impl App<'_> {
             ));
         }
         let theme = finder::lookup_theme(&self.cfg.theme)?;
-        let keys = Keys {
-            worktree: config::parse_chord(&self.cfg.worktree_key, finder::DEFAULT_WORKTREE_KEY)?,
-            branch: config::parse_chord(&self.cfg.branch_key, finder::DEFAULT_BRANCH_KEY)?,
-            pr: config::parse_chord(&self.cfg.pr_key, finder::DEFAULT_PR_KEY)?,
-            issue: config::parse_chord(&self.cfg.issue_key, finder::DEFAULT_ISSUE_KEY)?,
-            remote: config::parse_chord(&self.cfg.remote_key, finder::DEFAULT_REMOTE_KEY)?,
-        };
+        let keys = Keys::from_config(&self.cfg)?;
         let mut hist = self.history();
         let res = finder::run(&self.tree, &repos, &hist, &theme, keys)?;
         self.act(res, &mut hist)

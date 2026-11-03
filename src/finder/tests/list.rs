@@ -467,7 +467,7 @@ fn unpushed_filter_is_for_repositories() {
 
 /// dirty_everywhere stubs the scan to call every path it is asked about dirty.
 fn dirty_everywhere(m: &mut Model) {
-    m.state_scan_of = Arc::new(|ps| {
+    m.backend.state_scan_of = Arc::new(|ps| {
         ps.iter()
             .map(|p| {
                 let s = repo::State {

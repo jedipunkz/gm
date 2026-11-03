@@ -5,7 +5,7 @@ use super::info::tildify;
 use super::list::Item;
 use super::overlay::{Change, Overlay, Pending};
 use super::worktree::Mode;
-use super::{Action, Cmd, Model, Msg, Outcome, PrDetail, Prs};
+use super::{Action, Cmd, Model, Msg, Outcome};
 use crate::repo::{self, PullRequest, Tree, Worktree};
 
 /// pr_branch is the head branch as GitHub writes it: a fork's with its
@@ -18,6 +18,21 @@ pub(super) fn pr_branch(p: &PullRequest) -> String {
     }
 }
 
+/// Prs carries gh's answer about one repository.
+pub struct Prs {
+    pub(super) path: String, // the repository it was asked about
+    pub(super) busy_tag: u64,
+    pub(super) prs: crate::Result<Vec<(PullRequest, String)>>, // each with where it is checked out, if anywhere
+}
+
+/// PrDetail carries the full text of one pull request.
+pub struct PrDetail {
+    pub(super) path: String, // the repository it was asked about
+    pub(super) busy_tag: u64,
+    pub(super) number: u64, // the pull request it was asked about, kept for when gh fails
+    pub(super) pr: crate::Result<PullRequest>,
+}
+
 impl Model {
     /// open_prs asks gh for the selected repository's open pull requests, off
     /// the UI thread: it goes to GitHub, and the finder stays usable while it
@@ -27,7 +42,10 @@ impl Model {
             return vec![];
         };
         let (busy_tag, busy) = self.start_busy(&format!("asking GitHub about {}…", it.label));
-        let (prs_of, worktrees_of) = (self.prs_of.clone(), self.worktrees_of.clone());
+        let (prs_of, worktrees_of) = (
+            self.backend.prs_of.clone(),
+            self.backend.worktrees_of.clone(),
+        );
         let (tree, path) = (self.tree.clone(), it.path);
         vec![
             busy,
@@ -105,7 +123,7 @@ impl Model {
         };
         let n = it.pr.number;
         let (busy_tag, busy) = self.start_busy(&format!("viewing #{n}…"));
-        let (pr_of, path) = (self.pr_of.clone(), self.repo_at.clone());
+        let (pr_of, path) = (self.backend.pr_of.clone(), self.repo_at.clone());
         vec![
             busy,
             Cmd::Task(Box::new(move || {

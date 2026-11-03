@@ -70,7 +70,7 @@ fn confirm_remove() {
     let mut m = new_model(&rs, "");
     (m.w, m.h) = (90, 16);
     let bravo = rs[1].path();
-    m.changed_of = Arc::new(move |p| if p == bravo { 3 } else { 0 });
+    m.backend.changed_of = Arc::new(move |p| if p == bravo { 3 } else { 0 });
 
     let cmds = run_slash(&mut m, "/remove"); // bravo, the bottom row
     assert_eq!(m.over, Overlay::Confirm);
@@ -124,7 +124,7 @@ fn remove_drops_a_stale_answer() {
     (m.w, m.h) = (90, 16);
     only_main(&mut m);
     let bravo = rs[1].path();
-    m.changed_of = Arc::new(move |p| if p == bravo { 3 } else { 0 });
+    m.backend.changed_of = Arc::new(move |p| if p == bravo { 3 } else { 0 });
     let stale = run_slash(&mut m, "/remove"); // bravo, the bottom row
     m.update(ch('n'));
     m.update(key("up"));
@@ -345,7 +345,7 @@ fn remove_says_the_worktrees_go_too() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     (m.w, m.h) = (90, 18);
-    m.worktrees_of = Arc::new(|dir| {
+    m.backend.worktrees_of = Arc::new(|dir| {
         let w = |p: &str, b: &str| Worktree {
             path: p.into(),
             branch: b.into(),
@@ -373,7 +373,7 @@ fn remove_names_the_work_in_the_worktrees() {
     let root = TempDir::new();
     let mut m = new_model(&repos(&root.path(), &["github.com/acme/alpha"]), "");
     (m.w, m.h) = (90, 18);
-    m.worktrees_of = Arc::new(|dir| {
+    m.backend.worktrees_of = Arc::new(|dir| {
         let w = |p: &str, b: &str| Worktree {
             path: p.into(),
             branch: b.into(),
@@ -385,7 +385,7 @@ fn remove_names_the_work_in_the_worktrees() {
             w("/tmp/wt/timeout", "fix/timeout"),
         ])
     });
-    m.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 2 } else { 0 });
+    m.backend.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 2 } else { 0 });
     ask_remove(&mut m);
     let view = view_text(&m);
     // /tmp/wt is outside gm's worktree directory for this repository, so each
@@ -413,7 +413,7 @@ fn remove_asks_git_rather_than_the_cache() {
     let mut m = new_model(&rs, "");
     (m.w, m.h) = (90, 16);
     only_main(&mut m);
-    m.changed_of = Arc::new(|_| 4);
+    m.backend.changed_of = Arc::new(|_| 4);
 
     // Not loaded yet.
     let mut fresh = m.clone();
@@ -434,7 +434,7 @@ fn remove_worktree_forces_what_it_warned_about() {
     let root = TempDir::new();
     let rs = repos(&root.path(), &["github.com/acme/alpha"]);
     let mut m = new_model(&rs, "");
-    m.worktrees_of = Arc::new(|dir| {
+    m.backend.worktrees_of = Arc::new(|dir| {
         let w = |p: &str, b: &str| Worktree {
             path: p.into(),
             branch: b.into(),
@@ -442,7 +442,7 @@ fn remove_worktree_forces_what_it_warned_about() {
         };
         Ok(vec![w(dir, "main"), w("/tmp/wt/login", "feat/login")])
     });
-    m.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 1 } else { 0 });
+    m.backend.changed_of = Arc::new(|p| if p == "/tmp/wt/login" { 1 } else { 0 });
     let cmds = m.update(key("ctrl+w"));
     feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);

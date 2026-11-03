@@ -10,6 +10,7 @@
 //! Work that talks to git or GitHub runs on a thread and comes back as a
 //! message, so the list never freezes.
 
+mod backend;
 mod branch;
 mod browse;
 mod clipboard;
@@ -29,7 +30,6 @@ mod worktree;
 
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
-use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -41,14 +41,20 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget};
 pub use theme::{Theme, lookup_theme};
 
 use crate::config::{self, Chord};
-use crate::repo::{self, Branch, History, PullRequest, Repo, Status, Tree, Worktree};
-use crate::{Error, Result, err};
+use crate::repo::{self, History, Repo, Status, Tree};
+use crate::{Result, err};
+use backend::Backend;
+use branch::{Branches, RemoteBranches};
 use command::{completions, is_command, split_input};
 use info::{Seg, wrap_segs};
 use input::{Input, SPINNER_INTERVAL, Spinner};
+use issues::{IssueDetail, Issues};
 use list::Item;
-use overlay::{Change, Overlay, Pending};
+use overlay::{ConfirmDetail, Done, ExpireDetail, RemoveDetail};
+use overlay::{Overlay, Pending};
+use pr::{PrDetail, Prs};
 use theme::Styles;
+use worktree::Worktrees;
 use worktree::{Mode, Stash};
 
 /// The finder keys gm.toml can move: DEFAULT_WORKTREE_KEY opens the worktree
@@ -83,6 +89,18 @@ pub struct Keys {
 }
 
 impl Keys {
+    /// from_config reads the finder keys gm.toml sets, each falling back to
+    /// its DEFAULT_*_KEY when gm.toml says nothing.
+    pub fn from_config(cfg: &config::Config) -> Result<Keys> {
+        Ok(Keys {
+            worktree: config::parse_chord(&cfg.worktree_key, DEFAULT_WORKTREE_KEY)?,
+            branch: config::parse_chord(&cfg.branch_key, DEFAULT_BRANCH_KEY)?,
+            pr: config::parse_chord(&cfg.pr_key, DEFAULT_PR_KEY)?,
+            issue: config::parse_chord(&cfg.issue_key, DEFAULT_ISSUE_KEY)?,
+            remote: config::parse_chord(&cfg.remote_key, DEFAULT_REMOTE_KEY)?,
+        })
+    }
+
     /// check refuses a binding that would shadow one of the finder's fixed
     /// keys, or that two actions would answer to at once.
     fn check(&self) -> Result<()> {
@@ -171,19 +189,6 @@ impl Key {
     }
 }
 
-/// Done is the outcome of a confirmed change, back on the UI thread.
-#[derive(Debug, Clone)]
-pub struct Done {
-    kind: Change,
-    mode: Mode,
-    repo_at: String,
-    label: String, // how the new row reads, if one was made
-    path: String,
-    busy_tag: u64,
-    err: Option<Error>,
-    gone: Vec<String>, // the paths /expire removed
-}
-
 /// Msg is everything update answers to.
 pub enum Msg {
     Key(Key),
@@ -210,88 +215,6 @@ pub enum Msg {
     RepoState(String, repo::State), // one repository scanned again after a change
 }
 
-/// Worktrees carries git's worktree list for one repository.
-pub struct Worktrees {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    wts: Result<Vec<Worktree>>,
-}
-
-/// Branches carries git's branch list for one repository, and where each
-/// branch that is checked out is.
-pub struct Branches {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    branches: Result<Vec<Branch>>,
-    at: HashMap<String, String>, // branch name -> worktree path
-}
-
-/// RemoteBranches carries what the remotes of one repository have that the
-/// last fetch did not bring.
-pub struct RemoteBranches {
-    path: String,
-    branches: Vec<Branch>,
-    busy_tag: u64,
-    err: Option<Error>,
-}
-
-/// Prs carries gh's answer about one repository.
-pub struct Prs {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    prs: Result<Vec<(PullRequest, String)>>, // each with where it is checked out, if anywhere
-}
-
-/// Issues carries gh's answer about one repository.
-pub struct Issues {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    issues: Result<Vec<crate::repo::Issue>>,
-}
-
-/// IssueDetail carries the full text of one issue.
-pub struct IssueDetail {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    issue: Result<crate::repo::Issue>,
-}
-
-/// PrDetail carries the full text of one pull request.
-pub struct PrDetail {
-    path: String, // the repository it was asked about
-    busy_tag: u64,
-    number: u64, // the pull request it was asked about, kept for when gh fails
-    pr: Result<PullRequest>,
-}
-
-/// ConfirmDetail carries work a confirmation needs before y can answer it.
-pub struct ConfirmDetail {
-    busy_tag: u64,
-    result: Result<Vec<String>>,
-}
-
-/// RemoveDetail is git's account of what a /remove would lose, for the
-/// question already on screen.
-pub struct RemoveDetail {
-    busy_tag: u64,
-    detail: Vec<String>, // the question's lines, in place of "checking…"
-    force: bool,         // there is uncommitted work in it
-}
-
-/// ExpireDetail is the scan /expire's question waits for before y can answer.
-pub struct ExpireDetail {
-    busy_tag: u64,
-    days: i64,
-    result: Result<ExpireScan>,
-}
-
-/// ExpireScan names both the worktrees to remove and the work the question must say it will keep.
-pub struct ExpireScan {
-    worktrees: Vec<Worktree>,
-    detail: Vec<String>,
-    kept: Option<String>,
-}
-
 /// Task is work off the UI thread; the message it returns is fed back in.
 pub type Task = Box<dyn FnOnce() -> Option<Msg> + Send>;
 
@@ -306,18 +229,6 @@ pub enum Cmd {
 /// about it. Key repeat is faster than this, so scrolling through a tree costs
 /// nothing and the row the eye stops on is described right away.
 const STATUS_DELAY: Duration = Duration::from_millis(100);
-
-/// Seam is a git or GitHub call the model makes through a field, so the tests
-/// can replace it; every real run uses the repo function of the same name.
-type Seam<T> = Arc<dyn Fn(&str) -> T + Send + Sync>;
-type StateScan = Arc<dyn Fn(&[String]) -> HashMap<String, repo::State> + Send + Sync>;
-/// IssueOf asks gh for one issue's full text, the repository dir and the
-/// number in hand; the tests stand in for it.
-type IssueOf = Arc<dyn Fn(&str, u64) -> Result<crate::repo::Issue> + Send + Sync>;
-/// PrOf asks gh for one pull request's full text, the same way.
-type PrOf = Arc<dyn Fn(&str, u64) -> Result<PullRequest> + Send + Sync>;
-/// CopyOf puts a string on the clipboard the terminal remembers.
-type CopyOf = Arc<dyn Fn(&str) -> std::io::Result<()> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Model {
@@ -360,23 +271,7 @@ pub struct Model {
     busy_since: Instant,
     spin: Spinner,
 
-    worktrees_of: Seam<Result<Vec<Worktree>>>,
-    branches_of: Seam<Result<Vec<Branch>>>,
-    remote_branches_of: Seam<(Vec<Branch>, Option<Error>)>,
-    prs_of: Seam<Result<Vec<PullRequest>>>,
-    /// pr_of reads one pull request in full, for its detail panel.
-    pr_of: PrOf,
-    /// issues_of lists a repository's open issues, issue_of reads one in
-    /// full; both gh's to answer, so the tests can stand in for them.
-    issues_of: Seam<Result<Vec<crate::repo::Issue>>>,
-    issue_of: IssueOf,
-    state_scan_of: StateScan,
-    changed_of: Seam<usize>,
-    open_url: Arc<dyn Fn(&str) + Send + Sync>,
-    /// copy_url puts a string on the clipboard the terminal remembers, by
-    /// OSC52, so a test can watch for it instead of a tty.
-    copy_url: CopyOf,
-    gh: String, // the program that checks pull requests out
+    backend: Backend,
 }
 
 impl Model {
@@ -437,22 +332,7 @@ impl Model {
             busy: String::new(),
             busy_since: Instant::now(),
             spin: Spinner::default(),
-            worktrees_of: Arc::new(repo::worktrees),
-            branches_of: Arc::new(repo::branches),
-            remote_branches_of: Arc::new(repo::remote_branches),
-            prs_of: Arc::new(repo::pull_requests),
-            pr_of: Arc::new(repo::pull_request),
-            issues_of: Arc::new(repo::issues),
-            issue_of: Arc::new(repo::issue),
-            state_scan_of: Arc::new(|ps: &[String]| {
-                repo::status_map(ps, repo::status_with_worktrees)
-            }),
-            changed_of: Arc::new(repo::changed_files),
-            open_url: Arc::new(|u| {
-                let _ = browse::open_url(u);
-            }),
-            copy_url: Arc::new(clipboard::copy),
-            gh: "gh".into(),
+            backend: Backend::default(),
         };
         m.filter();
         m
@@ -565,153 +445,6 @@ impl Model {
             }
             Msg::Key(k) => self.key(k),
         }
-    }
-
-    fn done(&mut self, d: Done) -> Vec<Cmd> {
-        self.finish_busy(d.busy_tag);
-        if let Some(e) = d.err {
-            self.note = e.0;
-            return vec![];
-        }
-        let status_path = if d.repo_at.is_empty() {
-            match d.kind {
-                Change::Create | Change::Remove => d.path.as_str(),
-                _ => "",
-            }
-        } else {
-            d.repo_at.as_str()
-        };
-        if !status_path.is_empty() {
-            self.status.remove(status_path);
-            self.probing.remove(status_path);
-        }
-        // A repository made, or whose worktrees changed, is scanned again once
-        // the status filters have scanned at all: otherwise they would answer
-        // for it as it was, or not at all.
-        let rescan = (!status_path.is_empty()
-            && d.kind != Change::Remove
-            && (self.repo_states.is_some() || self.scanning_states))
-            .then(|| self.rescan_repo_state(status_path));
-
-        match d.kind {
-            Change::Remove | Change::RemoveWorktree | Change::Create | Change::AddWorktree => {
-                let changed = |all: &mut Vec<Item>| match d.kind {
-                    Change::Remove | Change::RemoveWorktree => {
-                        let before = all.len();
-                        all.retain(|it| it.path != d.path);
-                        all.len() != before
-                    }
-                    Change::Create => {
-                        // The repository list is ascending by frecency, best
-                        // last, and a fresh clone has no visits — so its row
-                        // belongs at the top, not at the end a push would
-                        // give it, which is the best spot in the list.
-                        let it = Item {
-                            label: d.label.clone(),
-                            path: d.path.clone(),
-                            ..Default::default()
-                        };
-                        let mut at = 0;
-                        while at < all.len()
-                            && (all[at].score < it.score
-                                || (all[at].score == it.score && all[at].label <= it.label))
-                        {
-                            at += 1;
-                        }
-                        all.insert(at, it);
-                        true
-                    }
-                    Change::AddWorktree => {
-                        let existing = match d.mode {
-                            Mode::Branches => all.iter_mut().find(|it| {
-                                it.branch.name == d.label || it.branch.label() == d.label
-                            }),
-                            Mode::Prs => all
-                                .iter_mut()
-                                .find(|it| it.pr.checkout() == d.label || it.pr.branch == d.label),
-                            _ => all.iter_mut().find(|it| it.label == d.label),
-                        };
-                        if let Some(it) = existing {
-                            it.path = d.path.clone();
-                        } else {
-                            // In the worktree list the main worktree belongs
-                            // to the bottom row, and the rest read newest
-                            // first, so a new worktree goes at the top. The
-                            // branch and pull request lists keep the row a
-                            // branch was: those are updated in place above.
-                            let at = if d.mode == Mode::Worktrees {
-                                0
-                            } else {
-                                all.len()
-                            };
-                            all.insert(
-                                at,
-                                Item {
-                                    label: d.label.clone(),
-                                    path: d.path.clone(),
-                                    branch: crate::repo::Branch {
-                                        name: d.label.clone(),
-                                        ..Default::default()
-                                    },
-                                    ..Default::default()
-                                },
-                            );
-                        }
-                        true
-                    }
-                    _ => false,
-                };
-                let active =
-                    self.mode == d.mode && (d.mode == Mode::Repos || self.repo_at == d.repo_at);
-                if active {
-                    if changed(&mut self.all) {
-                        self.view_stale = true;
-                        self.filter();
-                        // The created row is the selection, wherever its
-                        // ordering put it; standing on the bottom row would
-                        // be right only when it was pushed to the end.
-                        if !matches!(d.kind, Change::Remove | Change::RemoveWorktree)
-                            && let Some(i) =
-                                self.view.iter().position(|&x| self.all[x].path == d.path)
-                        {
-                            self.cursor = i;
-                        }
-                    }
-                } else if d.mode == Mode::Repos
-                    && self.mode != Mode::Repos
-                    && let Some(saved) = self.saved.as_mut()
-                {
-                    saved.update(changed);
-                }
-                self.note = match d.kind {
-                    Change::Remove => format!("removed {}{}", info::tildify(&d.path), d.label),
-                    Change::RemoveWorktree => {
-                        format!("removed {}{}", info::tildify(&d.path), d.label)
-                    }
-                    Change::Create | Change::AddWorktree => {
-                        format!("created {}", info::tildify(&d.path))
-                    }
-                    _ => unreachable!(),
-                };
-            }
-            Change::Expire => {
-                if self.mode == d.mode && self.repo_at == d.repo_at {
-                    self.all.retain(|it| !d.gone.contains(&it.path));
-                    self.view_stale = true;
-                    self.filter();
-                }
-                self.note = d.label;
-            }
-            Change::CheckOut | Change::CheckOutPr => {
-                self.result = Outcome {
-                    action: Action::Jump,
-                    arg: d.path,
-                };
-                return vec![Cmd::Quit];
-            }
-            Change::None => {}
-        }
-        rescan.into_iter().chain(self.load_status()).collect()
     }
 
     fn key(&mut self, k: Key) -> Vec<Cmd> {
@@ -855,7 +588,7 @@ impl Model {
             .get(&path)
             .map(|s| s.remote.clone())
             .unwrap_or_default();
-        let open = self.open_url.clone();
+        let open = self.backend.open_url.clone();
         Some(Cmd::Task(Box::new(move || {
             // Not fetched yet for this row; ask git now rather than making the
             // key do nothing on the first press.

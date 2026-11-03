@@ -8,11 +8,12 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 
+use super::overlay::Change;
 use super::theme::{ROW_LIFT, blend, rgb};
 use super::*;
 use crate::config::parse_chord;
 use crate::paths;
-use crate::repo::{Commit, Issue, Ref, RefKind};
+use crate::repo::{Branch, Commit, Issue, PullRequest, Ref, RefKind, Worktree};
 use crate::testutil::{TempDir, exists, git, git_repo, mkdir};
 
 fn test_keys() -> Keys {
@@ -284,7 +285,7 @@ fn dirty_model(root: &TempDir) -> (Model, Vec<Repo>) {
     let mut m = new_model(&rs, "");
     (m.w, m.h) = (90, 14);
     let paths: Vec<String> = rs.iter().map(Repo::path).collect();
-    m.state_scan_of = Arc::new(move |_| {
+    m.backend.state_scan_of = Arc::new(move |_| {
         [
             (
                 paths[0].clone(),
@@ -323,7 +324,7 @@ fn open_worktrees(m: &mut Model) {
 }
 
 fn only_main(m: &mut Model) {
-    m.worktrees_of = Arc::new(|dir| {
+    m.backend.worktrees_of = Arc::new(|dir| {
         Ok(vec![Worktree {
             path: dir.into(),
             branch: "main".into(),
@@ -349,7 +350,7 @@ fn branch_model(root: &TempDir) -> (Model, Repo) {
         remote: remote.into(),
         unfetched,
     };
-    m.branches_of = Arc::new(move |dir| {
+    m.backend.branches_of = Arc::new(move |dir| {
         assert_eq!(dir, want);
         // Newest first, the way git sorts them.
         Ok(vec![
@@ -360,7 +361,7 @@ fn branch_model(root: &TempDir) -> (Model, Repo) {
     });
     // The remote has one branch the last fetch did not bring, and repeats the
     // ones it did.
-    m.remote_branches_of = Arc::new(move |_| {
+    m.backend.remote_branches_of = Arc::new(move |_| {
         (
             vec![
                 b("feat/login", "origin/feat/login", true),
@@ -414,7 +415,7 @@ fn pr_model(root: &TempDir) -> (Model, Vec<Repo>) {
     let mut m = new_model(&rs, "");
     (m.w, m.h) = (100, 16);
     set_query(&mut m, "alpha");
-    m.worktrees_of = Arc::new(|dir| {
+    m.backend.worktrees_of = Arc::new(|dir| {
         let w = |p: &str, b: &str| Worktree {
             path: p.into(),
             branch: b.into(),
@@ -423,7 +424,7 @@ fn pr_model(root: &TempDir) -> (Model, Vec<Repo>) {
         Ok(vec![w(dir, "main"), w("/tmp/wt/alpha-login", "feat/login")])
     });
     let want = rs[1].path();
-    m.prs_of = Arc::new(move |dir| {
+    m.backend.prs_of = Arc::new(move |dir| {
         assert_eq!(dir, want);
         // Newest first, the way gh lists them.
         Ok(vec![
@@ -432,7 +433,7 @@ fn pr_model(root: &TempDir) -> (Model, Vec<Repo>) {
             pull_request(7, "Add login", "feat/login", false, false, "acme"),
         ])
     });
-    m.pr_of = Arc::new(|_, n| Ok(pr_in_full(n)));
+    m.backend.pr_of = Arc::new(|_, n| Ok(pr_in_full(n)));
     (m, rs)
 }
 

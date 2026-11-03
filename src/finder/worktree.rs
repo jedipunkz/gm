@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use super::list::Item;
-use super::{Cmd, Model, Msg, Worktrees};
+use super::{Cmd, Model, Msg};
+use crate::repo::Worktree;
 
 /// Mode says which list is on screen.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -38,6 +39,13 @@ impl Stash {
     }
 }
 
+/// Worktrees carries git's worktree list for one repository.
+pub struct Worktrees {
+    pub(super) path: String, // the repository it was asked about
+    pub(super) busy_tag: u64,
+    pub(super) wts: crate::Result<Vec<Worktree>>,
+}
+
 impl Model {
     /// open_worktrees asks git for the checkouts of the selected repository,
     /// off the UI thread: with many refs or on a network filesystem git
@@ -47,7 +55,7 @@ impl Model {
             return vec![];
         };
         let (busy_tag, busy) = self.start_busy(&format!("listing the worktrees of {}…", it.label));
-        let (worktrees_of, path) = (self.worktrees_of.clone(), it.path);
+        let (worktrees_of, path) = (self.backend.worktrees_of.clone(), it.path);
         vec![
             busy,
             Cmd::Task(Box::new(move || {
