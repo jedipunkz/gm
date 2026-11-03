@@ -1,9 +1,10 @@
 use std::ffi::OsStr;
 use std::time::Duration;
 
-use super::deadline::run_deadline;
-use super::git::failure;
-use super::pr::{GH_LIST_TIMEOUT, gh_command, gh_missing};
+use super::pr::GH_LIST_TIMEOUT;
+use super::{gh_command, gh_missing};
+use crate::repo::deadline::run_deadline;
+use crate::repo::git::failure;
 use crate::{Result, err};
 
 /// Issue is a GitHub issue, as much of it as a list row and the detail panel

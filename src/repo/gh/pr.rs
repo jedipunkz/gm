@@ -1,11 +1,11 @@
 use std::ffi::OsStr;
-use std::process::Command;
 use std::time::Duration;
 
-use super::deadline::{FETCH_TIMEOUT, run_deadline};
-use super::git::{failure, quiet_result};
 use super::issue::{Comment, read_assignees, read_comments, read_labels};
-use crate::{Error, Result, err, paths};
+use super::{gh_command, gh_missing};
+use crate::repo::deadline::{FETCH_TIMEOUT, run_deadline};
+use crate::repo::git::{failure, quiet_result};
+use crate::{Result, err, paths};
 
 /// PullRequest is an open pull request, as much of it as a list row, the
 /// details pane and the detail panel need. comments stay empty on a listing:
@@ -81,17 +81,6 @@ const PR_VIEW_TIMEOUT: Duration = GH_LIST_TIMEOUT;
 /// the same and the comments, so both go through the same reader.
 const PR_LIST_FIELDS: &str = "number,title,headRefName,isDraft,isCrossRepository,author,\
      headRepositoryOwner,state,labels,assignees,url,body";
-
-pub(crate) fn gh_command(program: &OsStr) -> Command {
-    let command = Command::new(program);
-    #[cfg(test)]
-    let command = {
-        let mut command = command;
-        super::git::isolate_git_config(&mut command);
-        command
-    };
-    command
-}
 
 /// pull_requests asks gh for the repository's open pull requests. gh talks to
 /// GitHub, so this is slow next to git and fails without a network, gh or a
@@ -205,19 +194,10 @@ pub fn check_out_pull_request_in(
     match check_out_pull_request(gh, repo_dir, dir, number) {
         Ok(()) => Ok(()),
         Err(e) => {
-            super::prune_empty_parents(worktree_root, paths::dir(dir));
+            crate::repo::prune_empty_parents(worktree_root, paths::dir(dir));
             Err(e)
         }
     }
-}
-
-/// gh_missing turns a gh that could not be started into the one line worth
-/// reading.
-pub(crate) fn gh_missing(e: std::io::Error) -> Error {
-    if e.kind() == std::io::ErrorKind::NotFound {
-        return "gh is not installed: pull requests come from the GitHub CLI".into();
-    }
-    e.into()
 }
 
 #[cfg(test)]
