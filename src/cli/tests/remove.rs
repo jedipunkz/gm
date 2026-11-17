@@ -68,7 +68,8 @@ fn remove_dry_run_says_what_would_go() {
 
 // A checkout whose home is outside gm's worktree directory is named by its
 // path, and gm remove leaves it where it is: the warning is the only thing
-// that says where git's entry points.
+// that says where git's entry points. It used to be announced as going too,
+// which delete never did to it.
 #[test]
 fn remove_names_and_leaves_a_checkout_outside_the_worktree_dir() {
     let root = TempDir::new();
@@ -91,11 +92,14 @@ fn remove_names_and_leaves_a_checkout_outside_the_worktree_dir() {
     });
     res.res.unwrap();
     assert!(
-        res.err
-            .contains(&format!("1 worktree will go too: feat/login at {victim}")),
+        res.err.contains(&format!(
+            "1 worktree not under {} will stay: feat/login at {victim}",
+            repo::worktrees_dir(&r)
+        )),
         "{}",
         res.err
     );
+    assert!(!res.err.contains("will go too"), "{}", res.err);
     assert!(
         res.err.contains(&format!(
             "left in place, not under {}",
