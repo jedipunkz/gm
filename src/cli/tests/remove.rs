@@ -66,6 +66,30 @@ fn remove_dry_run_says_what_would_go() {
     assert!(exists(&r.path()) && exists(&login));
 }
 
+// The bug where a status git could not give read as clean: gm rm took a
+// repository whose index was broken without a word of warning.
+#[test]
+fn remove_warns_when_git_cannot_read_the_status() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    write(&paths::join(&r.path(), ".git/index"), "garbage\n");
+
+    let res = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.remove(&args(&["--dry-run", "acme/alpha"]))
+    });
+    res.res.unwrap();
+    for want in [
+        "warning: cannot read status of github.com/acme/alpha: ",
+        "warning: github.com/acme/alpha has uncommitted changes",
+    ] {
+        assert!(res.err.contains(want), "{want:?} missing from {}", res.err);
+    }
+}
+
 // A checkout whose home is outside gm's worktree directory is named by its
 // path, and gm remove leaves it where it is: the warning is the only thing
 // that says where git's entry points. It used to be announced as going too,
