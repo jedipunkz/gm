@@ -208,6 +208,37 @@ fn wt_expire_leaves_a_checkout_outside_the_tree() {
     assert!(exists(&outside) && repo::branch_exists(&r.path(), "old"));
 }
 
+// The bug where gm wt expire exited 0 when git refused one of the removals,
+// so a script could not tell that a worktree it expected gone was still there.
+#[test]
+fn wt_expire_fails_when_a_removal_fails() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let t = tree(&root.path());
+    let locked = t.worktree_dir(&r, "old/locked");
+    repo::add_worktree(
+        &root.join(repo::WORKTREE_ROOT),
+        &r.path(),
+        &locked,
+        "old/locked",
+    )
+    .unwrap();
+    // git refuses a locked worktree without a second --force.
+    git(&r.path(), &["worktree", "lock", &locked]);
+    age_worktrees(&r.path());
+
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["expire", "-y", "acme/alpha", "30d"]))
+    });
+    assert!(res.res.is_err(), "{}", res.err);
+    assert!(res.err.contains("failed   old/locked: "), "{}", res.err);
+    assert!(exists(&locked));
+}
+
 #[test]
 fn wt_expire_reports_the_verb_errors() {
     let root = TempDir::new();
