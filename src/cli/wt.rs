@@ -178,6 +178,13 @@ impl App<'_> {
             crate::plural(done.removed.len(), "worktree", "worktrees"),
             crate::plural(done.branches, "branch", "branches")
         )?;
+        // A script asked for these to go, so one that stayed is a failure.
+        if !done.failed.is_empty() {
+            return Err(err!(
+                "{} not removed",
+                crate::plural(done.failed.len(), "worktree", "worktrees")
+            ));
+        }
         Ok(())
     }
 }
