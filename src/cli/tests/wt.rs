@@ -180,6 +180,34 @@ fn wt_expire_removes_the_idle_and_keeps_the_busy() {
     );
 }
 
+// An idle checkout outside gm's tree is not gm's to expire, so the plan does
+// not name it either: what gm wt expire says it will remove is what goes.
+#[test]
+fn wt_expire_leaves_a_checkout_outside_the_tree() {
+    let base = TempDir::new();
+    let root = base.join("root");
+    let r = Repo {
+        root: root.clone(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let outside = base.join("outside/old");
+    git(&r.path(), &["worktree", "add", "-q", "-b", "old", &outside]);
+    age_worktrees(&r.path());
+
+    let res = run_in(&tree(&root), "", Config::default(), |a| {
+        a.wt(&args(&["expire", "-y", "acme/alpha", "30d"]))
+    });
+    res.res.unwrap();
+    assert!(
+        res.err
+            .contains(&format!("no worktree of {} idle for 30 days", r.rel)),
+        "{}",
+        res.err
+    );
+    assert!(exists(&outside) && repo::branch_exists(&r.path(), "old"));
+}
+
 #[test]
 fn wt_expire_reports_the_verb_errors() {
     let root = TempDir::new();
