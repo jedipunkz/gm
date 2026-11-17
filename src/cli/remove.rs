@@ -12,9 +12,17 @@ impl App<'_> {
         if p.args.is_empty() {
             return Err(missing_usage("remove").into());
         }
+        // Every name is resolved before anything goes, so a typo in the last
+        // one stops the command before the first is removed.
+        let mut repos: Vec<Repo> = vec![];
         for q in &p.args {
             let r = self.tree.resolve(q)?;
-            self.remove_one(&r, p.on("dry-run"), p.on("y"))?;
+            if !repos.contains(&r) {
+                repos.push(r);
+            }
+        }
+        for r in &repos {
+            self.remove_one(r, p.on("dry-run"), p.on("y"))?;
         }
         Ok(())
     }
