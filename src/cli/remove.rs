@@ -22,8 +22,22 @@ impl App<'_> {
     /// remove_one deletes one repository, warning first when there is work in
     /// it and asking before anything is lost.
     fn remove_one(&mut self, r: &Repo, dry_run: bool, yes: bool) -> Result<()> {
-        let dirty = usize::from(repo::is_dirty(&r.path()).unwrap_or(false));
-        let worktrees = repo::worktrees(&r.path()).unwrap_or_default();
+        // A status git cannot give is not a clean one: it is said, and warned
+        // about as work, since the removal goes ahead either way.
+        let dirty = match repo::is_dirty(&r.path()) {
+            Ok(dirty) => usize::from(dirty),
+            Err(e) => {
+                writeln!(self.err, "warning: cannot read status of {}: {e}", r.rel)?;
+                1
+            }
+        };
+        let worktrees = match repo::worktrees(&r.path()) {
+            Ok(wts) => wts,
+            Err(e) => {
+                writeln!(self.err, "warning: cannot list worktrees of {}: {e}", r.rel)?;
+                vec![]
+            }
+        };
         let plan = repo::removal_plan(r, dirty, &worktrees, repo::changed_files);
         if plan.dirty > 0 {
             writeln!(self.err, "warning: {} has uncommitted changes", r.rel)?;
