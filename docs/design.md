@@ -13,8 +13,9 @@ repositories never descends into a dotted directory, so gm's own worktree
 storage stays out of the repository list. Where a URL lands under a root is
 decided by exactly one function, `repo/url.rs`'s `rel_path_of`, and every
 shorthand (`git@…:`, `u/r`, bare `r`) is turned into a URL by exactly one
-normalizer, `normalize_url`, whose dot-segment and control-character checks are
-the one place that has to reject a reference before it becomes a path.
+normalizer, `normalize_url`, whose dot-segment, VCS-directory-name and
+control-character checks are the one place that has to reject a reference
+before it becomes a path.
 
 ## gm only ever removes what it owns
 

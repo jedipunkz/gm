@@ -102,6 +102,15 @@ pub fn normalize_url(reference: &str, ssh: bool) -> Result<Url> {
     if segments.iter().any(|seg| *seg == "." || *seg == "..") {
         return Err(err!("{reference:?} has a \".\" or \"..\" in its path"));
     }
+    // Nor a segment named like a VCS directory, in any case: it would make the
+    // directory above it a repository to is_repo, hiding everything beside it
+    // and handing it to the removal of that "repository".
+    if let Some(seg) = segments
+        .iter()
+        .find(|seg| super::VCS_DIRS.iter().any(|d| seg.eq_ignore_ascii_case(d)))
+    {
+        return Err(err!("{reference:?} has a {seg:?} directory in its path"));
+    }
     if segments.len() < 3 {
         return Err(err!(
             "{reference:?} must name a repository below its host and owner"
