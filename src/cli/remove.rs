@@ -29,9 +29,24 @@ impl App<'_> {
             writeln!(self.err, "warning: {} has uncommitted changes", r.rel)?;
         }
         // They go with it, so they have to be said before the question, not
-        // discovered afterwards.
-        if !plan.worktrees.is_empty() {
-            writeln!(self.err, "warning: {}", worktree_warning(r, &plan))?;
+        // discovered afterwards. A checkout outside gm's worktree directory
+        // stays where it is, and this is the only place that says where.
+        let (outside, going): (Vec<_>, Vec<_>) = plan
+            .worktrees
+            .iter()
+            .partition(|impact| repo::outside_worktrees_dir(r, &impact.worktree.path));
+        if !going.is_empty() {
+            writeln!(self.err, "warning: {}", worktree_warning(r, &going))?;
+        }
+        if !outside.is_empty() {
+            let wts: Vec<_> = outside.iter().map(|i| i.worktree.clone()).collect();
+            writeln!(
+                self.err,
+                "warning: {} not under {} will stay: {}",
+                crate::plural(wts.len(), "worktree", "worktrees"),
+                repo::worktrees_dir(r),
+                repo::worktree_labels_in(&repo::worktrees_dir(r), &wts, |_| 0)
+            )?;
         }
         if !plan.strays.is_empty() {
             writeln!(
@@ -64,25 +79,18 @@ impl App<'_> {
     }
 }
 
-/// worktree_warning words the impacts the repository layer found. A checkout
-/// outside gm's worktree directory is named by its path, which only this
-/// warning says.
-fn worktree_warning(r: &Repo, plan: &repo::RemovalPlan) -> String {
-    let worktrees: Vec<_> = plan
-        .worktrees
-        .iter()
-        .map(|impact| impact.worktree.clone())
-        .collect();
+/// worktree_warning words the checkouts delete takes, each with the work
+/// that goes with it.
+fn worktree_warning(r: &Repo, going: &[&repo::WorktreeImpact]) -> String {
+    let worktrees: Vec<_> = going.iter().map(|impact| impact.worktree.clone()).collect();
     let labels = repo::worktree_labels_in(&repo::worktrees_dir(r), &worktrees, |path| {
-        plan.worktrees
+        going
             .iter()
             .find(|impact| impact.worktree.path == path)
             .map_or(0, |impact| impact.changed)
     });
-    let what = if worktrees.len() == 1 {
-        "worktree"
-    } else {
-        "worktrees"
-    };
-    format!("{} {what} will go too: {labels}", worktrees.len())
+    format!(
+        "{} will go too: {labels}",
+        crate::plural(worktrees.len(), "worktree", "worktrees")
+    )
 }
