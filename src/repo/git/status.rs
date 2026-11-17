@@ -267,6 +267,32 @@ mod tests {
         assert!(status_map(&[], status_of).is_empty());
     }
 
+    // The bug where status.showUntrackedFiles=no hid untracked work from every
+    // count, so gm wt expire and gm remove took it without a warning: git
+    // worktree remove itself asks the same status and finds nothing either.
+    #[test]
+    fn untracked_files_count_whatever_the_config_shows() {
+        let base = TempDir::new();
+        let r = Repo {
+            root: base.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&r.path());
+        let tree = Tree {
+            roots: vec![base.path()],
+        };
+        let login = tree.worktree_dir(&r, "feat/login");
+        add_worktree(&base.join(WORKTREE_ROOT), &r.path(), &login, "feat/login").unwrap();
+        crate::testutil::git(&r.path(), &["config", "status.showUntrackedFiles", "no"]);
+        write(&paths::join(&r.path(), "main-wip.txt"), "wip\n");
+        write(&paths::join(&login, "wt-wip.txt"), "wip\n");
+
+        assert_eq!(is_dirty(&r.path()), Ok(true));
+        assert_eq!(changed_files(&login), 1);
+        assert_eq!(status_with_worktrees(&r.path()).dirty, 2);
+        assert_eq!(crate::repo::describe(&r.path()).dirty, 1);
+    }
+
     // The bug where /dirty hid a repository whose only work was in one of its
     // worktrees.
     #[test]
