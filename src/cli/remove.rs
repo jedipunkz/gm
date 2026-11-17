@@ -12,9 +12,17 @@ impl App<'_> {
         if p.args.is_empty() {
             return Err(missing_usage("remove").into());
         }
+        // Every name is resolved before anything goes, so a typo in the last
+        // one stops the command before the first is removed.
+        let mut repos: Vec<Repo> = vec![];
         for q in &p.args {
             let r = self.tree.resolve(q)?;
-            self.remove_one(&r, p.on("dry-run"), p.on("y"))?;
+            if !repos.contains(&r) {
+                repos.push(r);
+            }
+        }
+        for r in &repos {
+            self.remove_one(r, p.on("dry-run"), p.on("y"))?;
         }
         Ok(())
     }
@@ -22,16 +30,45 @@ impl App<'_> {
     /// remove_one deletes one repository, warning first when there is work in
     /// it and asking before anything is lost.
     fn remove_one(&mut self, r: &Repo, dry_run: bool, yes: bool) -> Result<()> {
-        let dirty = usize::from(repo::is_dirty(&r.path()).unwrap_or(false));
-        let worktrees = repo::worktrees(&r.path()).unwrap_or_default();
+        // A status git cannot give is not a clean one: it is said, and warned
+        // about as work, since the removal goes ahead either way.
+        let dirty = match repo::is_dirty(&r.path()) {
+            Ok(dirty) => usize::from(dirty),
+            Err(e) => {
+                writeln!(self.err, "warning: cannot read status of {}: {e}", r.rel)?;
+                1
+            }
+        };
+        let worktrees = match repo::worktrees(&r.path()) {
+            Ok(wts) => wts,
+            Err(e) => {
+                writeln!(self.err, "warning: cannot list worktrees of {}: {e}", r.rel)?;
+                vec![]
+            }
+        };
         let plan = repo::removal_plan(r, dirty, &worktrees, repo::changed_files);
         if plan.dirty > 0 {
             writeln!(self.err, "warning: {} has uncommitted changes", r.rel)?;
         }
         // They go with it, so they have to be said before the question, not
-        // discovered afterwards.
-        if !plan.worktrees.is_empty() {
-            writeln!(self.err, "warning: {}", worktree_warning(r, &plan))?;
+        // discovered afterwards. A checkout outside gm's worktree directory
+        // stays where it is, and this is the only place that says where.
+        let (outside, going): (Vec<_>, Vec<_>) = plan
+            .worktrees
+            .iter()
+            .partition(|impact| repo::outside_worktrees_dir(r, &impact.worktree.path));
+        if !going.is_empty() {
+            writeln!(self.err, "warning: {}", worktree_warning(r, &going))?;
+        }
+        if !outside.is_empty() {
+            let wts: Vec<_> = outside.iter().map(|i| i.worktree.clone()).collect();
+            writeln!(
+                self.err,
+                "warning: {} not under {} will stay: {}",
+                crate::plural(wts.len(), "worktree", "worktrees"),
+                repo::worktrees_dir(r),
+                repo::worktree_labels_in(&repo::worktrees_dir(r), &wts, |_| 0)
+            )?;
         }
         if !plan.strays.is_empty() {
             writeln!(
@@ -64,25 +101,18 @@ impl App<'_> {
     }
 }
 
-/// worktree_warning words the impacts the repository layer found. A checkout
-/// outside gm's worktree directory is named by its path, which only this
-/// warning says.
-fn worktree_warning(r: &Repo, plan: &repo::RemovalPlan) -> String {
-    let worktrees: Vec<_> = plan
-        .worktrees
-        .iter()
-        .map(|impact| impact.worktree.clone())
-        .collect();
+/// worktree_warning words the checkouts delete takes, each with the work
+/// that goes with it.
+fn worktree_warning(r: &Repo, going: &[&repo::WorktreeImpact]) -> String {
+    let worktrees: Vec<_> = going.iter().map(|impact| impact.worktree.clone()).collect();
     let labels = repo::worktree_labels_in(&repo::worktrees_dir(r), &worktrees, |path| {
-        plan.worktrees
+        going
             .iter()
             .find(|impact| impact.worktree.path == path)
             .map_or(0, |impact| impact.changed)
     });
-    let what = if worktrees.len() == 1 {
-        "worktree"
-    } else {
-        "worktrees"
-    };
-    format!("{} {what} will go too: {labels}", worktrees.len())
+    format!(
+        "{} will go too: {labels}",
+        crate::plural(worktrees.len(), "worktree", "worktrees")
+    )
 }

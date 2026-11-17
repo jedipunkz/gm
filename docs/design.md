@@ -13,8 +13,9 @@ repositories never descends into a dotted directory, so gm's own worktree
 storage stays out of the repository list. Where a URL lands under a root is
 decided by exactly one function, `repo/url.rs`'s `rel_path_of`, and every
 shorthand (`git@…:`, `u/r`, bare `r`) is turned into a URL by exactly one
-normalizer, `normalize_url`, whose dot-segment and control-character checks are
-the one place that has to reject a reference before it becomes a path.
+normalizer, `normalize_url`, whose dot-segment, VCS-directory-name and
+control-character checks are the one place that has to reject a reference
+before it becomes a path.
 
 ## gm only ever removes what it owns
 
@@ -23,7 +24,10 @@ worktree checked out of it, and the empty directories above them — and only
 inside gm's tree. A worktree entry points wherever the repository's own `.git`
 names, and nothing ties that to gm's tree, so a checkout outside the worktree
 directory is left where it is: `delete` returns it, and `gm remove` prints
-where it stayed. Ownership is checked by resolving symlinks on both sides
+where it stays before asking and where it stayed after.
+`remove_worktree_and_branch`, behind `gm wt remove`, `gm wt expire` and the
+finder, refuses such a checkout outright; `outside_worktrees_dir` is the one
+test all of them ask. Ownership is checked by resolving symlinks on both sides
 (`is_under`, `same_path`), so a path inside the tree that resolves outside is
 outside, and deleted paths land where they resolve — that resolution is also
 why the macOS `/var` versus `/private/var` difference is handled in one place

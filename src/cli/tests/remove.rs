@@ -66,9 +66,69 @@ fn remove_dry_run_says_what_would_go() {
     assert!(exists(&r.path()) && exists(&login));
 }
 
+// The bug where gm rm removed the repositories named before one that did not
+// resolve, and then failed: every name is resolved before anything goes, and
+// a repository named twice goes once.
+#[test]
+fn remove_resolves_every_name_before_removing_any() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let t = tree(&root.path());
+
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.remove(&args(&["-y", "alpha", "nosuchrepo"]))
+    });
+    assert!(res.res.unwrap_err().0.contains("nosuchrepo"));
+    assert!(
+        exists(&r.path()),
+        "nothing goes when a name does not resolve"
+    );
+
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.remove(&args(&["-y", "alpha", "acme/alpha"]))
+    });
+    res.res.unwrap();
+    assert_eq!(
+        res.err.lines().filter(|l| l.starts_with("removed")).count(),
+        1,
+        "{}",
+        res.err
+    );
+    assert!(!exists(&r.path()));
+}
+
+// The bug where a status git could not give read as clean: gm rm took a
+// repository whose index was broken without a word of warning.
+#[test]
+fn remove_warns_when_git_cannot_read_the_status() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    write(&paths::join(&r.path(), ".git/index"), "garbage\n");
+
+    let res = run_in(&tree(&root.path()), "", Config::default(), |a| {
+        a.remove(&args(&["--dry-run", "acme/alpha"]))
+    });
+    res.res.unwrap();
+    for want in [
+        "warning: cannot read status of github.com/acme/alpha: ",
+        "warning: github.com/acme/alpha has uncommitted changes",
+    ] {
+        assert!(res.err.contains(want), "{want:?} missing from {}", res.err);
+    }
+}
+
 // A checkout whose home is outside gm's worktree directory is named by its
 // path, and gm remove leaves it where it is: the warning is the only thing
-// that says where git's entry points.
+// that says where git's entry points. It used to be announced as going too,
+// which delete never did to it.
 #[test]
 fn remove_names_and_leaves_a_checkout_outside_the_worktree_dir() {
     let root = TempDir::new();
@@ -91,11 +151,14 @@ fn remove_names_and_leaves_a_checkout_outside_the_worktree_dir() {
     });
     res.res.unwrap();
     assert!(
-        res.err
-            .contains(&format!("1 worktree will go too: feat/login at {victim}")),
+        res.err.contains(&format!(
+            "1 worktree not under {} will stay: feat/login at {victim}",
+            repo::worktrees_dir(&r)
+        )),
         "{}",
         res.err
     );
+    assert!(!res.err.contains("will go too"), "{}", res.err);
     assert!(
         res.err.contains(&format!(
             "left in place, not under {}",

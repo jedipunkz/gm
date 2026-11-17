@@ -410,8 +410,8 @@ fn remove_all(p: &str) -> Result<()> {
 /// delete removes a repository, every worktree checked out of it, and the
 /// directories that are left empty above them. It asks nothing: the caller has
 /// already confirmed. It answers with the checkouts it has left where they
-/// were, because the repository's own files named a directory outside gm's
-/// worktree directory and git refused to remove them.
+/// were: the ones outside gm's worktree directory, which git would have
+/// removed with --force wherever they were, and are not gm's to remove.
 ///
 /// The worktrees go first. Their administrative files live inside the
 /// repository, so once it is gone git can no longer remove them and they are
@@ -419,6 +419,10 @@ fn remove_all(p: &str) -> Result<()> {
 pub fn delete(r: &Repo) -> Result<Vec<String>> {
     let mut left = vec![];
     for w in other_worktrees(r) {
+        if outside_worktrees_dir(r, &w.path) {
+            left.push(w.path.clone());
+            continue;
+        }
         if remove_worktree(&r.path(), &w.path, true).is_err() {
             // The repository is going anyway, so git's bookkeeping about this
             // checkout does not need to survive; the directory does not
@@ -473,10 +477,20 @@ pub(crate) fn is_under(p: &str, dir: &str) -> bool {
     }
 }
 
+/// outside_worktrees_dir reports whether the checkout at p is one gm does not
+/// own: something is there, and it does not resolve inside r's worktree
+/// directory. git removes a real checkout wherever it is when asked, so this
+/// is asked before git is. A path with nothing at it is not outside: git only
+/// drops its entry and touches nothing on disk. A dangling symlink is
+/// something, and is_under cannot resolve it, so it counts as outside.
+pub(crate) fn outside_worktrees_dir(r: &Repo, p: &str) -> bool {
+    std::fs::symlink_metadata(p).is_ok() && !is_under(p, &worktrees_dir(r))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::{TempDir, exists, git_repo, mkdir, write};
+    use crate::testutil::{TempDir, exists, git, git_repo, mkdir, write};
 
     #[test]
     fn matches_whole_segments_when_exact() {
@@ -837,6 +851,72 @@ mod tests {
             left,
             vec![victim],
             "the left checkout is named for the note"
+        );
+    }
+
+    // The bug where delete force-removed a checkout the user made with git
+    // worktree add somewhere else, work and all: git removes a real worktree
+    // wherever it is when asked, so whose it is has to be settled before git
+    // is asked, not after it refuses.
+    #[test]
+    fn delete_leaves_a_real_worktree_outside_the_tree() {
+        let base = TempDir::new();
+        let other = TempDir::new();
+        let r = Repo {
+            root: base.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&r.path());
+        let outside = paths::join(&other.path(), "alpha-hotfix");
+        git(
+            &r.path(),
+            &["worktree", "add", "-q", "-b", "hotfix", &outside],
+        );
+        write(&paths::join(&outside, "unsaved.txt"), "wip\n");
+
+        let left = delete(&r).unwrap();
+        assert!(!exists(&r.path()), "the repository went");
+        assert!(
+            exists(&paths::join(&outside, "unsaved.txt")),
+            "the outside checkout and its work survive"
+        );
+        assert!(
+            matches!(left.as_slice(), [p] if same_path(p, &outside)),
+            "the left checkout is named for the note: {left:?}"
+        );
+    }
+
+    // A checkout made with git worktree add ../alpha-feature lands in the tree
+    // and is listed as a repository of its own. Removing it must not take the
+    // checkouts of the repository it came from.
+    #[test]
+    fn delete_of_a_linked_worktree_leaves_its_siblings() {
+        let base = TempDir::new();
+        let tree = Tree {
+            roots: vec![base.path()],
+        };
+        let alpha = Repo {
+            root: base.path(),
+            rel: "github.com/acme/alpha".into(),
+        };
+        git_repo(&alpha.path());
+        let login = tree.worktree_dir(&alpha, "feat/login");
+        add_worktree(&base.path(), &alpha.path(), &login, "feat/login").unwrap();
+        write(&paths::join(&login, "precious.txt"), "wip\n");
+        let side = base.join("github.com/acme/alpha-feature");
+        git(
+            &alpha.path(),
+            &["worktree", "add", "-q", "-b", "feature", &side],
+        );
+        let r = tree.resolve("alpha-feature").unwrap();
+        assert_eq!(r.path(), side, "the linked worktree is listed");
+
+        delete(&r).unwrap();
+        assert!(!exists(&side), "the linked worktree went");
+        assert!(exists(&paths::join(&alpha.path(), ".git")));
+        assert!(
+            exists(&paths::join(&login, "precious.txt")),
+            "the checkout of the repository it came from survives"
         );
     }
 

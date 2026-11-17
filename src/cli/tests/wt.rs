@@ -61,6 +61,39 @@ fn wt_remove_refuses_what_is_not_a_worktree() {
     assert!(exists(&r.path()));
 }
 
+// The bug where a branch spelled with ".." reached a checkout outside gm's
+// tree: gm wt remove took it, work and all, and deleted its branch.
+#[test]
+fn wt_remove_refuses_a_checkout_outside_the_tree() {
+    let base = TempDir::new();
+    let root = base.join("root");
+    let r = Repo {
+        root: root.clone(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let outside = base.join("outside/feat");
+    git(
+        &r.path(),
+        &["worktree", "add", "-q", "-b", "feat", &outside],
+    );
+    write(&paths::join(&outside, "keep.txt"), "keep\n");
+
+    // Five steps up from root/.worktrees/github.com/acme/alpha is base.
+    let res = run_in(&tree(&root), "", Config::default(), |a| {
+        a.wt(&args(&[
+            "remove",
+            "-y",
+            "acme/alpha",
+            "../../../../../outside/feat",
+        ]))
+    });
+    let e = res.res.unwrap_err();
+    assert!(e.0.contains(&outside), "{e}");
+    assert!(exists(&paths::join(&outside, "keep.txt")));
+    assert!(repo::branch_exists(&r.path(), "feat"));
+}
+
 // age_worktrees writes an epoch reflog line into every worktree's HEAD log,
 // so gm reads all of them as idle since the epoch. The log's last line is
 // where git's own writing shows up, so this line goes last.
@@ -145,6 +178,65 @@ fn wt_expire_removes_the_idle_and_keeps_the_busy() {
         "{}",
         res.err
     );
+}
+
+// An idle checkout outside gm's tree is not gm's to expire, so the plan does
+// not name it either: what gm wt expire says it will remove is what goes.
+#[test]
+fn wt_expire_leaves_a_checkout_outside_the_tree() {
+    let base = TempDir::new();
+    let root = base.join("root");
+    let r = Repo {
+        root: root.clone(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let outside = base.join("outside/old");
+    git(&r.path(), &["worktree", "add", "-q", "-b", "old", &outside]);
+    age_worktrees(&r.path());
+
+    let res = run_in(&tree(&root), "", Config::default(), |a| {
+        a.wt(&args(&["expire", "-y", "acme/alpha", "30d"]))
+    });
+    res.res.unwrap();
+    assert!(
+        res.err
+            .contains(&format!("no worktree of {} idle for 30 days", r.rel)),
+        "{}",
+        res.err
+    );
+    assert!(exists(&outside) && repo::branch_exists(&r.path(), "old"));
+}
+
+// The bug where gm wt expire exited 0 when git refused one of the removals,
+// so a script could not tell that a worktree it expected gone was still there.
+#[test]
+fn wt_expire_fails_when_a_removal_fails() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let t = tree(&root.path());
+    let locked = t.worktree_dir(&r, "old/locked");
+    repo::add_worktree(
+        &root.join(repo::WORKTREE_ROOT),
+        &r.path(),
+        &locked,
+        "old/locked",
+    )
+    .unwrap();
+    // git refuses a locked worktree without a second --force.
+    git(&r.path(), &["worktree", "lock", &locked]);
+    age_worktrees(&r.path());
+
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.wt(&args(&["expire", "-y", "acme/alpha", "30d"]))
+    });
+    assert!(res.res.is_err(), "{}", res.err);
+    assert!(res.err.contains("failed   old/locked: "), "{}", res.err);
+    assert!(exists(&locked));
 }
 
 #[test]
