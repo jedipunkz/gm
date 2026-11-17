@@ -61,6 +61,39 @@ fn wt_remove_refuses_what_is_not_a_worktree() {
     assert!(exists(&r.path()));
 }
 
+// The bug where a branch spelled with ".." reached a checkout outside gm's
+// tree: gm wt remove took it, work and all, and deleted its branch.
+#[test]
+fn wt_remove_refuses_a_checkout_outside_the_tree() {
+    let base = TempDir::new();
+    let root = base.join("root");
+    let r = Repo {
+        root: root.clone(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let outside = base.join("outside/feat");
+    git(
+        &r.path(),
+        &["worktree", "add", "-q", "-b", "feat", &outside],
+    );
+    write(&paths::join(&outside, "keep.txt"), "keep\n");
+
+    // Five steps up from root/.worktrees/github.com/acme/alpha is base.
+    let res = run_in(&tree(&root), "", Config::default(), |a| {
+        a.wt(&args(&[
+            "remove",
+            "-y",
+            "acme/alpha",
+            "../../../../../outside/feat",
+        ]))
+    });
+    let e = res.res.unwrap_err();
+    assert!(e.0.contains(&outside), "{e}");
+    assert!(exists(&paths::join(&outside, "keep.txt")));
+    assert!(repo::branch_exists(&r.path(), "feat"));
+}
+
 // age_worktrees writes an epoch reflog line into every worktree's HEAD log,
 // so gm reads all of them as idle since the epoch. The log's last line is
 // where git's own writing shows up, so this line goes last.
