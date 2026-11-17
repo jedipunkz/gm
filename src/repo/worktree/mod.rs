@@ -313,8 +313,16 @@ pub fn remove_worktree(repo_dir: &str, dir: &str, force: bool) -> Result<()> {
 /// directories it leaves under the root's worktree directory, and then its
 /// branch where git branch -d allows: a branch not merged stays, so force
 /// never reaches the commits. It answers whether the branch went. An empty
-/// branch is a detached HEAD, which has none.
+/// branch is a detached HEAD, which has none. A checkout outside gm's
+/// worktree directory is refused: dir is built from a branch name, and a
+/// ".." in one reaches any checkout git has, which is not gm's to remove.
 pub fn remove_worktree_and_branch(r: &Repo, dir: &str, branch: &str, force: bool) -> Result<bool> {
+    if super::outside_worktrees_dir(r, dir) {
+        return Err(err!(
+            "{dir} is not under {}: gm removes only its own worktrees",
+            worktrees_dir(r)
+        ));
+    }
     remove_worktree(&r.path(), dir, force)?;
     prune_empty_parents(&paths::join(&r.root, WORKTREE_ROOT), paths::dir(dir));
     Ok(!branch.is_empty() && git_quiet(&["-C", &r.path(), "branch", "-d", "--", branch]).is_ok())
