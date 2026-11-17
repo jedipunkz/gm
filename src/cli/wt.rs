@@ -129,13 +129,13 @@ impl App<'_> {
         };
         let days = repo::parse_days(age)?;
         let r = self.tree.resolve(query)?;
-        let plan = repo::expiry_plan(
-            &r.path(),
-            &repo::worktrees(&r.path())?,
-            days,
-            repo::now(),
-            repo::changed_files,
-        );
+        // A checkout outside gm's worktree directory is not gm's to expire,
+        // so the plan does not name it: remove_worktree_and_branch refuses it.
+        let wts: Vec<_> = repo::worktrees(&r.path())?
+            .into_iter()
+            .filter(|w| !repo::outside_worktrees_dir(&r, &w.path))
+            .collect();
+        let plan = repo::expiry_plan(&r.path(), &wts, days, repo::now(), repo::changed_files);
         for impact in &plan.keep {
             writeln!(
                 self.err,
