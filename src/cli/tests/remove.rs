@@ -66,6 +66,41 @@ fn remove_dry_run_says_what_would_go() {
     assert!(exists(&r.path()) && exists(&login));
 }
 
+// The bug where gm rm removed the repositories named before one that did not
+// resolve, and then failed: every name is resolved before anything goes, and
+// a repository named twice goes once.
+#[test]
+fn remove_resolves_every_name_before_removing_any() {
+    let root = TempDir::new();
+    let r = Repo {
+        root: root.path(),
+        rel: "github.com/acme/alpha".into(),
+    };
+    git_repo(&r.path());
+    let t = tree(&root.path());
+
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.remove(&args(&["-y", "alpha", "nosuchrepo"]))
+    });
+    assert!(res.res.unwrap_err().0.contains("nosuchrepo"));
+    assert!(
+        exists(&r.path()),
+        "nothing goes when a name does not resolve"
+    );
+
+    let res = run_in(&t, "", Config::default(), |a| {
+        a.remove(&args(&["-y", "alpha", "acme/alpha"]))
+    });
+    res.res.unwrap();
+    assert_eq!(
+        res.err.lines().filter(|l| l.starts_with("removed")).count(),
+        1,
+        "{}",
+        res.err
+    );
+    assert!(!exists(&r.path()));
+}
+
 // The bug where a status git could not give read as clean: gm rm took a
 // repository whose index was broken without a word of warning.
 #[test]
