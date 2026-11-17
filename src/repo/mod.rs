@@ -410,8 +410,8 @@ fn remove_all(p: &str) -> Result<()> {
 /// delete removes a repository, every worktree checked out of it, and the
 /// directories that are left empty above them. It asks nothing: the caller has
 /// already confirmed. It answers with the checkouts it has left where they
-/// were, because the repository's own files named a directory outside gm's
-/// worktree directory and git refused to remove them.
+/// were: the ones outside gm's worktree directory, which git would have
+/// removed with --force wherever they were, and are not gm's to remove.
 ///
 /// The worktrees go first. Their administrative files live inside the
 /// repository, so once it is gone git can no longer remove them and they are
@@ -419,6 +419,10 @@ fn remove_all(p: &str) -> Result<()> {
 pub fn delete(r: &Repo) -> Result<Vec<String>> {
     let mut left = vec![];
     for w in other_worktrees(r) {
+        if outside_worktrees_dir(r, &w.path) {
+            left.push(w.path.clone());
+            continue;
+        }
         if remove_worktree(&r.path(), &w.path, true).is_err() {
             // The repository is going anyway, so git's bookkeeping about this
             // checkout does not need to survive; the directory does not
@@ -471,6 +475,16 @@ pub(crate) fn is_under(p: &str, dir: &str) -> bool {
         (Ok(rp), Ok(rd)) => rp != rd && rp.starts_with(&rd),
         _ => false,
     }
+}
+
+/// outside_worktrees_dir reports whether the checkout at p is one gm does not
+/// own: something is there, and it does not resolve inside r's worktree
+/// directory. git removes a real checkout wherever it is when asked, so this
+/// is asked before git is. A path with nothing at it is not outside: git only
+/// drops its entry and touches nothing on disk. A dangling symlink is
+/// something, and is_under cannot resolve it, so it counts as outside.
+pub(crate) fn outside_worktrees_dir(r: &Repo, p: &str) -> bool {
+    std::fs::symlink_metadata(p).is_ok() && !is_under(p, &worktrees_dir(r))
 }
 
 #[cfg(test)]
