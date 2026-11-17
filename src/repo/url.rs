@@ -331,6 +331,25 @@ mod tests {
         );
     }
 
+    // A segment named like a VCS directory makes the directory above it a
+    // repository to is_repo: "acme/.hg" turned github.com/acme itself into
+    // one, which hid its siblings and handed them to gm remove acme without a
+    // warning. Case does not save it on a case-insensitive disk.
+    #[test]
+    fn normalize_url_refuses_vcs_directory_segments() {
+        for bad in [
+            "acme/.hg",
+            "acme/.svn",
+            "acme/.git.git",
+            "acme/.GIT",
+            "github.com/acme/.git/x",
+            "git@github.com:acme/.hg.git",
+            "https://.git/u/r",
+        ] {
+            assert!(normalize_url(bad, false).is_err(), "{bad:?} was accepted");
+        }
+    }
+
     #[test]
     fn browse_url_is_https_without_the_git_bits() {
         let want = "https://github.com/x-motemen/ghq";
@@ -415,6 +434,7 @@ mod proptests {
             "(/|)([a-zA-Z0-9._~-]{1,10}){1,3}(/\\.git)?",
             "(/\\.\\.?/|)[a-z]{0,6}(\\.|\\.\\.|//|/[a-z0-9._-]{0,8}){0,3}",
             "[a-zA-Z0-9._~/-]*",
+            "(/[a-z]{1,6}){0,2}/\\.(git|hg|svn|GIT|Hg)(/[a-z]{1,4})?(\\.git)?",
         ]
     }
 
@@ -466,6 +486,12 @@ mod proptests {
                 prop_assert!(
                     segments.len() >= 3,
                     "repository path is too shallow: {:?} from {:?}", rel, r
+                );
+                prop_assert!(
+                    !segments
+                        .iter()
+                        .any(|s| crate::repo::VCS_DIRS.iter().any(|d| s.eq_ignore_ascii_case(d))),
+                    "a VCS directory name in {:?} from {:?}", rel, r
                 );
                 prop_assert!(
                     rel.chars().all(|c| !c.is_whitespace() && !c.is_control()),
