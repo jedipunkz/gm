@@ -9,8 +9,11 @@ use super::{git_in, remotes};
 use crate::Result;
 
 /// is_dirty reports whether the working copy has uncommitted changes.
+/// Untracked files count whatever status.showUntrackedFiles says, here and in
+/// every status gm reads: they are work a removal loses, and git worktree
+/// remove, asking the same status, would not stop for them.
 pub fn is_dirty(dir: &str) -> Result<bool> {
-    Ok(!git_in(dir, &["status", "--porcelain"])?.is_empty())
+    Ok(!git_in(dir, &["status", "--porcelain", "--untracked-files=normal"])?.is_empty())
 }
 
 /// changed_files counts what a removal of dir would lose: the files git status
@@ -57,9 +60,12 @@ const STATUS_WORKERS: usize = 8;
 
 /// status_of reads one repository's state.
 pub fn status_of(dir: &str) -> State {
-    let mut s = git_in(dir, &["status", "--porcelain", "-b"])
-        .map(|out| parse_status(&out))
-        .unwrap_or_default();
+    let mut s = git_in(
+        dir,
+        &["status", "--porcelain", "--untracked-files=normal", "-b"],
+    )
+    .map(|out| parse_status(&out))
+    .unwrap_or_default();
     // The commits on branches no remote has are unpushed work, as much as
     // being ahead of the upstream is — more, since they name every branch,
     // not just the checked-out one. Only a repository with remotes counts:
@@ -90,9 +96,12 @@ fn unpushed_commits(dir: &str) -> usize {
 pub fn status_with_worktrees(dir: &str) -> State {
     let mut s = status_of(dir);
     for w in crate::repo::other_live_worktrees_of(dir) {
-        let t = git_in(&w.path, &["status", "--porcelain", "-b"])
-            .map(|out| parse_status(&out))
-            .unwrap_or_default();
+        let t = git_in(
+            &w.path,
+            &["status", "--porcelain", "--untracked-files=normal", "-b"],
+        )
+        .map(|out| parse_status(&out))
+        .unwrap_or_default();
         s.dirty += t.dirty;
         s.ahead += t.ahead;
     }

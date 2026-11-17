@@ -24,7 +24,7 @@ const RECENT_COMMITS: &str = "3";
 /// callers keep it off any hot path and off rows the cursor only passed over.
 pub fn describe(dir: &str) -> Status {
     let (names, origin) = remotes(dir);
-    let dirty = match git_in(dir, &["status", "--porcelain"]) {
+    let dirty = match git_in(dir, &["status", "--porcelain", "--untracked-files=normal"]) {
         Ok(out) if !out.is_empty() => out.split('\n').count(),
         _ => 0,
     };
