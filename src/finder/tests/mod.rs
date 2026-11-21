@@ -1,6 +1,3 @@
-//! The finder driven the way the terminal loop drives it: messages in,
-//! commands out, and the screen read back from a buffer.
-
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
@@ -26,12 +23,9 @@ fn test_keys() -> Keys {
     }
 }
 
-/// new_model builds a finder over repos with an empty visit log, unless
-/// bumped is set, in which case that repository is the favourite.
 fn new_model(repos: &[Repo], bumped: &str) -> Model {
-    let mut hist = History::open(""); // held in memory, never written
+    let mut hist = History::open("");
     if !bumped.is_empty() {
-        // The log prunes repositories that are gone, so it has to exist.
         mkdir(bumped);
         hist.bump(bumped).unwrap();
     }
@@ -77,14 +71,11 @@ fn set_query(m: &mut Model, q: &str) {
     m.filter();
 }
 
-/// run_slash types a command and presses Enter, returning what the finder did.
 fn run_slash(m: &mut Model, name: &str) -> Vec<Cmd> {
     m.input.set_value(name);
     m.update(key("enter"))
 }
 
-/// ask_remove runs /remove and hands the finder git's account of what would
-/// be lost, which the question waits for before y does anything.
 fn ask_remove(m: &mut Model) {
     let cmds = run_slash(m, "/remove");
     feed(m, cmds);
@@ -94,9 +85,6 @@ fn is_quit(cmds: &[Cmd]) -> bool {
     cmds.iter().any(|c| matches!(c, Cmd::Quit))
 }
 
-// A repository answering again while the dirty filter is on folds away only
-// when it has nothing left to show: the scan followed every worktree, so the
-// row keeping its work in is not dropped.
 #[test]
 fn repo_state_folds_a_clean_answer_away() {
     let root = TempDir::new();
@@ -104,7 +92,6 @@ fn repo_state_folds_a_clean_answer_away() {
     let cmds = run_slash(&mut m, "/dirty");
     feed(&mut m, cmds);
 
-    // Charlie answers once more and it is clean; its row folds away.
     let gone = rs[2].path();
     m.update(Msg::RepoState(gone.clone(), repo::State::default()));
     assert!(
@@ -113,7 +100,6 @@ fn repo_state_folds_a_clean_answer_away() {
         rows(&m)
     );
 
-    // Alpha answers again and it still holds work; its row stays.
     let alpha = rs[0].path();
     m.update(Msg::RepoState(
         alpha.clone(),
@@ -129,7 +115,6 @@ fn repo_state_folds_a_clean_answer_away() {
     );
 }
 
-// Text pasted from the terminal belongs to the box the finder shows.
 #[test]
 fn paste_fills_the_query() {
     let root = TempDir::new();
@@ -139,10 +124,6 @@ fn paste_fills_the_query() {
     assert_eq!(m.input.value(), "alb", "the paste went nowhere");
 }
 
-// The command-line paths either branch has to answer: /create with a bad
-// reference notes what was wrong, /remove refuses where it does not apply
-// and with nothing selected, and a mode command already there is nothing to
-// do.
 #[test]
 fn slash_commands_answer_their_own_edges() {
     let root = TempDir::new();
@@ -156,7 +137,6 @@ fn slash_commands_answer_their_own_edges() {
     feed(&mut m, cmds);
     assert!(m.note.contains("invalid character"), "{}", m.note);
 
-    // Branch mode: /remove applies to repositories and worktrees.
     let cmds = run_slash(&mut m, "/branches");
     feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Branches, "{:?}", m.note);
@@ -174,15 +154,10 @@ fn slash_commands_answer_their_own_edges() {
         m.note
     );
 
-    // Repos mode with nothing at all to select: the note says so. filter()
-    // during the run rebuilds the view, so the only things to look at have
-    // to be gone.
     m.mode = Mode::Repos;
     m.all.clear();
     run_slash(&mut m, "/remove");
     assert_eq!(m.note, "nothing is selected", "{}", m.note);
-    // The mode commands, asked for the mode they are already in, have
-    // nothing to do.
     m.mode = Mode::Worktrees;
     assert!(run_slash(&mut m, "/worktrees").is_empty());
     m.mode = Mode::Branches;
@@ -193,9 +168,6 @@ fn slash_commands_answer_their_own_edges() {
     assert!(run_slash(&mut m, "/issues").is_empty());
 }
 
-/// answer runs the commands the way the loop would and returns the message
-/// that carries the work's result. The spinner's ticks and the details pane's
-/// probes, which only redraw, are skipped.
 fn answer(cmds: Vec<Cmd>) -> Option<Msg> {
     cmds.into_iter().find_map(|c| match c {
         Cmd::Task(t) => t(),
@@ -203,7 +175,6 @@ fn answer(cmds: Vec<Cmd>) -> Option<Msg> {
     })
 }
 
-/// feed hands the answer to the commands back to the model.
 fn feed(m: &mut Model, cmds: Vec<Cmd>) -> Vec<Cmd> {
     match answer(cmds) {
         Some(msg) => m.update(msg),
@@ -255,8 +226,6 @@ fn lines_text(ls: &[Line]) -> String {
         .join("\n")
 }
 
-/// painted reports whether any cell of row y (every row when None) wears the
-/// foreground colour hex.
 fn painted(buf: &Buffer, y: Option<u16>, hex: &str) -> bool {
     let ys: Vec<u16> = match y {
         Some(y) => vec![y],
@@ -270,9 +239,6 @@ fn line_painted(l: &Line, hex: &str) -> bool {
     l.spans.iter().any(|s| s.style.fg == Some(rgb(hex)))
 }
 
-/// dirty_model is a finder over three repositories, two of which have
-/// uncommitted work and two of which have unpushed commits, with the scan
-/// stubbed so no git runs.
 fn dirty_model(root: &TempDir) -> (Model, Vec<Repo>) {
     let rs = repos(
         &root.path(),
@@ -316,8 +282,6 @@ fn dirty_model(root: &TempDir) -> (Model, Vec<Repo>) {
     (m, rs)
 }
 
-/// open_worktrees asks for the worktree list and hands the finder git's
-/// answer.
 fn open_worktrees(m: &mut Model) {
     let cmds = m.open_worktrees();
     feed(m, cmds);
@@ -333,9 +297,6 @@ fn only_main(m: &mut Model) {
     });
 }
 
-/// branch_model is a finder over one repository whose branches are stubbed:
-/// main is checked out in the repository itself, feat/login lives only on
-/// origin, and fix/timeout is local with no worktree.
 fn branch_model(root: &TempDir) -> (Model, Repo) {
     let r = Repo {
         root: root.path(),
@@ -352,15 +313,12 @@ fn branch_model(root: &TempDir) -> (Model, Repo) {
     };
     m.backend.branches_of = Arc::new(move |dir| {
         assert_eq!(dir, want);
-        // Newest first, the way git sorts them.
         Ok(vec![
             b("main", "", false),
             b("fix/timeout", "", false),
             b("feat/login", "origin/feat/login", false),
         ])
     });
-    // The remote has one branch the last fetch did not bring, and repeats the
-    // ones it did.
     m.backend.remote_branches_of = Arc::new(move |_| {
         (
             vec![
@@ -374,9 +332,6 @@ fn branch_model(root: &TempDir) -> (Model, Repo) {
     (m, r)
 }
 
-/// open_branches presses the branch key and hands the finder git's answer,
-/// returning what it asked next: the remotes, for what the last fetch did not
-/// bring.
 fn open_branches(m: &mut Model) -> Vec<Cmd> {
     let cmds = m.update(key("ctrl+l"));
     assert_eq!(m.mode, Mode::Repos, "the list changed before git answered");
@@ -405,8 +360,6 @@ fn pull_request(
     }
 }
 
-/// pr_model is a finder over two repositories; alpha has three open pull
-/// requests, one of them already checked out, and gh is stubbed.
 fn pr_model(root: &TempDir) -> (Model, Vec<Repo>) {
     let rs = repos(
         &root.path(),
@@ -426,7 +379,6 @@ fn pr_model(root: &TempDir) -> (Model, Vec<Repo>) {
     let want = rs[1].path();
     m.backend.prs_of = Arc::new(move |dir| {
         assert_eq!(dir, want);
-        // Newest first, the way gh lists them.
         Ok(vec![
             pull_request(9, "Fix typo", "main", false, true, "bob"),
             pull_request(8, "Try a new parser", "exp/parser", true, false, "acme"),
@@ -437,8 +389,6 @@ fn pr_model(root: &TempDir) -> (Model, Vec<Repo>) {
     (m, rs)
 }
 
-/// pr_in_full is what gh pr view answers for number: the listing's fields,
-/// a body and a comment.
 fn pr_in_full(number: u64) -> PullRequest {
     PullRequest {
         body: "Adds the **login** form.".into(),
@@ -451,7 +401,6 @@ fn pr_in_full(number: u64) -> PullRequest {
     }
 }
 
-/// open_pr_list presses the key and hands the finder gh's answer.
 fn open_pr_list(m: &mut Model) {
     let cmds = m.update(key("ctrl+j"));
     assert!(!cmds.is_empty(), "the key did not ask gh");

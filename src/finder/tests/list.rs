@@ -1,5 +1,3 @@
-//! The list: ranking, the query and the repository filters.
-
 use super::*;
 
 #[test]
@@ -31,8 +29,6 @@ fn full_width_list_row_occupies_requested_width() {
     assert_eq!(row.width(), 8);
 }
 
-// The core contract: the cursor rests on the most-used repository, and it is
-// the last row drawn.
 #[test]
 fn best_at_bottom() {
     let root = TempDir::new();
@@ -44,7 +40,7 @@ fn best_at_bottom() {
             "github.com/other/charlie",
         ],
     );
-    let mut m = new_model(&rs, &rs[1].path()); // bravo is the favourite
+    let mut m = new_model(&rs, &rs[1].path());
     assert_eq!(m.view.len(), 3);
     assert_eq!(m.cursor, 2);
     assert_eq!(label(&m), "github.com/acme/bravo");
@@ -54,8 +50,6 @@ fn best_at_bottom() {
     assert_eq!(label(&m), "github.com/other/charlie");
 }
 
-// Scattered matches across the shared "github.com/user/" prefix must not
-// outrank a literal hit in the repository name.
 #[test]
 fn ranking_prefers_the_repository_name() {
     let root = TempDir::new();
@@ -70,8 +64,6 @@ fn ranking_prefers_the_repository_name() {
     let mut m = new_model(&rs, "");
     set_query(&mut m, "miniec");
     assert_eq!(label(&m), "github.com/jedipunkz/miniecs");
-    // The highlight sits on the literal "miniec", not scattered across the
-    // host and user segments.
     let at = label(&m).find("miniec").unwrap();
     assert_eq!(
         m.matched[&m.view[m.cursor]],
@@ -79,9 +71,6 @@ fn ranking_prefers_the_repository_name() {
     );
 }
 
-// "gm" names github.com/jedipunkz/gm: the repository it names whole rests
-// under the cursor even with no visit history, over one that merely carries
-// "gm" inside a longer name and one whose earlier "gm" sits in the user.
 #[test]
 fn ranking_prefers_the_named_repository() {
     let root = TempDir::new();
@@ -104,8 +93,6 @@ fn ranking_prefers_the_named_repository() {
         ]
     );
     assert_eq!(label(&m), "github.com/jedipunkz/gm");
-    // The highlight sits on the "gm" the repository is named by, not on the
-    // first place the letters turn up.
     let at = label(&m).len() - 2;
     assert_eq!(m.matched[&m.view[m.cursor]], vec![at, at + 1]);
 }
@@ -128,8 +115,6 @@ fn extended_query_supports_literal_prefix_suffix_and_exclusion_terms() {
     assert_eq!(rows(&m).len(), 2);
     assert!(!rows(&m).contains(&"github.com/acme/a-x-l-p-h-a".to_string()));
 
-    // Prefix and suffix operators address the complete displayed label, not
-    // just the repository-name segment.
     set_query(&mut m, "^github.com/acme/alpha");
     assert_eq!(rows(&m), vec!["github.com/acme/alpha-api"]);
     set_query(&mut m, "alpha-api$");
@@ -238,8 +223,6 @@ fn extended_query_keeps_semicolon_and_leading_command_behavior() {
     assert_eq!(m.view.len(), 2, "leading slash remains a command");
 }
 
-// The unselected row on screen carries the lifted colour, not the comment
-// colour the labels still use.
 #[test]
 fn unselected_rows_are_lifted() {
     let root = TempDir::new();
@@ -259,7 +242,6 @@ fn unselected_rows_are_lifted() {
     assert!(painted(&buf, Some(y), &blend(th.comment, th.fg, ROW_LIFT)));
 }
 
-// The rows do not move while a command is typed, so neither does the cursor.
 #[test]
 fn cursor_survives_a_command() {
     let root = TempDir::new();
@@ -282,20 +264,15 @@ fn cursor_survives_a_command() {
         m.update(ch(c));
         assert_eq!(label(&m), want, "after typing {c:?} the selection moved");
     }
-    // Erasing it back to an empty query must not move it either.
     for _ in 0..3 {
         m.update(key("backspace"));
     }
     assert_eq!(label(&m), want);
 
-    // A real query still puts the cursor on the best match.
     m.update(ch('a'));
     assert_eq!(m.cursor, m.view.len() - 1);
 }
 
-// Filter down to a repository, clear the box, and run a command on what is
-// still selected. Clearing must not throw the selection back to the best
-// match.
 #[test]
 fn find_then_act_on_it() {
     let root = TempDir::new();
@@ -312,14 +289,12 @@ fn find_then_act_on_it() {
     assert_eq!(label(&m), "github.com/jedipunkz/agx");
     assert!(line_text(&m.help_line(90)).contains("esc clear"));
 
-    // Esc clears the query rather than quitting, and holds the selection.
     let cmds = m.update(key("esc"));
     assert!(!is_quit(&cmds));
     assert_eq!(m.input.value(), "");
     assert_eq!(m.view.len(), rs.len());
     assert_eq!(label(&m), "github.com/jedipunkz/agx");
 
-    // And the command asks about it.
     run_slash(&mut m, "/remove");
     assert!(
         m.over == Overlay::Confirm && m.ask.arg == rs[0].path(),
@@ -327,9 +302,6 @@ fn find_then_act_on_it() {
         m.ask
     );
 
-    // With the box empty, Esc quits as it always did — with an issue key
-    // that is not the default: the default ctrl-[ is esc and opens the
-    // issue list instead, see esc_opens_the_issue_list.
     let mut esc_quits = {
         let mut m = new_model(&rs, "");
         m.keys.issue = parse_chord("", "ctrl-e").unwrap();
@@ -374,15 +346,12 @@ fn unpushed_scan_filters_the_saved_repository_list_when_it_finishes_elsewhere() 
     assert!(line_text(&m.help_line(90)).contains("unpushed only"));
 }
 
-// /dirty end to end: the scan runs off the UI thread, the list keeps every
-// row until the answer lands, and running it again shows everything.
 #[test]
 fn dirty_filter() {
     let root = TempDir::new();
     let (mut m, rs) = dirty_model(&root);
     let cmds = run_slash(&mut m, "/dirty");
     assert!(!cmds.is_empty(), "/dirty started no scan");
-    // Nothing is hidden while the answer is still coming.
     assert_eq!(m.view.len(), rs.len());
     assert!(line_text(&m.help_line(90)).contains("checking"));
 
@@ -394,7 +363,6 @@ fn dirty_filter() {
     assert_eq!(m.cursor, m.view.len() - 1);
     assert!(line_text(&m.help_line(90)).contains("dirty only"));
 
-    // A query narrows what is left, rather than bringing the clean ones back.
     set_query(&mut m, "charlie");
     assert_eq!(rows(&m), vec!["github.com/acme/charlie"]);
     set_query(&mut m, "bravo");
@@ -403,7 +371,6 @@ fn dirty_filter() {
         "a clean repository came back through the query"
     );
 
-    // Running it again shows everything, and does not scan twice.
     set_query(&mut m, "");
     let cmds = run_slash(&mut m, "/dirty");
     assert!(
@@ -414,8 +381,6 @@ fn dirty_filter() {
     assert!(!line_text(&m.help_line(90)).contains("dirty only"));
 }
 
-// It declines in the worktree list rather than filtering something the answer
-// does not describe.
 #[test]
 fn dirty_filter_is_for_repositories() {
     let root = TempDir::new();
@@ -465,7 +430,6 @@ fn unpushed_filter_is_for_repositories() {
     assert!(m.note.contains("repository list"), "{:?}", m.note);
 }
 
-/// dirty_everywhere stubs the scan to call every path it is asked about dirty.
 fn dirty_everywhere(m: &mut Model) {
     m.backend.state_scan_of = Arc::new(|ps| {
         ps.iter()
@@ -480,9 +444,6 @@ fn dirty_everywhere(m: &mut Model) {
     });
 }
 
-// The bug where the scan ran once per finder: work done in another terminal
-// never showed up. Switching the filter on again asks git again, and the old
-// answer filters the list until the new one lands.
 #[test]
 fn dirty_filter_scans_again_when_switched_on_again() {
     let root = TempDir::new();
@@ -506,8 +467,6 @@ fn dirty_filter_scans_again_when_switched_on_again() {
     assert_eq!(m.view.len(), 3, "{:?}", rows(&m));
 }
 
-// The bug where a repository made after the scan vanished under the filter:
-// it had no answer, and no answer read as clean.
 #[test]
 fn a_repository_created_under_a_filter_is_scanned() {
     let root = TempDir::new();
@@ -520,7 +479,6 @@ fn a_repository_created_under_a_filter_is_scanned() {
     feed(&mut m, cmds);
     let cmds = m.update(ch('y'));
     let rescan = feed(&mut m, cmds);
-    // Until git has answered for it, the new row is not hidden.
     assert!(
         rows(&m).contains(&"github.com/acme/delta".to_string()),
         "{:?}",

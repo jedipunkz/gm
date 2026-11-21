@@ -1,6 +1,3 @@
-//! The commands that bring a repository into the tree: get clones one, and
-//! create starts an empty one.
-
 use std::process::Command;
 
 use crate::repo;
@@ -9,18 +6,11 @@ use crate::{Result, paths, plural};
 use super::{App, GET_FLAGS, missing_usage, parse};
 
 impl App<'_> {
-    /// advance moves a fetched clone across the commits the fetch brought:
-    /// the checked-out branch is fast-forwarded onto its upstream when the
-    /// working tree is clean, and then its submodules are brought to what
-    /// the new commits name. A dirty tree and a diverged branch are left
-    /// where they were and named; a detached head and a branch without an
-    /// upstream have nothing that could move, so they are silent.
     fn advance(&mut self, dst: &str, submodules: bool) -> Result<()> {
         let branch = repo::git_in(dst, &["branch", "--show-current"])?;
         if branch.is_empty() {
             return Ok(()); // detached head: nothing to name or move
         }
-        // No upstream is no error; ghq only knows the fetch for that branch.
         let upstream = repo::git_in(
             dst,
             &["rev-parse", "--abbrev-ref", &format!("{branch}@{{u}}")],
@@ -35,8 +25,6 @@ impl App<'_> {
             return Ok(());
         }
         let old = repo::git_in(dst, &["rev-parse", "HEAD"])?;
-        // Only a fast-forward is ever merged: a divergence is the user's
-        // work meeting someone else's, which no flag should decide.
         if let Err(e) = repo::git_quiet(&["-C", dst, "merge", "--ff-only", &upstream]) {
             writeln!(self.err, "skip     {dst}: diverged ({e})")?;
             return Ok(());
@@ -51,7 +39,6 @@ impl App<'_> {
             )?;
         }
         if submodules && std::fs::metadata(paths::join(dst, ".gitmodules")).is_ok() {
-            // The clone was made with submodules; the update keeps them.
             repo::git_quiet(&["-C", dst, "submodule", "update", "--init", "--recursive"])?;
         }
         Ok(())
@@ -61,8 +48,6 @@ impl App<'_> {
         self.get_last(args).map(drop)
     }
 
-    /// get_last is gm get, answering with the path of the last repository it
-    /// handled, which is where the finder's /get goes.
     pub(super) fn get_last(&mut self, args: &[String]) -> Result<String> {
         let p = parse(self, "gm get", GET_FLAGS, args)?;
         if p.args.is_empty() {
@@ -73,10 +58,6 @@ impl App<'_> {
         for reference in &p.args {
             let u = repo::normalize_url(reference, p.on("ssh"))?;
             let rel = repo::rel_path_of(&u);
-            // One repository under two roots is a real setup (a work laptop
-            // and a private one, say), so cloning or updating "the" one needs
-            // a name that says which. The finder learned this in #120; the
-            // CLI answers the same way.
             let existing = self.tree.existing_paths(&rel);
             let dst = match existing.as_slice() {
                 [] => self.tree.path_for(&rel),
@@ -99,9 +80,6 @@ impl App<'_> {
                 }
                 writeln!(self.err, "update   {dst}")?;
                 repo::git(&["-C", &dst, "remote", "update", "--prune"])?;
-                // ghq get -u moves the checked-out branch; matching it needs
-                // the working tree behind it, and a fast-forward, so a
-                // divergence is never merged.
                 self.advance(&dst, !p.on("no-recursive"))?;
                 self.bump(&dst);
                 continue;
@@ -151,7 +129,6 @@ impl App<'_> {
     }
 }
 
-/// look_in drops the user into a shell inside the repository just cloned.
 fn look_in(dir: &str) -> Result<()> {
     let sh = std::env::var("SHELL")
         .ok()

@@ -1,6 +1,3 @@
-//! What the details pane says about one working copy: its branch, its
-//! remote, and its newest commits.
-
 use super::{git_in, git_out, remotes};
 use crate::repo::Worktree;
 
@@ -10,18 +7,13 @@ use crate::repo::Worktree;
 pub struct Status {
     pub remote: String,
     pub branch: String,
-    pub commits: Vec<Commit>,     // newest first
-    pub dirty: usize,             // changed files
+    pub commits: Vec<Commit>, // newest first
+    pub dirty: usize,
     pub worktrees: Vec<Worktree>, // the other checkouts, without the main one
 }
 
-/// RECENT_COMMITS is how many commits describe collects. Three answers "is
-/// this the repository I mean?" without turning the details pane into a log;
-/// the pane draws fewer when it is short of height.
 const RECENT_COMMITS: &str = "3";
 
-/// describe collects the status of one working copy. It still shells out, so
-/// callers keep it off any hot path and off rows the cursor only passed over.
 pub fn describe(dir: &str) -> Status {
     let (names, origin) = remotes(dir);
     let dirty = match git_in(dir, &["status", "--porcelain"]) {
@@ -37,8 +29,6 @@ pub fn describe(dir: &str) -> Status {
     }
 }
 
-/// Commit is one line of the log, split so the details pane can colour its
-/// parts the way `git log --oneline --decorate` does.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Commit {
     pub hash: String,
@@ -46,15 +36,13 @@ pub struct Commit {
     pub subject: String,
 }
 
-/// RefKind says how a decoration reads. git gives each kind its own colour,
-/// and so does the finder.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum RefKind {
     #[default]
-    Local, // a branch in this repository
-    Head,   // HEAD itself
-    Remote, // a remote-tracking branch
-    Tag,    // a tag
+    Local,
+    Head,
+    Remote,
+    Tag,
 }
 
 /// Ref is one decoration, named as git prints it ("main", "origin/main",
@@ -70,9 +58,6 @@ pub struct Ref {
 /// in the --format argument; a real NUL there could not be passed to exec.
 const COMMIT_FORMAT: &str = "--format=%h%x00%D%x00%s";
 
-/// commits reads the newest commits and their decorations. The remote names
-/// come from the caller: without them "origin/main" and a local branch called
-/// "release/main" look alike, both being a name with a slash in it.
 fn commits(dir: &str, remotes: &[String]) -> Vec<Commit> {
     match git_in(dir, &["log", "-n", RECENT_COMMITS, COMMIT_FORMAT]) {
         Ok(out) => parse_commits(&out, remotes),
@@ -156,7 +141,6 @@ mod tests {
             (got[0].hash.as_str(), got[0].subject.as_str()),
             ("b1b7b91", "refactor: name the flag -r")
         );
-        // "HEAD -> branch" is two decorations, coloured differently.
         let r = |name: &str, kind| Ref {
             name: name.into(),
             kind,
@@ -170,8 +154,6 @@ mod tests {
             ]
         );
         assert!(got[1].refs.is_empty());
-        // A local branch whose name has a slash in it is not a remote one:
-        // only the configured remotes make it remote.
         assert_eq!(
             got[2].refs,
             vec![
@@ -182,7 +164,6 @@ mod tests {
             ]
         );
         assert!(parse_commits("", &[]).is_empty());
-        // A line git could not format is dropped, not turned into a bad row.
         assert!(parse_commits("no separators here", &[]).is_empty());
     }
 }

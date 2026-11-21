@@ -1,9 +1,5 @@
-//! gm list, gm status and gm root.
-
 use super::*;
 
-// --unique is a property of the whole tree: a query must not shorten a
-// name down to one that gm rm would call ambiguous.
 #[test]
 fn list_unique_stays_unique_under_a_query() {
     let root = TempDir::new();
@@ -60,14 +56,12 @@ fn list_unique_disambiguates_matching_roots() {
     }
 }
 
-// Each reason a repository is listed, and the one reason it is not.
 #[test]
 fn status_finds_unfinished_work() {
     let tmp = TempDir::new();
     let root = tmp.join("root");
     let t = tree(&root);
 
-    // clean: one commit, nothing changed, and an upstream it matches.
     let origin = tmp.join("origin.git");
     git(
         &tmp.path(),
@@ -85,7 +79,6 @@ fn status_finds_unfinished_work() {
     );
     git(&clean.path(), &["push", "-q", "-u", "origin", "main"]);
 
-    // ahead: the same, with a commit that was never pushed.
     let ahead = Repo {
         root: root.clone(),
         rel: "github.com/acme/ahead".into(),
@@ -96,7 +89,6 @@ fn status_finds_unfinished_work() {
         &["commit", "-q", "--allow-empty", "-m", "two"],
     );
 
-    // dirty: a repository with no remote at all and an uncommitted file.
     let dirty = Repo {
         root: root.clone(),
         rel: "github.com/acme/dirty".into(),
@@ -104,8 +96,6 @@ fn status_finds_unfinished_work() {
     git_repo(&dirty.path());
     write(&paths::join(&dirty.path(), "wip.txt"), "x\n");
 
-    // A worktree holds work in progress by definition, and lives under a
-    // dotted directory the repository walk never descends into.
     let wt = t.worktree_dir(&dirty, "feat/login");
     repo::add_worktree(&root, &dirty.path(), &wt, "feat/login").unwrap();
     write(&paths::join(&wt, "scratch.txt"), "y\n");
@@ -134,19 +124,16 @@ fn status_finds_unfinished_work() {
         );
     }
 
-    // --dirty drops the repository whose only news is an unpushed commit.
     let out = status(&["--dirty"]);
     assert!(
         !out.contains("acme/ahead") && out.contains("acme/dirty"),
         "{out}"
     );
-    // --unpushed is the other way round.
     let out = status(&["--unpushed"]);
     assert!(
         out.contains("acme/ahead") && !out.contains("acme/dirty"),
         "{out}"
     );
-    // -a says so about the ones that are fine, rather than staying silent.
     let out = status(&["-a"]);
     assert!(out.contains("acme/clean") && out.contains("clean"), "{out}");
 }
@@ -165,7 +152,6 @@ fn status_lists_registered_worktrees_not_orphan_directories() {
     repo::add_worktree(&tmp.path(), &r.path(), &external, "feat/login").unwrap();
     write(&paths::join(&external, "wip.txt"), "registered worktree\n");
 
-    // This looks like a checkout to a filesystem walk but Git does not list it.
     let orphan = paths::join(&root, ".worktrees/github.com/acme/alpha/orphan");
     mkdir(&paths::join(&orphan, ".git"));
     write(&paths::join(&orphan, "wip.txt"), "orphan\n");
@@ -272,10 +258,6 @@ fn status_keeps_the_root_spelling_and_deduplicates_symlinked_roots() {
     );
 }
 
-// Unpushed work does not have to sit on the branch checked out or on one with
-// an upstream: a branch that was never pushed counts, and a repository with
-// no remotes keeps the behaviour it had, since everything it has is unshared
-// by definition rather than by accident.
 #[test]
 fn status_counts_unpushed_off_the_checked_out_branch() {
     let tmp = TempDir::new();
@@ -303,14 +285,11 @@ fn status_counts_unpushed_off_the_checked_out_branch() {
         r.res.unwrap();
         r.out
     };
-    // In sync: not listed, as before.
     assert!(
         !status(&[]).contains("acme/spare"),
         "an in-sync clone was listed"
     );
 
-    // A commit on a branch nobody pushed. The branch is switched away from,
-    // so no shortcut through HEAD would ever see it.
     git(&spare.path(), &["checkout", "-q", "-b", "feat/wip"]);
     git(
         &spare.path(),
@@ -324,7 +303,6 @@ fn status_counts_unpushed_off_the_checked_out_branch() {
     let out = status(&["--unpushed"]);
     assert!(out.contains("acme/spare"), "{out}");
 
-    // A repository with no remote keeps today's behaviour.
     let lonely = Repo {
         root: tmp.path(),
         rel: "github.com/acme/lonely".into(),
@@ -372,8 +350,6 @@ fn status_aligns_summaries_for_wide_names() {
     assert_eq!(starts[0], starts[1], "{out:?}");
 }
 
-// gm root answers with the primary root, and with --all with every root in
-// the order the config names them.
 #[test]
 fn root_prints_the_roots() {
     let root = TempDir::new();
@@ -389,7 +365,6 @@ fn root_prints_the_roots() {
     assert_eq!(res.out.trim(), format!("{r1}\n{r2}"));
 }
 
-// gm list without a flag prints the names it sorts by, one per line.
 #[test]
 fn list_prints_the_rel_paths() {
     let root = TempDir::new();

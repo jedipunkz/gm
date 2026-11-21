@@ -1,9 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// The finder's palettes are read from the Rust source at build time, so the
-// theme picker on the site can never drift from what `gm` actually ships.
-// The build runs from site/, one level below the repository root.
 const SOURCE = resolve(process.cwd(), "../src/finder/theme.rs");
 
 export interface Theme {
@@ -20,8 +17,6 @@ export interface Theme {
   Orange: string;
   Red: string;
   Light: boolean;
-  // Not part of theme.rs: gm paints on the terminal's own background. These
-  // are the backgrounds each palette's terminal scheme is designed for.
   Bg: string;
 }
 
@@ -38,7 +33,6 @@ const BACKGROUNDS: Record<string, string> = {
   dracula: "#282a36",
 };
 
-// Each colour as the site names it, and the field theme.rs keeps it in.
 const COLOR_KEYS = [
   ["BgHi", "bg_hi"], ["Border", "border"], ["Comment", "comment"], ["Fg", "fg"],
   ["Blue", "blue"], ["Cyan", "cyan"], ["Magenta", "magenta"], ["Green", "green"],
@@ -65,21 +59,17 @@ export function loadThemes(): Theme[] {
     themes.push(t as unknown as Theme);
   }
   if (themes.length === 0) throw new Error(`no themes parsed from ${SOURCE}`);
-  // Same order as `gm` prints them: the default first, the rest sorted.
   return themes.sort((a, b) =>
     a.name === DEFAULT_THEME ? -1 : b.name === DEFAULT_THEME ? 1 : a.name.localeCompare(b.name),
   );
 }
 
-// blend mirrors theme.rs: mixes two #rrggbb colours, t running from a to b.
 export function blend(a: string, b: string, t: number): string {
   const p = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   const [x, y] = [p(a), p(b)];
   return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("");
 }
 
-// The CSS variables the terminal mock paints with, derived the way
-// Theme.Styles() derives the finder's styles.
 export function themeVars(t: Theme): Record<string, string> {
   return {
     "--t-bg": t.Bg,

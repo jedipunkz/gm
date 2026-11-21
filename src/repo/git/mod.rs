@@ -1,6 +1,3 @@
-//! Starting git: one gate every process passes, and the words a failed
-//! one leaves behind.
-
 mod branch;
 mod describe;
 mod status;
@@ -18,9 +15,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{Error, Result, err};
 
-/// git_command makes a Git command with a predictable configuration in tests.
-/// The environment belongs to this child only: tests run in parallel without
-/// changing the process environment they share.
 pub(crate) fn git_command() -> Command {
     git_command_with(OsStr::new("git"))
 }
@@ -40,14 +34,9 @@ pub(crate) fn git_command_with(program: &OsStr) -> Command {
     command
 }
 
-/// GIT_SPAWNS counts the git processes started through git_command, the one
-/// gate every git spawn in production code passes. Counting is a test-build
-/// concern: the release binary carries no counter and reads no knob for it.
 #[cfg(test)]
 static GIT_SPAWNS: AtomicUsize = AtomicUsize::new(0);
 
-/// git_spawns_reset returns how many git processes have been started since
-/// the last call and counts from zero again.
 #[cfg(test)]
 pub fn git_spawns_reset() -> usize {
     GIT_SPAWNS.swap(0, Ordering::Relaxed)
@@ -65,7 +54,6 @@ pub(super) fn isolate_git_config(command: &mut Command) {
         .env("GIT_CONFIG_NOSYSTEM", "1");
 }
 
-/// exit_error words a process that ran and failed the way Go's ExitError did.
 pub(crate) fn exit_error(out: &std::process::ExitStatus) -> Error {
     match out.code() {
         Some(c) => err!("exit status {c}"),
@@ -95,8 +83,6 @@ pub fn git_quiet(args: &[&str]) -> Result<()> {
     quiet_result(out)
 }
 
-/// quiet_result turns a finished quiet command into the one line worth
-/// reading when it failed.
 pub(crate) fn quiet_result(out: Output) -> Result<()> {
     if out.status.success() {
         return Ok(());
@@ -106,9 +92,6 @@ pub(crate) fn quiet_result(out: Output) -> Result<()> {
     Err(failure(&all, &out.status))
 }
 
-/// failure is what a git or gh that ran and failed said about it, out being
-/// whichever of its streams the caller trusts to hold the complaint. A process
-/// that said nothing is worded by its exit status.
 pub(crate) fn failure(out: &[u8], status: &std::process::ExitStatus) -> Error {
     match git_message(out) {
         msg if !msg.is_empty() => Error(msg),
@@ -152,8 +135,6 @@ pub fn git_in(dir: &str, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// git_out is git_in for a caller that takes whatever git printed, failed or
-/// not: a repository with no commits still names its branch.
 fn git_out(dir: &str, args: &[&str]) -> String {
     git_command()
         .args(args)
@@ -183,15 +164,10 @@ pub fn git_config_all(key: &str) -> Vec<String> {
         .collect()
 }
 
-/// origin_url is origin's URL on its own, for the caller that wants nothing
-/// else about the repository and should not pay for a whole describe.
 pub fn origin_url(dir: &str) -> String {
     remotes(dir).1
 }
 
-/// remotes reads the configured remotes in one call: their names, and
-/// origin's URL. Both halves come out of `git remote -v`, so asking git
-/// separately for each of them is one process more than the answer costs.
 pub fn remotes(dir: &str) -> (Vec<String>, String) {
     let out = match git_in(dir, &["remote", "-v"]) {
         Ok(out) if !out.is_empty() => out,
@@ -270,11 +246,8 @@ mod tests {
 
         let (names, origin) = remotes(&dir);
         assert_eq!(origin, "git@github.com:acme/alpha.git");
-        // Each remote is listed twice, for fetch and for push, and has to be
-        // counted once: the names tell a remote ref from a local branch.
         assert_eq!(names, vec!["origin".to_string(), "upstream".to_string()]);
 
-        // A repository with no remotes is normal, not an error.
         let bare = tmp.join("bare");
         git_repo(&bare);
         assert_eq!(remotes(&bare), (Vec::new(), String::new()));
@@ -373,10 +346,6 @@ mod tests {
         }
     }
 
-    // These run while the finder owns the terminal, so git must print nothing
-    // and put what it had to say in the error instead. Every one of them
-    // captures git's output, which a failure here would show as a message
-    // that lost git's explanation.
     #[test]
     fn git_output_goes_into_the_error() {
         let base = TempDir::new();
@@ -401,8 +370,6 @@ mod tests {
         remove_worktree(&main, &dir, false).unwrap();
     }
 
-    // git_in once kept git's complaint to itself and said only "exit status
-    // 128": the user is told what git said instead.
     #[test]
     fn git_in_says_what_git_said() {
         let tmp = TempDir::new();

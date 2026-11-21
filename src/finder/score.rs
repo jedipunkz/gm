@@ -1,20 +1,13 @@
-//! Ranking. The fuzzy matcher finds the candidates; match_score decides the
-//! order they are shown in.
-
-/// Ranking weights. Match quality decides the order; frecency only breaks
-/// ties. Every repository path shares a long `host/user/` prefix, so a
-/// subsequence scattered across that prefix must never beat a run of
-/// characters inside the repository name itself.
-const BONUS_BOUNDARY: f64 = 8.0; // the match starts a new word (after / - _ . space)
-const BONUS_CONSECUTIVE: f64 = 6.0; // the match continues the previous one
-const BONUS_NAME_SEG: f64 = 10.0; // the match is inside the repository name
-const BONUS_USER_SEG: f64 = 3.0; // ...or at least inside the user name
-const PENALTY_HOST_SEG: f64 = 4.0; // the host is the same for nearly every repo: noise
-const BONUS_WHOLE_IN_NAME: f64 = 25.0; // the whole query lives in the repository name
-const BONUS_NAME_IS_QUERY: f64 = 25.0; // the query spells the repository name whole
-const PENALTY_GAP_START: f64 = 3.0; // each run of skipped characters costs this...
-const PENALTY_GAP_CHAR: f64 = 1.0; // ...plus this per character skipped
-const MAX_GAP_CHARS: usize = 20; // a long path must not dominate the score
+const BONUS_BOUNDARY: f64 = 8.0;
+const BONUS_CONSECUTIVE: f64 = 6.0;
+const BONUS_NAME_SEG: f64 = 10.0;
+const BONUS_USER_SEG: f64 = 3.0;
+const PENALTY_HOST_SEG: f64 = 4.0;
+const BONUS_WHOLE_IN_NAME: f64 = 25.0;
+const BONUS_NAME_IS_QUERY: f64 = 25.0;
+const PENALTY_GAP_START: f64 = 3.0;
+const PENALTY_GAP_CHAR: f64 = 1.0;
+const MAX_GAP_CHARS: usize = 20;
 
 fn is_boundary(c: u8) -> bool {
     matches!(c, b'/' | b'-' | b'_' | b'.' | b' ')
@@ -49,8 +42,6 @@ pub fn match_score(text: &str, idx: &[usize]) -> f64 {
             score -= PENALTY_HOST_SEG;
             whole_in_name = false;
         }
-        // A word boundary only counts where the words mean something; every
-        // candidate shares the same host, so boundaries there are free points.
         if !in_host && (i == 0 || is_boundary(b[i - 1])) {
             score += BONUS_BOUNDARY;
         }
@@ -77,8 +68,6 @@ pub fn match_score(text: &str, idx: &[usize]) -> f64 {
 /// highest wins, so "gm" lands on the repository it names, not in the user
 /// name an earlier "gm" happens to sit in.
 pub fn substring_match(text: &str, lower_query: &str) -> Option<Vec<usize>> {
-    // consider keeps the first of equally good landings, which is what the
-    // lists showed before the best landing was sought at all.
     let mut best: Option<(f64, Vec<usize>)> = None;
     let mut consider = |pos: Vec<usize>| {
         let score = match_score(text, &pos);
@@ -88,8 +77,6 @@ pub fn substring_match(text: &str, lower_query: &str) -> Option<Vec<usize>> {
     };
 
     if text.is_ascii() {
-        // An ASCII text lowers bytewise, so the query can be found without
-        // lowering the whole text into a fresh string.
         let needle = lower_query.as_bytes();
         if needle.is_empty() {
             return Some(Vec::new());
@@ -156,15 +143,11 @@ struct Term {
     escaped: bool,
 }
 
-/// Query holds parsed terms. A single plain term stays on the original
-/// matcher path; this is how existing one-word searches keep their ranking.
 pub(super) struct Query {
     terms: Vec<Term>,
     legacy: bool,
 }
 
-/// MatchScratch reuses the candidate buffers while walking labels. Only a
-/// successful row's final highlights escape into the model.
 #[derive(Default)]
 pub(super) struct MatchScratch {
     positions: Vec<usize>,
@@ -174,8 +157,6 @@ pub(super) struct MatchScratch {
 }
 
 impl Query {
-    /// parse_query compiles operators and lowercase character sequences once,
-    /// rather than allocating or lowercasing query text for every row.
     pub(super) fn parse_query(input: &str) -> Self {
         let mut terms = Vec::new();
         for token in input.split_whitespace() {
@@ -195,8 +176,6 @@ impl Query {
         self.legacy
     }
 
-    /// score matches every positive term and excludes any label containing a
-    /// negative literal. Prefixes and suffixes address the complete label.
     pub(super) fn score(&self, text: &str, scratch: &mut MatchScratch) -> Option<f64> {
         scratch.hits.clear();
         let mut score = 0.0;
@@ -205,8 +184,6 @@ impl Query {
             let matched = match term.kind {
                 TermKind::Fuzzy => {
                     find_one(&term.pattern, text, &mut scratch.positions)?;
-                    // Keep the old preference for a literal occurrence over
-                    // a scattered fuzzy landing, choosing its best location.
                     if substring_into(text, &term.lower, &mut scratch.best, &mut scratch.candidate)
                     {
                         scratch.positions.clear();
@@ -243,9 +220,6 @@ impl Query {
 }
 
 fn parse_term(token: &str) -> (TermKind, String, bool) {
-    // Backslash only quotes an operator at its syntactic edge. It is removed;
-    // elsewhere it remains ordinary query text. There is no shell-style
-    // quoting or escaped whitespace.
     if let Some(rest) = token.strip_prefix('\\')
         && rest
             .chars()
@@ -280,8 +254,6 @@ fn parse_term(token: &str) -> (TermKind, String, bool) {
     (TermKind::Fuzzy, token.to_string(), false)
 }
 
-/// substring_into picks the highest-scoring literal occurrence into reusable
-/// buffers. Positions are byte offsets so Unicode highlights stay aligned.
 fn substring_into(
     text: &str,
     query: &[char],
@@ -343,7 +315,6 @@ fn consider_substring(
     }
 }
 
-/// edge_into matches a case-insensitive prefix or suffix of the whole label.
 fn edge_into(text: &str, query: &[char], suffix: bool, positions: &mut Vec<usize>) -> bool {
     if query.is_empty() {
         return false;
@@ -363,7 +334,6 @@ fn edge_into(text: &str, query: &[char], suffix: bool, positions: &mut Vec<usize
     true
 }
 
-/// Match is one candidate the fuzzy matcher kept.
 pub struct Match {
     pub index: usize,
     pub matched: Vec<usize>, // byte offsets, ascending
@@ -406,12 +376,10 @@ pub fn find(pattern: &str, data: &[&str]) -> Vec<Match> {
             });
         }
     }
-    matches.sort_by_key(|m| std::cmp::Reverse(m.score)); // stable
+    matches.sort_by_key(|m| std::cmp::Reverse(m.score));
     matches
 }
 
-/// find_one is find's allocation-free candidate matcher. The caller owns and
-/// reuses matched, while the pattern characters are prepared once per query.
 fn find_one(pattern: &[char], full: &str, matched: &mut Vec<usize>) -> Option<i64> {
     matched.clear();
     if pattern.is_empty() {
@@ -454,8 +422,6 @@ fn find_one(pattern: &[char], full: &str, matched: &mut Vec<usize>) -> Option<i6
         }
         let next_p = pattern.get(pattern_index + 1).copied();
         let next_c = chars.peek().map(|&(_, c)| c);
-        // A pattern character is settled on once the next one could start,
-        // or the text has run out.
         let settle = match (next_p, next_c) {
             (_, None) => true,
             (Some(p), Some(c)) => equal_fold(p, c),
@@ -488,7 +454,6 @@ mod tests {
         let run = "github.com/jedipunkz/miniecs";
         let scattered = "github.com/jedipunkz/spacex-ipo-checker";
         let run_score = match_score(run, &substring_match(run, "miniec").unwrap());
-        // m-i-n from the host and user, then i, e, c spread through the name.
         let scattered_score = match_score(scattered, &[9, 14, 17, 29, 35, 36]);
         assert!(
             run_score > scattered_score,
@@ -524,21 +489,16 @@ mod tests {
         let got: Vec<usize> = find("brv", &data).iter().map(|m| m.index).collect();
         assert_eq!(got, vec![1]);
         assert!(find("zzz", &data).is_empty());
-        // A character is settled on where the next one could start, so the
-        // "a" is acme's: the literal run is substring_match's to find.
         let m = &find("ALP", &data)[0];
         assert_eq!((m.index, m.matched.as_slice()), (0, &[11, 17, 18][..]));
     }
 
-    // The query can sit in a label more than once; "gm" in gmdev/gm belongs
-    // where it names the repository, not in the user name before it.
     #[test]
     fn substring_match_picks_the_meaningful_occurrence() {
         assert_eq!(
             substring_match("github.com/gmdev/gm", "gm").unwrap(),
             vec![17, 18]
         );
-        // An equal landing keeps the first, and none keeps None.
         assert_eq!(
             substring_match("github.com/acme/note-note", "note").unwrap(),
             vec![16, 17, 18, 19]
@@ -549,9 +509,6 @@ mod tests {
         );
     }
 
-    // "gm" means github.com/x/gm: the repository the query names whole
-    // outranks the ones that carry it inside a longer name or a user, with
-    // no visit history to say otherwise.
     #[test]
     fn a_name_the_query_equals_outranks_partial_hits() {
         let whole = "github.com/jedipunkz/gm";
@@ -561,14 +518,11 @@ mod tests {
             rank(whole, &substring_match(whole, query).unwrap(), query)
                 > rank(partial, &substring_match(partial, query).unwrap(), query)
         );
-        // The same holds after a case fold outside ASCII.
         let folded = "github.com/x/Tök";
         let positions = substring_match(folded, "tök").unwrap();
         assert!(rank(folded, &positions, "tök") > match_score(folded, &positions));
     }
 
-    // The PR list is worded in spaces, and a query after one is at a word's
-    // start the way a query after a slash is.
     #[test]
     fn a_space_starts_a_word() {
         let after_space = match_score("#123 fix here", &[5, 6, 7]);
@@ -576,9 +530,6 @@ mod tests {
         assert!(after_space > mid_word, "{after_space} <= {mid_word}");
     }
 
-    // Edge paths the callers reach with an empty query or an unhittable text:
-    // nothing to rank is zero, and a query with nothing to search finds
-    // nothing.
     #[test]
     fn empty_inputs_answer_empty() {
         assert_eq!(match_score("github.com/x/y", &[]), 0.0);
@@ -596,18 +547,11 @@ mod tests {
     }
 }
 
-// Property tests. Fuzzy filters run on whatever a repository is named and
-// whatever it is the user types, both of which are Unicode nobody prereads:
-// so no sequence of characters may panic the matcher, and every match it
-// reports must point at real places in its text. The example tests above
-// hold the cases someone thought of; these hold for everything else.
 #[cfg(test)]
 mod proptests {
     use super::*;
     use proptest::prelude::*;
 
-    /// labels a candidate may carry: the repository paths gm ranks mostly,
-    /// with their \0 tail bytes, and any garble proptest can invent.
     fn label() -> impl Strategy<Value = String> + 'static {
         prop_oneof![
             any::<String>(),
@@ -617,14 +561,8 @@ mod proptests {
     }
 
     proptest! {
-        // 256 cases a head; every proptest in this module runs the same.
         #![proptest_config(ProptestConfig::with_cases(256))]
 
-        // No pattern may panic the matcher, whatever the labels. And when
-        // the pattern matches, the match is a real answer: one position per
-        // pattern character, pointing at the letters it matched, at
-        // ascending char boundaries inside its own text, best scores first
-        // and on top the candidates' own order.
         #[test]
         fn find_answers_well_formed_matches(
             pattern in any::<String>(),
@@ -663,14 +601,11 @@ mod proptests {
             }
         }
 
-        // A literal match points at the query's letters, one position each,
-        // in range, on whole characters, strictly ascending.
         #[test]
         fn substring_match_points_at_the_query(
             text in any::<String>(),
             query in any::<String>(),
         ) {
-            // The callers hand a lowercased query; fold the same way here.
             let lower = query.to_lowercase();
             if let Some(pos) = substring_match(&text, &lower) {
                 for place in pos.iter().zip(lower.chars()) {

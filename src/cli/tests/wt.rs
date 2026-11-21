@@ -1,9 +1,5 @@
-//! gm wt.
-
 use super::*;
 
-// The round trip a script does: make a worktree, read where it went off
-// stdout, then take it away again.
 #[test]
 fn wt_create_and_remove() {
     let root = TempDir::new();
@@ -23,9 +19,6 @@ fn wt_create_and_remove() {
     assert_eq!(dir, t.worktree_dir(&r, "feat/login"));
     assert!(exists(&paths::join(&dir, ".git")));
 
-    // The same branch twice is a mistake worth stopping at, not a silent
-    // no-op: the second call would otherwise look like it worked.
-    // gm new and gm rm answer under wt as well.
     let again = run_in(&t, &state, Config::default(), |a| {
         a.wt(&args(&["new", "acme/alpha", "feat/login"]))
     });
@@ -44,8 +37,6 @@ fn wt_create_and_remove() {
     assert!(!exists(&root.join(".worktrees/github.com")));
 }
 
-// The main worktree is the repository itself, and not in the list this
-// checks against.
 #[test]
 fn wt_remove_refuses_what_is_not_a_worktree() {
     let root = TempDir::new();
@@ -61,9 +52,6 @@ fn wt_remove_refuses_what_is_not_a_worktree() {
     assert!(exists(&r.path()));
 }
 
-// age_worktrees writes an epoch reflog line into every worktree's HEAD log,
-// so gm reads all of them as idle since the epoch. The log's last line is
-// where git's own writing shows up, so this line goes last.
 fn age_worktrees(repo_dir: &str) {
     let admin = paths::join(repo_dir, ".git/worktrees");
     for e in std::fs::read_dir(&admin).unwrap() {
@@ -99,7 +87,6 @@ fn wt_expire_removes_the_idle_and_keeps_the_busy() {
     let old_b = t.worktree_dir(&r, "old/b");
     let busy = t.worktree_dir(&r, "busy");
 
-    // The dry run names everything and touches nothing.
     let res = run_in(&t, "", Config::default(), |a| {
         a.wt(&args(&["expire", "--dry-run", "acme/alpha", "30d"]))
     });
@@ -134,7 +121,6 @@ fn wt_expire_removes_the_idle_and_keeps_the_busy() {
         "the branch went with the worktree"
     );
 
-    // What is left is busy, so there is nothing idle left to remove.
     let res = run_in(&t, "", Config::default(), |a| {
         a.wt(&args(&["expire", "acme/alpha", "30d"]))
     });
@@ -170,8 +156,6 @@ fn wt_expire_reports_the_verb_errors() {
     );
 }
 
-// A branch whose work holds commits that are nowhere else stays: the worktree
-// goes, and the refusal is named.
 #[test]
 fn wt_remove_keeps_an_unmerged_branch() {
     let root = TempDir::new();
@@ -182,7 +166,6 @@ fn wt_remove_keeps_an_unmerged_branch() {
     git_repo(&r.path());
     let t = tree(&root.path());
 
-    // A branch that already exists is checked out where it is, not started.
     let pub_ = "feat/public";
     git(&r.path(), &["branch", pub_]);
     let made = run_in(&t, "", Config::default(), |a| {
@@ -198,7 +181,6 @@ fn wt_remove_keeps_an_unmerged_branch() {
     made.res.unwrap();
     assert!(made.err.contains("new branch"), "{}", made.err);
 
-    // A commit the branch holds is work nobody else has, so -d refuses.
     write(&paths::join(&login, "work.txt"), "wip\n");
     git(&login, &["add", "work.txt"]);
     git(&login, &["commit", "-q", "-m", "wip"]);
@@ -212,7 +194,6 @@ fn wt_remove_keeps_an_unmerged_branch() {
         "{}",
         res.err
     );
-    // The other checkout was never asked to go.
     assert!(!exists(&login) && exists(&t.worktree_dir(&r, pub_)));
 }
 

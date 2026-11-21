@@ -1,10 +1,5 @@
-//! The branch list.
-
 use super::*;
 
-// The newest branch rests under the cursor, a remote-only branch reads as the
-// remote's, Enter on a branch that is already checked out goes there, and the
-// key toggles the list off.
 #[test]
 fn branch_mode() {
     let root = TempDir::new();
@@ -44,8 +39,6 @@ fn branch_mode() {
     assert!(m.mode == Mode::Repos && !is_quit(&cmds));
 }
 
-// git is asked off the UI thread, and an answer about a repository the
-// cursor has left is dropped rather than replacing the list it is on.
 #[test]
 fn branch_mode_drops_a_stale_answer() {
     let root = TempDir::new();
@@ -66,17 +59,11 @@ fn branches_command() {
     assert_eq!(m.mode, Mode::Branches);
 }
 
-// A branch the query names whole outranks a longer one that only carries the
-// same characters inside another name: "main" answers "main", while
-// "fix/mainline" is a different branch. The named branch rests under the
-// cursor, where Enter means it.
 #[test]
 fn branch_query_prefers_the_named_branch() {
     let root = TempDir::new();
     let (mut m, _) = branch_model(&root);
     open_branches(&mut m);
-    // A branch made after main, the way a feature branch arrives later: newer,
-    // so without the tie-break it would take main's place at the bottom.
     m.all.push(Item {
         label: "fix/mainline".into(),
         branch: Branch {
@@ -90,8 +77,6 @@ fn branch_query_prefers_the_named_branch() {
     assert_eq!(label(&m), "main");
 }
 
-// A worktree is made for a branch that has none, against real git, and the
-// finder is left for it once git is done.
 #[test]
 fn branch_check_out() {
     let root = TempDir::new();
@@ -125,9 +110,6 @@ fn branch_check_out() {
     );
 }
 
-// A confirmed worktree made from a branch row updates that row, not the list
-// with a second item that has lost its branch identity. Its repository details
-// are stale once the worktree operation succeeds.
 #[test]
 fn add_worktree_updates_branch_row_and_invalidates_status() {
     let root = TempDir::new();
@@ -142,7 +124,7 @@ fn add_worktree_updates_branch_row_and_invalidates_status() {
         },
     );
     open_branches(&mut m);
-    m.busy.clear(); // this test does not run the remote-branch task
+    m.busy.clear();
     set_query(&mut m, "timeout");
     assert_eq!(label(&m), "fix/timeout");
 
@@ -165,8 +147,6 @@ fn add_worktree_updates_branch_row_and_invalidates_status() {
     assert!(!m.status.contains_key(&r.path()));
 }
 
-// The same in-place update applies to a pull-request row, identified by the
-// branch the PR checks out.
 #[test]
 fn add_worktree_updates_pull_request_row() {
     let root = TempDir::new();
@@ -186,8 +166,6 @@ fn add_worktree_updates_pull_request_row() {
     assert!(!matches[0].path.is_empty());
 }
 
-// If a confirmed repository creation finishes after opening a secondary list,
-// it updates the saved repository list and leaves the visible list alone.
 #[test]
 fn create_updates_saved_repository_list_only() {
     let root = TempDir::new();
@@ -213,8 +191,6 @@ fn create_updates_saved_repository_list_only() {
     assert!(m.note.contains("created"), "{:?}", m.note);
 }
 
-// What only the remote has goes at the top of the list, once, without moving
-// the selection.
 #[test]
 fn remote_branches_join_the_list() {
     let root = TempDir::new();
@@ -238,7 +214,6 @@ fn remote_branches_join_the_list() {
     assert_eq!(rows(&m).join(" "), want);
     assert_eq!(label(&m), before);
 
-    // The same answer again adds nothing.
     m.update(Msg::RemoteBranches(again));
     assert_eq!(rows(&m).join(" "), want);
 
@@ -246,9 +221,6 @@ fn remote_branches_join_the_list() {
     assert!(lines_text(&m.info_lines(60)).contains("not fetched yet"));
 }
 
-// The local list stays when a remote cannot be reached, and the remote is
-// named under the prompt; an answer for a list that has since closed is
-// dropped.
 #[test]
 fn remote_branches_say_why_not() {
     let root = TempDir::new();
@@ -275,8 +247,6 @@ fn remote_branches_say_why_not() {
     assert!(m.mode == Mode::Repos && m.view.len() == 1);
 }
 
-// A branch the clone has never seen is fetched and checked out, against real
-// git.
 #[test]
 fn unfetched_branch_check_out() {
     let root = TempDir::new();

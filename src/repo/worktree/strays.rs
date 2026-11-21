@@ -1,6 +1,3 @@
-//! Strays: what sits in a repository's worktree directory that git does
-//! not know as a checkout.
-
 use crate::repo::{Repo, Worktree, worktrees_dir};
 
 /// strays are what delete would take from r's worktree directory besides the
@@ -53,8 +50,6 @@ fn walk_strays(
         } else if wts.contains(&p) {
             continue;
         } else if metadata.is_dir() && wts.iter().any(|w| w.starts_with(&p)) {
-            // A branch directory like feat/ holds checkouts, and may hold
-            // something else beside them.
             walk_strays(&p, &label, wts, out);
         } else {
             out.push(label);
@@ -69,8 +64,6 @@ mod tests {
     use crate::repo::{Tree, add_worktree, other_worktrees};
     use crate::testutil::{TempDir, git_repo, mkdir, write};
 
-    // The bug where gm remove deleted a directory under .worktrees that was
-    // not one of git's checkouts without naming it first.
     #[test]
     fn strays_names_what_is_not_a_worktree() {
         let base = TempDir::new();

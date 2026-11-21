@@ -1,6 +1,3 @@
-// Sample data for the finder demo on the landing page. Nothing here is read
-// from a real machine: the repositories, commits and visit counts are made up
-// to show what each part of the finder looks like.
 
 export interface DemoCommit {
   hash: string;
@@ -23,17 +20,14 @@ export interface DemoRepo {
   dirty: number;
   unpushed?: number;
   visits: number;
-  last: string; // how long ago, already phrased
-  frecency: number; // Visit.Score(now); decides the order of an empty query
+  last: string;
+  frecency: number;
   commits: DemoCommit[];
   worktrees?: DemoWorktree[];
 }
 
 const c = (hash: string, subject: string, refs: DemoCommit["refs"] = []): DemoCommit => ({ hash, refs, subject });
 
-// The tail of a real tree: repositories that are cloned and rarely opened.
-// They exist so the list is longer than the window, the way it is on a
-// machine that has been collecting clones for a while.
 const quiet = (rel: string, branch = "main"): DemoRepo => ({
   rel,
   remote: `https://${rel}`,

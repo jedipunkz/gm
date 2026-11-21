@@ -1,15 +1,11 @@
-//! Plans what a confirmed removal would take, without choosing how to ask.
-
 use super::{Repo, Worktree, expired, same_path, strays};
 
-/// WorktreeImpact is a checkout and the count of changed files it would lose.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorktreeImpact {
     pub worktree: Worktree,
     pub changed: usize,
 }
 
-/// RemovalPlan is the work a repository removal would take with it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemovalPlan {
     pub dirty: usize,
@@ -47,8 +43,6 @@ pub fn removal_plan(
     }
 }
 
-/// WorktreeRemovalPlan is one checkout and the exact signal that decides
-/// whether git must be told to force its removal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorktreeRemovalPlan {
     pub worktree: Worktree,
@@ -56,8 +50,6 @@ pub struct WorktreeRemovalPlan {
     pub force: bool,
 }
 
-/// worktree_removal_plan turns the caller's existing dirty signal into the
-/// force decision. The caller keeps its own status/error policy.
 pub fn worktree_removal_plan(worktree: Worktree, changed: usize) -> WorktreeRemovalPlan {
     WorktreeRemovalPlan {
         worktree,
@@ -66,8 +58,6 @@ pub fn worktree_removal_plan(worktree: Worktree, changed: usize) -> WorktreeRemo
     }
 }
 
-/// ExpiryPlan divides aged worktrees into those safe to remove and those
-/// kept for uncommitted work.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ExpiryPlan {
     pub remove: Vec<WorktreeImpact>,

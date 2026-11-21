@@ -1,6 +1,3 @@
-//! Branches: which names git accepts, and which branches a worktree can
-//! be made from.
-
 use std::collections::HashSet;
 use std::process::Stdio;
 
@@ -8,8 +5,7 @@ use super::{git_command, git_in, remotes};
 use crate::Result;
 
 /// valid_branch checks git's documented branch-name rules without starting a
-/// process. gm asks before it builds a path out of one: a name like "../.."
-/// would otherwise make a directory outside the tree before git ever saw it.
+/// process.
 pub fn valid_branch(name: &str) -> bool {
     if name.is_empty()
         || name.starts_with('-')
@@ -32,8 +28,6 @@ pub fn valid_branch(name: &str) -> bool {
     })
 }
 
-/// branch_exists reports whether the repository already has this branch,
-/// which decides whether a worktree starts one or checks one out.
 pub fn branch_exists(dir: &str, branch: &str) -> bool {
     git_command()
         .args([
@@ -62,8 +56,6 @@ pub struct Branch {
 }
 
 impl Branch {
-    /// label is how the branch reads in a list: by where it lives when that
-    /// is only a remote.
     pub fn label(&self) -> String {
         if self.remote.is_empty() {
             self.name.clone()
@@ -200,7 +192,6 @@ mod tests {
             assert_eq!(valid_branch(name), git_accepts, "{name:?}");
         }
 
-        // And nothing is created on the way to finding out.
         let base = TempDir::new();
         let main = base.join("github.com/acme/alpha");
         git_repo(&main);

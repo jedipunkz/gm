@@ -5,17 +5,10 @@ use super::{Action, Cmd, ConfirmDetail, Model, Msg, Outcome, RemoveDetail};
 use crate::plural;
 use crate::repo;
 
-/// A slash command is typed into the same box as the filter. Only a slash at
-/// the very start of an empty query begins one — a repository path is full of
-/// slashes, and every one of those has to keep filtering.
 const COMMAND_PREFIX: &str = "/";
 
-/// COMMAND_SEP ends a query so a command can follow it — "gm;/remove" finds a
-/// repository and acts on it in one go. No repository path holds one.
 const COMMAND_SEP: &str = ";";
 
-/// look_flag_is_enabled catches the get option that starts a second shell,
-/// whose output would become the outer shell binding's captured path.
 fn look_flag_is_enabled(flag: &str) -> bool {
     match flag {
         "-l" | "--look" => true,
@@ -26,11 +19,9 @@ fn look_flag_is_enabled(flag: &str) -> bool {
     }
 }
 
-/// Command is one slash command. Adding another is one entry here; the help
-/// popup and the completion both read this table.
 pub struct Command {
     pub name: &'static str,
-    pub arg: &'static str, // what the argument is called in the help, empty when it takes none
+    pub arg: &'static str,
     pub what: &'static str,
     run: fn(&mut Model, &str) -> Vec<Cmd>,
 }
@@ -51,7 +42,6 @@ impl RepoFilter {
 }
 
 impl Command {
-    /// label is how the command is written in the help popup.
     pub fn label(&self) -> String {
         if self.arg.is_empty() {
             self.name.to_string()
@@ -79,8 +69,6 @@ pub const COMMANDS: &[Command] = &[
             if m.mode != Mode::Repos {
                 return m.confirm_worktree(arg);
             }
-            // The flag gm create takes, spelled the same, so a user who
-            // pushes over SSH does not fix the remote after every /create.
             let (ssh, arg) = match arg.strip_prefix("--ssh") {
                 Some(rest) if rest.is_empty() || rest.starts_with(char::is_whitespace) => {
                     (true, rest.trim())
@@ -108,7 +96,6 @@ pub const COMMANDS: &[Command] = &[
                 let result = (|| {
                     let u = repo::normalize_url(&reference, ssh)?;
                     let rel = repo::rel_path_of(&u);
-                    // The question must not offer to create a second copy.
                     tree.refuse_existing(&rel)?;
                     let dst = tree.path_for(&rel);
                     Ok(vec![tildify(&dst), format!("origin {u}")])
@@ -143,21 +130,11 @@ pub const COMMANDS: &[Command] = &[
                 m.note = "nothing is selected".into();
                 return vec![];
             };
-            // git prints the resolved path for a worktree, while repo_at is
-            // the path the finder walked; under a symlinked root the two
-            // differ textually, so compare them the way the repository case
-            // below does.
             let worktree = m.mode == Mode::Worktrees;
             if worktree && repo::same_path(&it.path, &m.repo_at) {
                 m.note = "that is the repository itself, not a worktree of it".into();
                 return vec![];
             }
-            // git is asked now rather than the details pane's cache: the cache
-            // fills only once the cursor has rested, which "gm;/remove" never
-            // gives it, and it is as old as the moment it was filled. It is
-            // asked off the UI thread, a git status per worktree being slow
-            // enough to freeze the screen, so the question goes up at once and
-            // y waits for the answer.
             let (busy_tag, busy) = m.start_busy("checking for uncommitted work…");
             let pending = Pending {
                 detail: vec![tildify(&it.path), "checking for uncommitted work…".into()],
@@ -212,45 +189,34 @@ pub const COMMANDS: &[Command] = &[
                     }));
                 }
 
-                if let Ok(wts) = worktrees_of(&it.path) {
-                    // The worktrees go with it, so the question has to say so.
-                    // The main worktree is the repository itself. git prints
-                    // the resolved path, so a mismatch here is one entry too
-                    // many rather than a wrong answer.
-                    if let Some(r) = tree.at(&it.path) {
-                        let plan = repo::removal_plan(&r, dirty, &wts, |p| changed(p));
-                        // They go with --force, so the work in each is named
-                        // here or nowhere.
-                        if !plan.worktrees.is_empty() {
-                            // A checkout outside gm's worktree directory is
-                            // named by its path, which only the question says.
-                            let others: Vec<_> = plan
-                                .worktrees
-                                .iter()
-                                .map(|impact| impact.worktree.clone())
-                                .collect();
-                            let labels = repo::worktree_labels_in(
-                                &repo::worktrees_dir(&r),
-                                &others,
-                                |path| {
-                                    plan.worktrees
-                                        .iter()
-                                        .find(|impact| impact.worktree.path == path)
-                                        .map_or(0, |impact| impact.changed)
-                                },
-                            );
-                            detail.push(format!(
-                                "{} will go too: {}",
-                                plural(plan.worktrees.len(), "worktree", "worktrees"),
-                                labels
-                            ));
-                        }
-                        if !plan.strays.is_empty() {
-                            detail.push(format!(
-                                "also removed, not a worktree: {}",
-                                plan.strays.join(", ")
-                            ));
-                        }
+                if let Ok(wts) = worktrees_of(&it.path)
+                    && let Some(r) = tree.at(&it.path)
+                {
+                    let plan = repo::removal_plan(&r, dirty, &wts, |p| changed(p));
+                    if !plan.worktrees.is_empty() {
+                        let others: Vec<_> = plan
+                            .worktrees
+                            .iter()
+                            .map(|impact| impact.worktree.clone())
+                            .collect();
+                        let labels =
+                            repo::worktree_labels_in(&repo::worktrees_dir(&r), &others, |path| {
+                                plan.worktrees
+                                    .iter()
+                                    .find(|impact| impact.worktree.path == path)
+                                    .map_or(0, |impact| impact.changed)
+                            });
+                        detail.push(format!(
+                            "{} will go too: {}",
+                            plural(plan.worktrees.len(), "worktree", "worktrees"),
+                            labels
+                        ));
+                    }
+                    if !plan.strays.is_empty() {
+                        detail.push(format!(
+                            "also removed, not a worktree: {}",
+                            plan.strays.join(", ")
+                        ));
                     }
                 }
                 Some(Msg::RemoveDetail(RemoveDetail {
@@ -352,8 +318,6 @@ pub fn split_input(s: &str) -> Option<(String, String)> {
         .map(|(q, c)| (q.to_string(), c.to_string()))
 }
 
-/// is_command reports whether the input is being typed as a command rather
-/// than only as a filter.
 pub fn is_command(s: &str) -> bool {
     split_input(s).is_some()
 }
@@ -389,15 +353,12 @@ impl Model {
             }
         };
 
-        // Switching a filter on asks git again, so work done in another
-        // terminal since the last scan shows up. The last answer filters the
-        // list until the new one lands; with none yet, every row stays.
         let scan = if enabled && !self.scanning_states {
             self.scanning_states = true;
             let (busy_tag, busy) = self.start_busy("checking repository status…");
             vec![busy, self.scan_repo_states(busy_tag)]
         } else {
-            vec![] // off, or the other filter already started the shared scan
+            vec![]
         };
         if !enabled || self.repo_states.is_some() {
             self.filter();
@@ -406,9 +367,6 @@ impl Model {
         scan
     }
 
-    /// leave_with closes the finder and hands the work to gm, which runs it on
-    /// the terminal the user can see: a clone's progress, a password prompt and
-    /// a confirmation all belong there, not inside an alternate screen.
     fn leave_with(&mut self, action: Action, arg: &str) -> Vec<Cmd> {
         self.result = Outcome {
             action,
@@ -417,9 +375,6 @@ impl Model {
         vec![Cmd::Quit]
     }
 
-    /// run_command executes what the user typed. An unknown command, or one
-    /// missing its argument, leaves a note under the prompt rather than doing
-    /// something surprising.
     pub(super) fn run_command(&mut self, typed: &str) -> Vec<Cmd> {
         let typed = typed.trim();
         let (name, arg) = typed.split_once(' ').unwrap_or((typed, ""));

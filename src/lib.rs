@@ -1,22 +1,14 @@
-//! gm keeps every repository in one predictable tree, and jumps between them.
-//! The work lives in the modules; this library holds them along with the few
-//! helpers every one of them shares. The binary is only the entry point.
-
 pub mod cli;
 pub mod config;
 pub mod finder;
 pub mod repo;
 
-/// VERSION is stamped in at release time through the GM_VERSION environment
-/// variable of the build.
 pub const VERSION: &str = match option_env!("GM_VERSION") {
     Some(v) => v,
     None => "dev",
 };
 
-/// Error is what gm reports: one line, already worded for the user. Every
-/// failure is a message, as it was in the Go version, so there is no error
-/// hierarchy to walk.
+/// Error is what gm reports: one line, already worded for the user.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Error(pub String);
 
@@ -46,13 +38,11 @@ impl From<std::io::Error> for Error {
     }
 }
 
-/// err builds an Error in place, the way fmt.Errorf did.
 macro_rules! err {
     ($($arg:tt)*) => { $crate::Error(format!($($arg)*)) };
 }
 pub(crate) use err;
 
-/// plural counts a thing in the words for it.
 pub fn plural(n: usize, one: &str, many: &str) -> String {
     if n == 1 {
         format!("1 {one}")
@@ -61,11 +51,7 @@ pub fn plural(n: usize, one: &str, many: &str) -> String {
     }
 }
 
-/// Paths are carried as strings, the way the Go version carried them: every
-/// one of them is compared, printed and stored in JSON, and a lossy name is the
-/// price of a directory that is not UTF-8.
 pub mod paths {
-    /// home is $HOME, which is what os.UserHomeDir read on Unix.
     pub fn home() -> crate::Result<String> {
         match std::env::var("HOME") {
             Ok(h) if !h.is_empty() => Ok(h),
@@ -84,7 +70,6 @@ pub mod paths {
         clean(&format!("{a}/{b}"))
     }
 
-    /// dir is everything but the last element, like filepath.Dir.
     pub fn dir(p: &str) -> String {
         match p.rfind('/') {
             Some(i) => clean(&p[..=i]),
@@ -120,7 +105,6 @@ pub mod paths {
         }
     }
 
-    /// abs makes a path absolute against the working directory.
     pub fn abs(p: &str) -> crate::Result<String> {
         if p.starts_with('/') {
             return Ok(clean(p));
@@ -129,7 +113,6 @@ pub mod paths {
         Ok(join(&wd.to_string_lossy(), p))
     }
 
-    /// exists reports whether anything is at p, the way os.Stat succeeding did.
     pub fn exists(p: &str) -> bool {
         std::fs::metadata(p).is_ok()
     }
@@ -157,8 +140,6 @@ pub mod paths {
             );
             assert_eq!(dir("/a/b/c"), "/a/b");
             assert_eq!(dir("/a"), "/");
-            // join with an empty side falls to the other; the clean versions
-            // of each.
             assert_eq!(join("", "a/b"), clean("a/b"));
             assert_eq!(join("a/b", ""), clean("a/b"));
             assert_eq!(dir("noslash"), ".");
@@ -182,12 +163,9 @@ pub mod paths {
 
 #[cfg(test)]
 pub mod testutil {
-    //! What the tests share: temporary directories and real repositories.
-
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// TempDir is a directory removed when the test is done with it.
     #[derive(Debug)]
     pub struct TempDir(PathBuf);
 
@@ -228,7 +206,6 @@ pub mod testutil {
         }
     }
 
-    /// git runs one git command in dir and fails the test if it does not work.
     pub fn git(dir: &str, args: &[&str]) -> String {
         let out = crate::repo::git_command()
             .args(["-c", "user.email=t@e.x", "-c", "user.name=t"])
@@ -252,17 +229,14 @@ pub mod testutil {
         git(dir, &["commit", "-q", "--allow-empty", "-m", "init"]);
     }
 
-    /// mkdir makes a directory and its parents.
     pub fn mkdir(p: &str) {
         std::fs::create_dir_all(p).unwrap();
     }
 
-    /// write puts a file at p.
     pub fn write(p: &str, body: &str) {
         std::fs::write(p, body).unwrap();
     }
 
-    /// exists reports whether anything is at p.
     pub fn exists(p: &str) -> bool {
         std::path::Path::new(p).symlink_metadata().is_ok()
     }

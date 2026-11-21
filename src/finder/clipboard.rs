@@ -1,13 +1,5 @@
-//! OSC52, the escape sequence that puts a string on the clipboard of the
-//! terminal gm is running in, be it a window on Linux, xterm on Windows under
-//! WSL, or a pane behind an ssh session. A terminal Richard Hipp says no has
-//! to be told to allow it; a terminal that ignores the sequence silently
-//! leaves the clipboard unchanged, which is why the finder says so when the
-//! copy went out rather than that it landed.
-
 use std::io::Write;
 
-/// ALPHABET is the standard base64 character set, in order.
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /// copy hands text to the terminal's clipboard as OSC52. It goes to /dev/tty,
@@ -22,7 +14,6 @@ pub fn copy(text: &str) -> std::io::Result<()> {
     tty.flush()
 }
 
-/// base64 encodes bytes into the alphabet the OSC52 spec asks for, padded.
 fn base64(data: &[u8]) -> String {
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
@@ -37,7 +28,6 @@ fn base64(data: &[u8]) -> String {
             out.push(ALPHABET[(quad & 0b111_111) as usize] as char);
         }
     }
-    // The padding the spec reads, one = per missing byte of the last chunk.
     out.push_str(&"=".repeat((4 - out.len() % 4) % 4));
     out
 }
@@ -48,7 +38,6 @@ mod tests {
 
     #[test]
     fn base64_encodes_rfc4648() {
-        // The RFC's table, the empty string included, and one URL's worth.
         for (s, want) in [
             ("", ""),
             ("f", "Zg=="),

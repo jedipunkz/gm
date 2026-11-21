@@ -24,34 +24,24 @@ pub struct Issue {
 }
 
 impl Issue {
-    /// label is how the issue reads in a list: number first, so typing it
-    /// finds the row.
     pub fn label(&self) -> String {
         format!("#{} {}", self.number, self.title)
     }
 }
 
-/// Comment is one comment on an issue or a pull request, as the detail panel
-/// shows it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Comment {
     pub author: String,
     pub body: String,
 }
 
-/// ISSUE_LIMIT is how many open issues gh is asked for, newest first. A
-/// repository with more than this has the rest invisible: whoever shows the
-/// answer — and gets exactly a full page back — says so.
 pub(crate) const ISSUE_LIMIT: usize = 100;
 
-/// The detail view moves nothing but words, so it waits as long as the
-/// listing does.
 const ISSUE_VIEW_TIMEOUT: Duration = GH_LIST_TIMEOUT;
 
 /// issues asks gh for the repository's open issues. gh talks to GitHub, so
 /// this is slow next to git and fails without a network, gh or a login; the
-/// error says which. issue below shares every field's name but `comments`, so
-/// both go through the same reader.
+/// error says which.
 pub fn issues(dir: &str) -> Result<Vec<Issue>> {
     issues_with(OsStr::new("gh"), GH_LIST_TIMEOUT, dir)
 }
@@ -113,7 +103,6 @@ fn parse_one(out: &[u8]) -> Result<Issue> {
     Ok(read_issue(&v))
 }
 
-/// read_issue takes one issue out of gh's JSON, whichever command it answered.
 fn read_issue(p: &serde_json::Value) -> Issue {
     let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
     let login = p
@@ -134,8 +123,6 @@ fn read_issue(p: &serde_json::Value) -> Issue {
     }
 }
 
-/// read_labels takes the label names out of gh's JSON for an issue or a pull
-/// request: both name them the same way.
 pub(super) fn read_labels(p: &serde_json::Value) -> Vec<String> {
     p.get("labels")
         .and_then(|v| v.as_array())
@@ -153,8 +140,6 @@ pub(super) fn read_labels(p: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// read_assignees takes the assignees' logins out of gh's JSON for an issue
-/// or a pull request: both name them the same way.
 pub(super) fn read_assignees(p: &serde_json::Value) -> Vec<String> {
     p.get("assignees")
         .and_then(|v| v.as_array())
@@ -167,8 +152,6 @@ pub(super) fn read_assignees(p: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// read_comments takes the comments out of gh's JSON for an issue or a pull
-/// request: both name them the same way, and a listing has none.
 pub(super) fn read_comments(p: &serde_json::Value) -> Vec<Comment> {
     p.get("comments")
         .and_then(|v| v.as_array())
@@ -196,8 +179,6 @@ mod tests {
     use super::*;
     use crate::testutil::TempDir;
 
-    // gh's JSON is read, labels and comments included, from either command's
-    // answer.
     #[test]
     fn parse_issues_reads_gh() {
         let out = br#"[
@@ -223,9 +204,6 @@ mod tests {
         assert_eq!(one.comments.len(), 1);
         assert_eq!(one.comments[0].author, "carol");
 
-        // A URL is part of the answer, and parse reads it; the refusal for a
-        // missing one is the detail view's, tested below.
-
         let e = parse_one(b"[]").unwrap_err();
         assert!(e.0.contains("not an issue"), "{e}");
     }
@@ -233,9 +211,6 @@ mod tests {
     use std::ffi::OsStr;
     use std::os::unix::fs::PermissionsExt;
 
-    // gh answering with a failure says what gh said, in the same shape the
-    // rest of gm's errors take; both commands run through the same reader and
-    // the same stderr forwarding, so one stand-in script answers for both.
     #[test]
     fn issues_say_what_gh_said() {
         let tmp = TempDir::new();
@@ -250,7 +225,6 @@ mod tests {
         let e = issue_with(gh, Duration::from_secs(2), &repo, 7).unwrap_err();
         assert!(e.0.contains("not logged in"), "{e}");
 
-        // A gh that is not there at all is named as the thing to install.
         let e = gh_missing(std::io::Error::new(std::io::ErrorKind::NotFound, "no gh"));
         assert!(
             e.0.contains("gh is not installed"),
@@ -258,9 +232,6 @@ mod tests {
         );
     }
 
-    // An issue without a URL cannot be opened in a browser or copied, and gh
-    // is asked again rather than trusted to carry it over: the detail view
-    // names the defect instead of showing it.
     #[test]
     fn an_issue_without_a_url_is_refused() {
         use std::os::unix::fs::PermissionsExt;

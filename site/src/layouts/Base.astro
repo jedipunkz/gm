@@ -4,7 +4,6 @@ import "../styles/global.css";
 interface Props {
   title: string;
   description: string;
-  // Which nav tab is the page itself, so it is marked as the current one.
   current?: "home" | "docs";
 }
 const { title, description, current = "home" } = Astro.props;
@@ -12,15 +11,10 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 const REPO = "https://github.com/jedipunkz/gm";
 
 // The card networks show when the site is linked. Both have to be absolute:
-// a relative og:image is ignored by most of them. See og/card.html for where
-// the picture comes from.
-//
-// The canonical is the page's own URL in its slashed form, the one the
-// sitemap lists.
+// a relative og:image is ignored by most of them.
 const canonical = new URL(Astro.url.pathname.replace(/\/?$/, "/"), Astro.site);
 const ogImage = new URL(`${base}og.png`, Astro.site);
 
-// The section links point at the home page, so they work from every page.
 const sections = [
   ["features", "Features"],
   ["install", "Install"],
@@ -158,8 +152,6 @@ const sections = [
     text-decoration: none;
     border-color: var(--faint);
   }
-  /* On a phone the section links go, but the Docs tab stays: it is the only
-     way to the reference. */
   @media (max-width: 720px) {
     nav {
       gap: 0;

@@ -1,9 +1,5 @@
-//! gm get and gm create.
-
 use super::*;
 
-// get searches every configured root before cloning into the primary one,
-// and the finder returns the root where the repository was found.
 #[test]
 fn get_finds_repository_under_a_secondary_root() {
     let base = TempDir::new();
@@ -59,8 +55,6 @@ fn get_finds_repository_under_a_secondary_root() {
     assert_eq!(History::open(&state).visit(&dst).count, 3);
 }
 
-// A reference with ".." in it is refused before anything is made, so no
-// directory appears outside the root.
 #[test]
 fn get_and_create_refuse_to_leave_the_root() {
     let base = TempDir::new();
@@ -83,9 +77,6 @@ fn get_and_create_refuse_to_leave_the_root() {
     }
 }
 
-// gm get -u matches ghq: the checked-out branch moves across what the fetch
-// brought when the tree is clean, a divergence is left alone and said, and
-// so is dirt.
 #[test]
 fn get_u_fast_forwards_a_clean_clone() {
     let tmp = TempDir::new();
@@ -97,8 +88,6 @@ fn get_u_fast_forwards_a_clean_clone() {
     let reference = format!("file://localhost{origin}");
     let rel = repo::rel_path_of(&repo::normalize_url(&reference, false).unwrap());
 
-    // Someone else has a commit pushed already, and the clone is made before
-    // it arrives.
     let w = tmp.join("w");
     git(&tmp.path(), &["clone", "-q", &origin, &w]);
     write(&paths::join(&w, "a.txt"), "1\n");
@@ -111,7 +100,6 @@ fn get_u_fast_forwards_a_clean_clone() {
     git(&tmp.path(), &["clone", "-q", &origin, &dst]);
     let head = git(&dst, &["rev-parse", "HEAD"]);
 
-    // Another commit arrives after the clone was made.
     write(&paths::join(&w, "a.txt"), "2\n");
     git(&w, &["add", "a.txt"]);
     git(&w, &["commit", "-q", "-m", "two"]);
@@ -129,14 +117,12 @@ fn get_u_fast_forwards_a_clean_clone() {
         git(&dst, &["rev-parse", "HEAD"])
     );
 
-    // Nothing new brought: the clone stays where it is, and no ff is said.
     let r = run_in(&tree(&root), "", Config::default(), |a| {
         a.get(&args(&["-u", &reference]))
     });
     r.res.unwrap();
     assert!(!r.err.contains(&format!("ff       {dst}")), "{}", r.err);
 
-    // A local commit makes the branch diverge; it is never merged.
     write(&paths::join(&dst, "b.txt"), "local\n");
     git(&dst, &["add", "b.txt"]);
     git(&dst, &["commit", "-q", "-m", "local"]);
@@ -157,7 +143,6 @@ fn get_u_fast_forwards_a_clean_clone() {
     );
     assert_eq!(diverged_head, git(&dst, &["rev-parse", "HEAD"]));
 
-    // Dirt is are refused a move as well: nothing is merged into it.
     write(&paths::join(&dst, "c.txt"), "uncommitted\n");
     let r = run_in(&tree(&root), "", Config::default(), |a| {
         a.get(&args(&["-u", &reference]))
@@ -171,12 +156,9 @@ fn get_u_fast_forwards_a_clean_clone() {
     assert_eq!(diverged_head, git(&dst, &["rev-parse", "HEAD"]));
 }
 
-// The clone gm get made owns its submodules, so -u keeps them with it: the
-// submodule is brought to what the fetched commits name.
 #[test]
 fn get_u_updates_submodules() {
     let tmp = TempDir::new();
-    // The submodule has two commits waiting to be picked up.
     let sub_origin = tmp.join("sub.git");
     git(
         &tmp.path(),
@@ -189,7 +171,6 @@ fn get_u_updates_submodules() {
     git(&sub, &["commit", "-q", "-m", "one"]);
     git(&sub, &["push", "-q", "-u", "origin", "main"]);
 
-    // The parent records it, and the clone owns it from the start.
     let parent_origin = tmp.join("parent.git");
     git(
         &tmp.path(),
@@ -234,7 +215,6 @@ fn get_u_updates_submodules() {
     git(&dst, &["config", "protocol.file.allow", "always"]);
     let old = git(&paths::join(&dst, "sub"), &["rev-parse", "HEAD"]);
 
-    // The submodule moves; the parent records the move.
     write(&paths::join(&sub, "f.txt"), "2\n");
     git(&sub, &["add", "f.txt"]);
     git(&sub, &["commit", "-q", "-m", "two"]);
@@ -255,8 +235,6 @@ fn get_u_updates_submodules() {
     );
 }
 
-// One repository under two roots is ambiguous to gm get: cloning a
-// second copy or updating the first is a decision the user has to make.
 #[test]
 fn get_refuses_a_repository_two_roots_have() {
     let base = TempDir::new();
@@ -308,8 +286,6 @@ fn get_prunes_host_after_failed_clone() {
     assert_eq!(err.0, "exit status 128", "gm get changed the clone error");
 }
 
-// The clone flags are read the way help words them: shallow, one branch,
-// silent.
 #[test]
 fn get_takes_the_clone_flavours() {
     let tmp = TempDir::new();
@@ -318,7 +294,6 @@ fn get_takes_the_clone_flavours() {
         &tmp.path(),
         &["init", "-q", "--bare", "-b", "main", &origin],
     );
-    // A second branch, so -b has something to check out.
     let w = tmp.join("w");
     git(&tmp.path(), &["clone", "-q", &origin, &w]);
     git(&w, &["commit", "-q", "--allow-empty", "-m", "one"]);
@@ -349,8 +324,6 @@ fn get_takes_the_clone_flavours() {
     );
 }
 
-// -p means full paths wherever gm takes it; SSH is spelled out, so gm get -p
-// and gm create -p are mistakes rather than a quiet switch of protocol.
 #[test]
 fn ssh_is_its_own_flag() {
     let root = TempDir::new();

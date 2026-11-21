@@ -1,20 +1,6 @@
-//! The direction the module dependencies point, held by reading the source
-//! rather than by review: docs/design.md places the cli above the finder,
-//! the finder above the repository and config, and nothing below reaching
-//! back up ("The finder confirms; repo carries out", "repo::delete asks
-//! nothing"). The compiler cannot see the direction — every module compiles
-//! into one crate — so the tree is walked, and a line in violation fails the
-//! test with the file, the line, the import, and the layer the code belongs
-//! in.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// The code part of a line: the line cut where its comment starts. A comment
-// may quote the rule it states — this test's own comments name the imports —
-// and quoting is not using, so only the code part is matched. The cut is the
-// first "//" that a colon does not introduce, because "https://" is a scheme
-// inside code, not a comment start.
 fn code_part(line: &str) -> &str {
     let mut cut = line.len();
     let mut start = 0;
@@ -25,16 +11,11 @@ fn code_part(line: &str) -> &str {
             cut = at;
             break;
         }
-        // The "//" belongs to a scheme: the comment, if there is one,
-        // starts further along the line.
         start = at + 2;
     }
     &line[..cut]
 }
 
-// The name a failure shows: the path relative to the manifest directory, so
-// the message reads like the files in the design document do, not like a
-// build's absolute path.
 fn shown(file: &Path, manifest: &Path) -> String {
     file.strip_prefix(manifest)
         .unwrap_or(file)
@@ -42,14 +23,7 @@ fn shown(file: &Path, manifest: &Path) -> String {
         .to_string()
 }
 
-// Every file one of a rule's paths names. A directory is followed to the
-// last nested file — src/repo/mod.rs sits inside src/repo, so it is inside
-// the rule with its siblings — and a file stands for itself. The order is
-// sorted, so two runs see the same first violation whatever read_dir
-// returned.
 fn entries(root: &Path, manifest: &Path) -> Vec<PathBuf> {
-    // A file stands for itself; only a directory is walked. Both shapes
-    // name a rule: "src/finder" is a directory, "src/config.rs" a file.
     if root.is_file() {
         return vec![root.to_path_buf()];
     }
@@ -73,8 +47,6 @@ fn entries(root: &Path, manifest: &Path) -> Vec<PathBuf> {
     found
 }
 
-// The module a file is: src/repo/git/mod.rs is repo::git and src/config.rs
-// is config. A super:: chain is counted up from here.
 fn module_of(file: &Path, manifest: &Path) -> Vec<String> {
     let rel = file.strip_prefix(manifest.join("src")).unwrap_or(file);
     let mut module: Vec<String> = rel
@@ -87,7 +59,6 @@ fn module_of(file: &Path, manifest: &Path) -> Vec<String> {
     module
 }
 
-// The identifier at the start of s, empty when s does not start with one.
 fn ident(s: &str) -> &str {
     let end = s
         .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
@@ -95,11 +66,6 @@ fn ident(s: &str) -> &str {
     &s[..end]
 }
 
-// rooted is code with every super:: chain that climbs to the crate root
-// written as crate::, so "super::super::cli" and "super::super::{x, cli}"
-// from repo::git are read as the crate:: paths they are. An inline module's
-// super:: is counted from its file, which is one level short; the code under
-// these rules has no inline module that climbs.
 fn rooted(code: &str, module: &[String]) -> String {
     let mut out = String::with_capacity(code.len());
     let mut at = 0;
@@ -117,8 +83,6 @@ fn rooted(code: &str, module: &[String]) -> String {
         }
         let end = code.len() - rest.len();
         out.push_str(&code[at..start]);
-        // Only a chain that climbs to the crate root can come down into a
-        // top-level module; one that climbs past it does not compile.
         if starts_chain && climbs == module.len() {
             out.push_str("crate::");
         } else {
@@ -130,19 +94,11 @@ fn rooted(code: &str, module: &[String]) -> String {
     out
 }
 
-// reaches is the first line of text that names the target module, and the
-// spelling it used. Three spellings reach a module once super:: chains are
-// rooted: the path itself ("crate::cli"), a group that starts with it
-// ("crate::{Result, cli::App}", across lines too), and an alias of the
-// crate, which hides every path after it and so is refused outright.
 fn reaches(text: &str, module: &[String], target: &str) -> Option<(usize, String)> {
     let direct = format!("crate::{target}");
-    // depth is how deep the scan is inside a crate::{ group; a name right
-    // after the group's "{" or one of its commas is a path's first segment.
     let (mut depth, mut first) = (0usize, false);
     for (number, line) in text.lines().enumerate() {
         let code = &rooted(code_part(line), module);
-        // "crate::client" is not crate::cli: the name has to end there.
         if code
             .match_indices(&direct)
             .any(|(i, _)| ident(&code[i + "crate::".len()..]) == target)
@@ -181,8 +137,6 @@ fn reaches(text: &str, module: &[String], target: &str) -> Option<(usize, String
     None
 }
 
-// One rule run across every file it names. The first line in violation
-// fails the test, and the next run names the next line, if one follows it.
 fn check(files: &[&str], target: &str, prose: &str) {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     for named in files {
@@ -201,8 +155,6 @@ fn check(files: &[&str], target: &str, prose: &str) {
     }
 }
 
-// The checker itself: every spelling that reaches a module is caught, and
-// the near misses are not.
 #[test]
 fn reaches_sees_every_spelling() {
     let repo_git = ["repo".to_string(), "git".to_string()];

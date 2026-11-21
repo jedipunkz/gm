@@ -1,6 +1,3 @@
-//! gm remove takes a repository, its worktrees and the work in them out of
-//! the tree, asking first.
-
 use crate::Result;
 use crate::repo::{self, Repo};
 
@@ -19,8 +16,6 @@ impl App<'_> {
         Ok(())
     }
 
-    /// remove_one deletes one repository, warning first when there is work in
-    /// it and asking before anything is lost.
     fn remove_one(&mut self, r: &Repo, dry_run: bool, yes: bool) -> Result<()> {
         let dirty = usize::from(repo::is_dirty(&r.path()).unwrap_or(false));
         let worktrees = repo::worktrees(&r.path()).unwrap_or_default();
@@ -28,8 +23,6 @@ impl App<'_> {
         if plan.dirty > 0 {
             writeln!(self.err, "warning: {} has uncommitted changes", r.rel)?;
         }
-        // They go with it, so they have to be said before the question, not
-        // discovered afterwards.
         if !plan.worktrees.is_empty() {
             writeln!(self.err, "warning: {}", worktree_warning(r, &plan))?;
         }
@@ -40,7 +33,6 @@ impl App<'_> {
                 plan.strays.join(", ")
             )?;
         }
-        // The warnings are what a dry run is for, so it stops only after them.
         if dry_run {
             writeln!(self.err, "would remove {}", r.path())?;
             return Ok(());
@@ -50,8 +42,6 @@ impl App<'_> {
             return Ok(());
         }
         let left = repo::delete(r)?;
-        // A checkout that git refused and the tree does not own stays where
-        // it is, and this is where that is said.
         for p in &left {
             writeln!(
                 self.err,
@@ -64,9 +54,6 @@ impl App<'_> {
     }
 }
 
-/// worktree_warning words the impacts the repository layer found. A checkout
-/// outside gm's worktree directory is named by its path, which only this
-/// warning says.
 fn worktree_warning(r: &Repo, plan: &repo::RemovalPlan) -> String {
     let worktrees: Vec<_> = plan
         .worktrees

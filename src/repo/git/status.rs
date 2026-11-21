@@ -1,6 +1,3 @@
-//! The work a repository holds that nothing else does: changed files and
-//! commits not pushed.
-
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -8,7 +5,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use super::{git_in, remotes};
 use crate::Result;
 
-/// is_dirty reports whether the working copy has uncommitted changes.
 pub fn is_dirty(dir: &str) -> Result<bool> {
     Ok(!git_in(dir, &["status", "--porcelain"])?.is_empty())
 }
@@ -27,11 +23,11 @@ pub fn changed_files(dir: &str) -> usize {
 /// the answer is as fresh as the last time something did.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
-    pub branch: String,  // as git names it, "HEAD" when detached
-    pub upstream: bool,  // the branch tracks something
-    pub ahead: usize,    // commits here the upstream does not have
-    pub behind: usize,   // and the other way round
-    pub dirty: usize,    // changed files
+    pub branch: String, // as git names it, "HEAD" when detached
+    pub upstream: bool,
+    pub ahead: usize,
+    pub behind: usize,
+    pub dirty: usize,
     pub unpushed: usize, // commits on branches no remote has, 0 without remotes
 }
 
@@ -51,28 +47,18 @@ impl State {
     }
 }
 
-/// STATUS_WORKERS bounds the Git processes in a bulk status scan. More
-/// workers than this do not help once they compete for the same disk.
 const STATUS_WORKERS: usize = 8;
 
-/// status_of reads one repository's state.
 pub fn status_of(dir: &str) -> State {
     let mut s = git_in(dir, &["status", "--porcelain", "-b"])
         .map(|out| parse_status(&out))
         .unwrap_or_default();
-    // The commits on branches no remote has are unpushed work, as much as
-    // being ahead of the upstream is — more, since they name every branch,
-    // not just the checked-out one. Only a repository with remotes counts:
-    // one without would list every commit it ever made.
     if !remotes(dir).0.is_empty() {
         s.unpushed = unpushed_commits(dir);
     }
     s
 }
 
-/// unpushed_commits counts the commits reachable from local branches and from
-/// no remote-tracking ref. Never a fetch: the answer is as fresh as the last
-/// fetch was.
 fn unpushed_commits(dir: &str) -> usize {
     git_in(
         dir,
@@ -99,8 +85,7 @@ pub fn status_with_worktrees(dir: &str) -> State {
     s
 }
 
-/// status_map reads every path with of, a few at a time: git is the slow part
-/// and the disk is shared, so more workers than this buys nothing.
+/// status_map reads every path with of, a few at a time.
 pub fn status_map(paths: &[String], of: fn(&str) -> State) -> HashMap<String, State> {
     let out = Mutex::new(HashMap::with_capacity(paths.len()));
     let next = AtomicUsize::new(0);
@@ -176,8 +161,6 @@ mod tests {
     use crate::repo::{Repo, Tree, WORKTREE_ROOT, add_worktree};
     use crate::testutil::{TempDir, git_repo, mkdir, write};
 
-    // The bug where /unpushed kept a repository whose commits were ahead of
-    // the upstream but on another remote, and gm status --unpushed did not.
     #[test]
     fn ahead_alone_is_unpushed() {
         let s = super::State {
@@ -225,8 +208,6 @@ mod tests {
                 "## No commits yet on main",
                 st("main", false, 0, 0, 0),
             ),
-            // The upstream branch was deleted: there is no count to read, and
-            // the branch still tracks something as far as the config is concerned.
             (
                 "gone upstream",
                 "## main...origin/main [gone]",
@@ -240,7 +221,6 @@ mod tests {
         ] {
             assert_eq!(parse_status(out), want, "{name}");
         }
-        // Being behind is the remote's news, not work anyone left behind.
         assert!(!st("", true, 0, 4, 0).unfinished());
         assert!(st("", true, 1, 0, 0).unfinished());
     }
@@ -255,7 +235,6 @@ mod tests {
             crate::testutil::git(p, &["init", "-q"]);
         }
         write(&paths::join(&dirty, "scratch.txt"), "wip\n");
-        // Not a repository at all; git cannot answer, which counts as clean.
         let plain = dir.join("plain");
         mkdir(&plain);
 
@@ -267,8 +246,6 @@ mod tests {
         assert!(status_map(&[], status_of).is_empty());
     }
 
-    // The bug where /dirty hid a repository whose only work was in one of its
-    // worktrees.
     #[test]
     fn status_with_worktrees_counts_the_work_in_them() {
         let base = TempDir::new();

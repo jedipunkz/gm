@@ -1,9 +1,5 @@
-//! The view: the finder's layout, its keys and its hints.
-
 use super::*;
 
-// The finder's layout: no header, a bordered prompt, a highlighted selection,
-// and the query's characters picked out inside it.
 #[test]
 fn view_chrome() {
     let root = TempDir::new();
@@ -38,7 +34,6 @@ fn view_chrome() {
     );
 }
 
-// A placeholder reads as something the user already typed.
 #[test]
 fn prompt_starts_empty() {
     let root = TempDir::new();
@@ -49,7 +44,6 @@ fn prompt_starts_empty() {
         .lines()
         .find(|l| l.contains('❯'))
         .expect("the view has no prompt line");
-    // The input box ends at the first border after the prompt; the mode box follows.
     let rest = prompt.split_once('❯').unwrap().1.split('│').next().unwrap();
     assert_eq!(
         rest.trim_matches(|c| c == '│' || c == ' '),
@@ -58,7 +52,6 @@ fn prompt_starts_empty() {
     );
 }
 
-// The box right of the prompt names the list being searched.
 #[test]
 fn mode_box_names_the_list() {
     let root = TempDir::new();
@@ -77,7 +70,6 @@ fn mode_box_names_the_list() {
     }
 }
 
-// The chords that would leave the finder impossible to quit or move around in.
 #[test]
 fn reserved_keys_are_refused() {
     let keys = test_keys();
@@ -103,7 +95,6 @@ fn reserved_keys_are_refused() {
             assert!(k.check().is_err(), "{name} was accepted");
         }
     }
-    // Two actions cannot answer to the same chord.
     let (wt, br, pr, is, rm) = (
         keys.worktree.clone(),
         keys.branch.clone(),
@@ -146,9 +137,6 @@ fn reserved_keys_are_refused() {
     assert!(keys.check().is_ok());
 }
 
-// gm.toml's keys reach the finder through Keys::from_config: a key it sets is
-// that chord, a key it leaves out is the default, and one that does not parse
-// is the error the user reads.
 #[test]
 fn keys_come_from_the_config() {
     let cfg = crate::config::Config {
@@ -173,8 +161,6 @@ fn keys_come_from_the_config() {
     assert!(Keys::from_config(&bad).is_err());
 }
 
-// The two places the configured chord has to reach: the key that opens the
-// list, and the hint line that names it.
 #[test]
 fn worktree_key_is_configurable() {
     let root = TempDir::new();
@@ -194,7 +180,6 @@ fn worktree_key_is_configurable() {
     only_main(&mut m);
 
     assert!(line_text(&m.help_line(90)).contains("ctrl-t worktrees"));
-    // The old default must no longer do anything.
     let mut old = m.clone();
     let cmds = old.update(key("ctrl+w"));
     feed(&mut old, cmds);
@@ -208,7 +193,6 @@ fn worktree_key_is_configurable() {
     feed(&mut m, cmds);
     assert_eq!(m.mode, Mode::Worktrees);
     assert!(line_text(&m.help_line(90)).contains("ctrl-t/g/esc repos"));
-    // And it toggles back off.
     m.update(key("ctrl+t"));
     assert_eq!(m.mode, Mode::Repos);
 }
@@ -220,9 +204,6 @@ fn remote_key_in_hints() {
     assert!(line_text(&m.help_line(120)).contains("ctrl-alt-b browse"));
 }
 
-// The hints under the prompt name the keys for the list that is up, the key
-// names carry their own colour, and a narrow window drops hints instead of
-// wrapping.
 #[test]
 fn help_line() {
     let root = TempDir::new();
@@ -248,14 +229,12 @@ fn help_line() {
         "the key names are not coloured"
     );
 
-    // In the worktree list the same keys go back instead of out.
     let mut wm = m.clone();
     only_main(&mut wm);
     open_worktrees(&mut wm);
     let buf = screen(&wm);
     assert!(row_text(&buf, buf.area.height - 1).contains("ctrl-w/g/esc repos"));
 
-    // Too narrow for everything: the tail is dropped, nothing wraps.
     let narrow = line_text(&m.help_line(24));
     assert!(
         !narrow.contains("esc"),
@@ -267,8 +246,6 @@ fn help_line() {
     );
 }
 
-// The remote key hands the browser an https URL built from the selected
-// repository's origin, and does nothing at all when there is no origin.
 #[test]
 fn open_remote() {
     let root = TempDir::new();
@@ -292,18 +269,14 @@ fn open_remote() {
         *opened.lock().unwrap(),
         vec!["https://github.com/acme/alpha".to_string()]
     );
-    // The finder stays where it was: this is a side action, not navigation.
     assert_eq!((m.mode, m.result.action), (Mode::Repos, Action::None));
 
-    // A repository whose remote git cannot supply opens nothing.
     opened.lock().unwrap().clear();
     m.status.insert(rs[0].path(), Status::default());
     answer(m.update(key("ctrl+alt+b")));
     assert!(opened.lock().unwrap().is_empty());
 }
 
-// Cloning needs the network, a progress bar and sometimes a passphrase, so it
-// is the one action that still happens outside.
 #[test]
 fn get_leaves_the_finder() {
     let root = TempDir::new();
@@ -337,8 +310,6 @@ fn get_refuses_the_look_flag() {
     }
 }
 
-// The way out of /dirty: one key, and only once there is nothing left to
-// undo does Esc quit.
 #[test]
 fn esc_clears_the_filter() {
     let root = TempDir::new();
@@ -358,9 +329,6 @@ fn esc_clears_the_filter() {
     assert_eq!(m.cursor, m.view.len() - 1);
     assert!(line_text(&m.help_line(90)).contains("esc quit"));
 
-    // With nothing left to undo, Esc quits as it always did — with an issue
-    // key that is not the default, whose ctrl-[ takes esc for the issue
-    // list (esc_opens_the_issue_list below names what that does instead).
     let mut esc_quits = {
         let mut m = m.clone();
         m.keys.issue = parse_chord("", "ctrl-e").unwrap();
@@ -369,9 +337,6 @@ fn esc_clears_the_filter() {
     assert!(is_quit(&esc_quits.update(key("esc"))));
 }
 
-// The default issue chord is ctrl-[, and esc is the key it arrives as: at
-// the repository list, with nothing to undo, it opens the issue list
-// instead of quitting — ctrl+c is left quit's key.
 #[test]
 fn esc_opens_the_issue_list() {
     let root = TempDir::new();
@@ -384,13 +349,9 @@ fn esc_opens_the_issue_list() {
     assert_eq!(m.mode, Mode::Issues, "{:?}", m.note);
     assert_eq!(rows(&m), ["#7 Add login"]);
 
-    // And the same key takes the list back down.
     m.update(key("esc"));
     assert_eq!(m.mode, Mode::Repos);
 
-    // Deeper lists keep esc's own back-outs: from the issue list it goes to
-    // the repositories, which the toggle above is, and a query still clears
-    // rather than opening anything.
     let mut m = new_model(&rs, "");
     set_query(&mut m, "alpha");
     assert!(
@@ -400,7 +361,6 @@ fn esc_opens_the_issue_list() {
     assert_eq!(m.input.value(), "");
 }
 
-// The worktree list is backed out of before the filter is.
 #[test]
 fn esc_leaves_the_worktree_list_first() {
     let root = TempDir::new();
@@ -418,7 +378,6 @@ fn esc_leaves_the_worktree_list_first() {
     );
 }
 
-// An empty list has no selection, and everything that reads one has to cope.
 #[test]
 fn removing_the_last_repository_leaves_a_usable_finder() {
     let root = TempDir::new();
@@ -432,7 +391,6 @@ fn removing_the_last_repository_leaves_a_usable_finder() {
     feed(&mut m, cmds);
     assert!(m.view.is_empty(), "the list still has {:?}", rows(&m));
     assert!(m.current().is_none());
-    // None of these may panic on an empty list.
     assert!(view_text(&m).contains("no match"));
     for k in ["up", "down", "enter"] {
         let mut after = m.clone();
@@ -442,7 +400,6 @@ fn removing_the_last_repository_leaves_a_usable_finder() {
             "{k} chose something out of an empty list"
         );
     }
-    // And a command that needs a selection says so.
     run_slash(&mut m, "/remove");
     assert!(
         m.over == Overlay::None && m.note.contains("nothing is selected"),
@@ -451,8 +408,6 @@ fn removing_the_last_repository_leaves_a_usable_finder() {
     );
 }
 
-// A row the cursor swept past is never described, so holding an arrow key
-// through a tree of repositories starts no git processes at all.
 #[test]
 fn probe_waits_for_the_cursor_to_settle() {
     let mut m = new_model(
@@ -461,17 +416,13 @@ fn probe_waits_for_the_cursor_to_settle() {
     );
     let here = m.current().unwrap().path.clone();
 
-    // A probe for a row that is no longer selected does nothing.
     assert!(m.probe("/r/github.com/acme/gone").is_none());
     assert!(m.probing.is_empty());
 
-    // One for the selected row asks git, and only once while the answer is
-    // still on its way.
     assert!(m.probe(&here).is_some());
     assert!(m.probing.contains(&here));
     assert!(m.probe(&here).is_none(), "probed the same row twice");
 
-    // And once the answer is in, it is not asked for again.
     m.update(Msg::Status(
         here.clone(),
         Status {

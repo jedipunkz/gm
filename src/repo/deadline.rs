@@ -1,8 +1,3 @@
-//! Child processes that talk to the network run under a deadline: they get a
-//! session of their own, so nothing they start can prompt on the terminal, and
-//! the whole process group is killed when the deadline passes. git's remote
-//! calls and gh's both come through here, so one hung program cannot hang gm.
-
 use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Output, Stdio};
@@ -10,18 +5,9 @@ use std::time::{Duration, Instant};
 
 use crate::{Error, Result, err};
 
-/// Timeouts for the calls that go over the network. Listing moves nothing
-/// larger than names; a call that pulls objects — a fetch, a worktree checked
-/// out from a pull request — gets the fetching scale, because objects are
-/// where the size is.
 pub(crate) const LIST_TIMEOUT: Duration = Duration::from_secs(20);
 pub(crate) const FETCH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
-/// run_deadline runs cmd with stdin closed and its pipes captured. If the
-/// deadline passes first the process group is killed, and the error names
-/// what ran and for how long. spawn_error shapes the error of a program that
-/// could not be started, so each caller says why in its own words ("gh is not
-/// installed").
 pub(super) fn run_deadline(
     cmd: &mut Command,
     timeout: Duration,
@@ -119,7 +105,6 @@ pub(super) fn run_deadline(
     }
 }
 
-/// human spells a timeout the way Go's Duration.String did: 20s, 5m0s.
 pub(super) fn human(d: Duration) -> String {
     let s = d.as_secs();
     if s < 60 {
@@ -133,8 +118,6 @@ pub(super) fn human(d: Duration) -> String {
 mod tests {
     use super::*;
 
-    // The bug where the deadline stopped at the child's exit: a process it
-    // left in the background, holding the pipes, kept gm waiting past it.
     #[test]
     fn a_background_process_does_not_outlast_the_deadline() {
         let mut c = Command::new("sh");
@@ -144,8 +127,6 @@ mod tests {
         assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
     }
 
-    // One that left the group, out of the kill's reach, still meets the
-    // deadline.
     #[test]
     fn a_process_that_left_the_group_meets_the_deadline() {
         let mut c = Command::new("sh");

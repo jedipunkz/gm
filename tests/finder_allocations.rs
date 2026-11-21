@@ -1,5 +1,3 @@
-//! Hard allocation budgets for the finder's synchronous per-keystroke filter.
-
 mod allocator {
     #![allow(
         unsafe_code,
@@ -72,7 +70,6 @@ struct QueryCase {
     name: &'static str,
     prefix: &'static str,
     key: Key,
-    // Baselines are from the red run on this toolchain; cap() adds about 10%.
     baseline: [usize; 2],
 }
 
@@ -139,11 +136,6 @@ fn cap(baseline: usize) -> usize {
 }
 
 fn measure_case(model: &mut Model, case: &QueryCase) -> usize {
-    // Warm the exact synchronous event first, then restore its input state.
-    // Model construction, row creation, key creation and input setup stay
-    // outside the measured window. update is the narrowest public path to the
-    // private Model::filter; the count therefore also includes bounded key
-    // dispatch and command-completion work around the filter pass.
     press(
         model,
         Key {

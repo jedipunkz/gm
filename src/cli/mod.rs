@@ -1,8 +1,3 @@
-//! gm's command line: one table of subcommands, and the plumbing they share. A
-//! new subcommand is one entry in COMMANDS plus its run function. The
-//! subcommands themselves live beside it: get.rs writes to the tree, list.rs
-//! and remove.rs read and take it apart.
-
 mod get;
 mod list;
 mod migrate;
@@ -20,19 +15,14 @@ use crate::finder::{self, Action, Keys};
 use crate::repo::{self, History, Tree};
 use crate::{Error, Result, VERSION, err};
 
-/// App is what every subcommand is handed: the settings, the repository tree
-/// resolved once for the whole run, where the visit log lives, and the two
-/// streams it writes to, which a test captures.
 pub struct App<'a> {
     pub cfg: Config,
     pub tree: Tree,
-    pub state: String, // the visit log
+    pub state: String,
     pub out: &'a mut dyn Write,
     pub err: &'a mut dyn Write,
 }
 
-/// Cmd is one subcommand. usage is the argument spec shown in the help text;
-/// run is the flag set and the work itself.
 struct Cmd {
     name: &'static str,
     aliases: &'static [&'static str],
@@ -49,11 +39,9 @@ struct Verb {
     args: &'static str,
 }
 
-/// Flag is one option a subcommand takes. Every name answers with one dash or
-/// two, the way Go's flag package read them.
 struct Flag {
     names: &'static [&'static str],
-    value: Option<&'static str>, // what the value is called; None for a switch
+    value: Option<&'static str>,
     usage: &'static str,
 }
 
@@ -303,8 +291,6 @@ const COMMANDS: &[Cmd] = &[
     },
 ];
 
-/// USAGE_ERROR asks for exit status 2 without printing anything more: the
-/// usage text has already been shown. HELP asks for exit status 0 the same way.
 const USAGE_ERROR: &str = "\0usage";
 const HELP: &str = "\0help";
 
@@ -318,7 +304,6 @@ pub fn exit_code(e: &Error) -> Option<i32> {
     }
 }
 
-/// run dispatches one command line.
 pub fn run(args: Vec<String>) -> Result<()> {
     let (mut out, mut err) = (std::io::stdout(), std::io::stderr());
     let res = run_with(
@@ -335,10 +320,6 @@ pub fn run(args: Vec<String>) -> Result<()> {
     res
 }
 
-/// run_with is run with the settings and the tree read by open, and only
-/// when the command needs them: help and the version answer before, since
-/// they are what a user with a broken gm.toml runs to find out how to fix it,
-/// and what a bug report asks for.
 fn run_with(
     args: &[String],
     open: impl FnOnce() -> Result<(Config, Tree)>,
@@ -389,20 +370,16 @@ impl App<'_> {
         Ok(())
     }
 
-    /// history opens the visit log with the tree it prunes against.
     fn history(&self) -> History {
         let mut h = History::open(&self.state);
         h.tree = self.tree.clone();
         h
     }
 
-    /// bump records a visit. Losing one is not worth failing the command
-    /// that made it.
     fn bump(&self, path: &str) {
         let _ = self.history().bump(path);
     }
 
-    /// confirm asks before anything destructive. A closed stdin answers "no".
     fn confirm(&mut self, prompt: &str) -> bool {
         let _ = write!(self.err, "{prompt} [y/N]: ");
         let _ = self.err.flush();
@@ -414,8 +391,6 @@ impl App<'_> {
     }
 }
 
-/// usage is gm's help text, built from the command table so it cannot drift
-/// away from what actually runs.
 pub fn usage() -> String {
     let mut b = String::from("gm — keep every repository in one predictable tree.\n\nusage:\n");
     b.push_str(
@@ -440,8 +415,6 @@ gm.toml is $XDG_CONFIG_HOME/gm/gm.toml, or ~/.config/gm/gm.toml.
     b
 }
 
-/// Parsed is a command line after its flags: the switches that were set, the
-/// values given, and the arguments left over.
 struct Parsed {
     set: HashMap<&'static str, String>,
     args: Vec<String>,
@@ -457,9 +430,6 @@ impl Parsed {
     }
 }
 
-/// parse reads flags the way Go's flag package did: they come before the
-/// arguments, the first argument that is not one ends them, and so does "--".
-/// A flag gm does not know prints the usage and asks for exit status 2.
 fn parse(a: &mut App, cmd: &str, flags: &[Flag], args: &[String]) -> Result<Parsed> {
     let mut set = HashMap::new();
     let mut i = 0;
@@ -518,7 +488,6 @@ fn parse(a: &mut App, cmd: &str, flags: &[Flag], args: &[String]) -> Result<Pars
     })
 }
 
-/// parse_bool reads a switch's value the way Go's strconv.ParseBool did.
 fn parse_bool(v: &str) -> Option<bool> {
     match v {
         "1" | "t" | "T" | "TRUE" | "true" | "True" => Some(true),
@@ -606,8 +575,6 @@ fn missing_usage(name: &str) -> String {
 }
 
 impl App<'_> {
-    /// finder opens the interactive picker and prints the chosen path on
-    /// stdout, so the shell binding can capture it with $(gm).
     fn finder(&mut self) -> Result<()> {
         let repos = self.tree.list();
         if repos.is_empty() {
@@ -623,31 +590,19 @@ impl App<'_> {
         self.act(res, &mut hist)
     }
 
-    /// act carries out what the finder decided, now that the alternate screen
-    /// is gone: a clone's progress, a password prompt and a confirmation all
-    /// belong on the terminal the user can see.
-    ///
-    /// One rule about the visit log, so a repository is never counted twice:
-    /// it is recorded by whatever fetched, made or moved the repository, and by
-    /// the finder only for a row that was simply chosen. gm get has already
-    /// recorded the clone by the time this sees it.
     fn act(&mut self, res: finder::Outcome, hist: &mut History) -> Result<()> {
         match res.action {
             Action::Jump => self.go_to(&res.arg, hist),
             Action::Get => {
-                // Typed as a command line, so it is split like one: flags
-                // and several references work the way they do for gm get.
                 let args: Vec<String> = res.arg.split_whitespace().map(String::from).collect();
                 let dst = self.get_last(&args)?;
                 writeln!(self.out, "{dst}")?;
                 Ok(())
             }
-            Action::None => Ok(()), // the user quit
+            Action::None => Ok(()),
         }
     }
 
-    /// go_to records the visit and prints the path, which is how the shell
-    /// binding learns where to cd.
     fn go_to(&mut self, path: &str, hist: &mut History) -> Result<()> {
         if path.is_empty() {
             return Ok(());

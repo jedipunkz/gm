@@ -4,15 +4,11 @@
 # with its GHSA id as an alias.
 db-urls = ["https://github.com/rustsec/advisory-db"]
 # cargo-deny 0.18+ always fails on vulnerabilities and unsound advisories;
-# these keys only carve scopes. Kept explicit where the tool lets us choose.
+# these keys only carve scopes.
 yanked = "warn"
 unmaintained = "all"
 unsound = "workspace"
 
-# The allow-list covers every license Cargo.lock actually resolves to today,
-# checked against crates.io, plus the few common permissive ones a small
-# transitive bump could introduce. License expressions are OR-compatible, so
-# Apache-2.0 WITH LLVM-exception resolves through plain Apache-2.0.
 [licenses]
 allow = [
   "Apache-2.0",

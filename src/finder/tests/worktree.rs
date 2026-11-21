@@ -1,10 +1,5 @@
-//! The worktree list.
-
 use super::*;
 
-// The list replaces the repositories, the main worktree rests under the
-// cursor, typing filters it, Enter yields that worktree's path, and Esc puts
-// the repository list back untouched.
 #[test]
 fn worktree_mode() {
     let root = TempDir::new();
@@ -53,8 +48,6 @@ fn worktree_mode() {
     assert_eq!(label(&m), "github.com/acme/bravo");
 }
 
-// git is asked off the UI thread, and an answer about a repository the
-// cursor has left is dropped rather than replacing the list it is on.
 #[test]
 fn worktree_mode_drops_a_stale_answer() {
     let root = TempDir::new();
@@ -71,8 +64,6 @@ fn worktree_mode_drops_a_stale_answer() {
     assert_eq!(m.busy, "", "the wait outlived its answer");
 }
 
-// Ctrl-W toggles it off, Ctrl-G closes it, and Esc does too. Only Esc quits
-// gm, and only from the repository list.
 #[test]
 fn worktree_mode_keys_go_back() {
     let root = TempDir::new();
@@ -89,9 +80,6 @@ fn worktree_mode_keys_go_back() {
             "{k} quit gm instead of closing the worktree list"
         );
     }
-    // Esc quits from the repository list with an issue key that is not the
-    // default: the default ctrl-[ is esc and opens the issue list instead,
-    // see esc_opens_the_issue_list.
     let mut esc_quits = {
         let mut m = new_model(&rs, "");
         m.keys.issue = parse_chord("", "ctrl-e").unwrap();
@@ -101,8 +89,6 @@ fn worktree_mode_keys_go_back() {
     assert!(!is_quit(&new_model(&rs, "").update(key("ctrl+g"))));
 }
 
-// When git cannot answer, the finder stays usable and says why on the hint
-// line, the way the pull request list does; silence reads as a broken key.
 #[test]
 fn worktree_mode_leaves_the_list_alone_on_error() {
     let root = TempDir::new();
@@ -113,8 +99,6 @@ fn worktree_mode_leaves_the_list_alone_on_error() {
     assert!(m.note.contains("not a git repository"), "{:?}", m.note);
 }
 
-// An empty answer from Ctrl-L has a name too: every fresh gm create has no
-// branch yet, so pressing Ctrl-L on one must not look like a broken key.
 #[test]
 fn empty_lists_are_named() {
     let root = TempDir::new();
@@ -137,8 +121,6 @@ fn empty_lists_are_named() {
     );
 }
 
-// Against real git: the branch is checked out where gm says it belongs, the row
-// appears, and removing it takes both away.
 #[test]
 fn worktree_create_and_remove() {
     let root = TempDir::new();
@@ -149,7 +131,7 @@ fn worktree_create_and_remove() {
     git_repo(&r.path());
     let mut m = new_model(std::slice::from_ref(&r), "");
     (m.w, m.h) = (90, 18);
-    open_worktrees(&mut m); // the real repo::worktrees, not a stub
+    open_worktrees(&mut m);
     assert!(m.mode == Mode::Worktrees && m.view.len() == 1);
 
     let cmds = run_slash(&mut m, "/create feat/login");
@@ -177,11 +159,9 @@ fn worktree_create_and_remove() {
     assert!(repo::branch_exists(&r.path(), "feat/login"));
     assert_eq!(rows(&m).len(), 2);
     assert_eq!(m.current().unwrap().path, dir);
-    // A worktree must not show up as a repository.
     assert_eq!(repo::find_repos(&root.path()), vec![r.path()]);
 
-    // Now take it away, and its branch: it holds nothing HEAD lacks.
-    open_worktrees(&mut m); // the rows that come from git carry their branch
+    open_worktrees(&mut m);
     m.cursor = 0;
     ask_remove(&mut m);
     assert_eq!(m.over, Overlay::Confirm, "{:?}", m.note);
@@ -198,9 +178,6 @@ fn worktree_create_and_remove() {
     );
 }
 
-// /expire acts on the whole list, not the selected row: the panel names every
-// worktree that goes and the one kept for its work, and yes takes them off the
-// list. The reflog is made to read old; git does the rest for real.
 #[test]
 fn expire_removes_the_idle_worktrees() {
     let root = TempDir::new();
@@ -277,8 +254,6 @@ fn expire_scan_is_async_and_y_waits_for_its_result() {
     });
     m.backend.changed_of = Arc::new(|_| 0);
 
-    // Keep the UI call on a separate thread so a synchronous scan can be
-    // released and reported as a red assertion instead of hanging the test.
     let (ui_tx, ui_rx) = mpsc::channel();
     let ui = std::thread::spawn(move || {
         let cmds = run_slash(&mut m, "/expire 30d");
@@ -318,7 +293,6 @@ fn expire_scan_is_async_and_y_waits_for_its_result() {
         .recv_timeout(Duration::from_secs(1))
         .expect("the scan task did not start");
 
-    // The UI can still process input and render while git's scan is delayed.
     assert!(
         m.update(ch('y')).is_empty(),
         "y acted while the scan was still delayed"
@@ -377,8 +351,6 @@ fn worktree_create_refuses_a_duplicate() {
     assert!(m.note.contains("already exists"), "{:?}", m.note);
 }
 
-// A name that is not a branch name is refused under the prompt, before any
-// directory is made.
 #[test]
 fn worktree_create_refuses_a_bogus_branch() {
     let root = TempDir::new();
@@ -395,8 +367,6 @@ fn worktree_create_refuses_a_bogus_branch() {
     assert!(!exists(&root.join(repo::WORKTREE_ROOT)));
 }
 
-// The top checkout is the repository itself, and git will not remove it
-// either.
 #[test]
 fn remove_refuses_the_main_worktree() {
     let root = TempDir::new();
@@ -408,9 +378,6 @@ fn remove_refuses_the_main_worktree() {
     assert!(m.note.contains("repository itself"), "{:?}", m.note);
 }
 
-// git reports the resolved path of a worktree, which is not the path the
-// finder walked when the root sits behind a symlink. The main worktree must
-// still be recognised, or /remove offers to delete the repository itself.
 #[test]
 fn remove_refuses_the_main_worktree_behind_a_symlink() {
     let base = TempDir::new();

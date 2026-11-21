@@ -9,17 +9,13 @@ use crate::Error;
 use crate::repo;
 use crate::repo::Branch;
 
-/// Branches carries git's branch list for one repository, and where each
-/// branch that is checked out is.
 pub struct Branches {
-    pub(super) path: String, // the repository it was asked about
+    pub(super) path: String,
     pub(super) busy_tag: u64,
     pub(super) branches: crate::Result<Vec<Branch>>,
-    pub(super) at: HashMap<String, String>, // branch name -> worktree path
+    pub(super) at: HashMap<String, String>,
 }
 
-/// RemoteBranches carries what the remotes of one repository have that the
-/// last fetch did not bring.
 pub struct RemoteBranches {
     pub(super) path: String,
     pub(super) branches: Vec<Branch>,
@@ -28,9 +24,6 @@ pub struct RemoteBranches {
 }
 
 impl Model {
-    /// open_branches asks git for the branches of the selected repository,
-    /// local ones and those only a remote has, off the UI thread: with many
-    /// refs it takes long enough to freeze the screen.
     pub(super) fn open_branches(&mut self) -> Vec<Cmd> {
         let Some(it) = self.current().cloned().filter(|_| self.mode == Mode::Repos) else {
             return vec![];
@@ -64,13 +57,6 @@ impl Model {
         ]
     }
 
-    /// show_branches replaces the repository list with git's answer, if the
-    /// repository it is about is still the one selected. A branch that is
-    /// checked out somewhere carries that worktree's path, so Enter can
-    /// simply go there.
-    ///
-    /// The list is what git already knows, so it is up at once; the remotes
-    /// are asked in the background for what the last fetch did not bring.
     pub(super) fn show_branches(&mut self, msg: Branches) -> Vec<Cmd> {
         self.finish_busy(msg.busy_tag);
         let Some(it) = self
@@ -80,8 +66,6 @@ impl Model {
         else {
             return vec![];
         };
-        // Silence reads as a broken key, so an empty or a failed answer is
-        // said, the way the pull request list does.
         let bs = match msg.branches {
             Ok(bs) if !bs.is_empty() => bs,
             Err(e) => {
@@ -95,8 +79,6 @@ impl Model {
         };
         let at = msg.at;
 
-        // Reversed, so the branch with the newest commit lands at the bottom
-        // next to the cursor.
         let items = bs
             .iter()
             .rev()
@@ -127,16 +109,11 @@ impl Model {
         cmds
     }
 
-    /// add_remote_branches puts the remotes' answer into the branch list it
-    /// was asked for, at the top: nothing says how recent they are. The
-    /// selection stays on the row it was on.
     pub(super) fn add_remote_branches(&mut self, msg: RemoteBranches) -> Vec<Cmd> {
         self.finish_busy(msg.busy_tag);
         if self.mode != Mode::Branches || self.repo_at != msg.path {
             return vec![];
         }
-        // Skip what the list already has: a local branch hides its remote
-        // namesake, and a second answer for the same list adds nothing.
         let mut known: HashSet<String> = self
             .all
             .iter()
@@ -183,10 +160,6 @@ impl Model {
         self.load_status().into_iter().collect()
     }
 
-    /// check_out is Enter in the branch list: go to the branch's worktree,
-    /// making it first when there is none. Making one is not asked about — the
-    /// branch is what Enter was pressed on, and nothing is lost if it was the
-    /// wrong one.
     pub(super) fn check_out(&mut self) -> Vec<Cmd> {
         let Some(it) = self.current().cloned() else {
             return vec![];
@@ -234,17 +207,10 @@ impl Model {
         ]
     }
 
-    /// worktree_for is where a new worktree filed under name goes in the
-    /// repository the list belongs to, or why one cannot go there. The name is
-    /// checked before a path is built from it: a branch name comes from
-    /// whoever pushed it.
     pub(super) fn worktree_for(&self, name: &str) -> Result<String, String> {
         self.worktree_at(name, name)
     }
 
-    /// worktree_at is worktree_for with the checkout filed under dir_name
-    /// instead, which is how a fork's pull request stays apart from the
-    /// repository's branches.
     pub(super) fn worktree_at(&self, name: &str, dir_name: &str) -> Result<String, String> {
         if !repo::valid_branch(name) {
             return Err(format!("{name:?} is not a branch name"));

@@ -1,5 +1,3 @@
-//! The issue list and its detail panel.
-
 use super::*;
 
 fn detail_issue(numbers_and_bodies: &[(u64, &str)]) -> Result<Issue> {
@@ -22,8 +20,6 @@ fn detail_issue(numbers_and_bodies: &[(u64, &str)]) -> Result<Issue> {
         .ok_or("no such issue".into())
 }
 
-/// issue_model is a finder over two repositories; alpha has two open issues
-/// and gh is stubbed, for the listing and for one issue in full.
 fn issue_model(root: &TempDir) -> (Model, Vec<Repo>) {
     let rs = repos(
         &root.path(),
@@ -44,7 +40,6 @@ fn issue_model(root: &TempDir) -> (Model, Vec<Repo>) {
     (m, rs)
 }
 
-/// open_issue_list presses the issue key and hands the finder gh's answer.
 fn open_issue_list(m: &mut Model) {
     let cmds = m.update(key("ctrl+e"));
     assert!(!cmds.is_empty(), "the key did not ask gh");
@@ -52,8 +47,6 @@ fn open_issue_list(m: &mut Model) {
     feed(m, cmds);
 }
 
-/// open_issue_panel presses enter in the issue list and feeds gh's view
-/// answer, leaving the panel up.
 fn open_issue_panel(m: &mut Model, detail: Issue) {
     m.backend.issue_of = Arc::new(move |_, _| Ok(detail.clone()));
     let cmds = m.update(key("enter"));
@@ -66,8 +59,6 @@ fn open_issue_panel(m: &mut Model, detail: Issue) {
     );
 }
 
-// The listing is newest at the bottom, enter opens the panel over it, and q
-// closes the panel back onto the list — which the issue key closes as well.
 #[test]
 fn issue_mode() {
     let root = TempDir::new();
@@ -76,7 +67,6 @@ fn issue_mode() {
     assert_eq!(m.mode, Mode::Issues, "{:?}", m.note);
     assert_eq!(rows(&m).join("|"), "#9 Crash on start|#7 Add login");
 
-    // The hints and the pane say what an issue is.
     let hints = line_text(&m.help_line(140));
     assert!(
         hints.contains("enter view") && hints.contains("esc repos"),
@@ -99,7 +89,6 @@ fn issue_mode() {
     for s in ["Add login", "The form hangs.", "Reproduced here."] {
         assert!(panel.contains(s), "{s:?}:\n{panel}");
     }
-    // Each Comment is its own frame, its author riding the top rail.
     assert!(panel.contains('╭'), "{panel}");
     assert!(panel.contains("─ bob "), "{panel}");
     assert!(panel.contains('╯'), "{panel}");
@@ -109,17 +98,13 @@ fn issue_mode() {
         .expect("the comment's row is not drawn");
     assert!(rail.trim_start().starts_with("│ "), "{rail:?}");
 
-    // q closes the panel back onto the list.
     m.update(key("q"));
     assert!(m.over == Overlay::None && m.detail.is_none());
     assert_eq!(m.mode, Mode::Issues);
-    // The same key closes the list as well.
     m.update(key("ctrl+e"));
     assert_eq!(m.mode, Mode::Repos);
 }
 
-// An issue row too long for the list keeps its number and cuts the title's
-// tail, and the pane shows the body the listing carried, as Markdown.
 #[test]
 fn issue_row_keeps_its_number_and_the_pane_its_body() {
     let root = TempDir::new();
@@ -136,15 +121,11 @@ fn issue_row_keeps_its_number_and_the_pane_its_body() {
     for s in ["body", "Steps", "open the form\nwait"] {
         assert!(pane.contains(s), "{s:?}:\n{pane}");
     }
-    // An issue has no worktree: no path, no git status waiting on one.
     for s in ["path", "git", "loading…"] {
         assert!(!pane.lines().any(|l| l == s), "{s:?}:\n{pane}");
     }
 }
 
-// label:, assignee: and author: narrow the issue list the way GitHub's search does:
-// commas are any-of, repeated qualifiers are all-of, case does not matter,
-// and what is left of the query is matched as ever.
 #[test]
 fn issue_list_qualifiers() {
     let root = TempDir::new();
@@ -171,29 +152,23 @@ fn issue_list_qualifiers() {
         ("author:carol", "#2 Typo"),
         ("author:Carol,alice label:docs", "#2 Typo"),
         ("label:secur", ""),
-        // A qualifier with no value yet narrows nothing.
         ("label:", "#3 Bump|#2 Typo|#1 Leak"),
     ] {
         set_query(&mut m, q);
         assert_eq!(rows(&m).join("|"), want, "{q:?}");
     }
 
-    // The pane names the assignees, so what assignee: matched is on screen.
     set_query(&mut m, "label:foo");
     let pane = lines_text(&m.info_lines(40));
     assert!(pane.contains("assignees\nbob"), "{pane}");
 }
 
-// The scroll keys walk the panel's window: never past the top, and never
-// past the bottom, where the hint line already is.
 #[test]
 fn issue_panel_scrolls() {
     let root = TempDir::new();
     let (mut m, _) = issue_model(&root);
     open_issue_list(&mut m);
     let body: String = (0..40).map(|_| "word ").collect();
-    // The pane is small, so the fold really has somewhere past the window
-    // to go.
     m.h = 16;
     open_issue_panel(&mut m, detail_issue(&[(7, &body)]).unwrap());
 
@@ -203,8 +178,6 @@ fn issue_panel_scrolls() {
         0,
         "scrolled past the top"
     );
-    // j and k scroll the window, the way vim moves: the panel has no query
-    // to type, so the letters are free there.
     m.update(ch('j'));
     assert!(m.detail.as_ref().unwrap().scroll > 0, "j did not scroll");
     m.update(ch('k'));
@@ -218,9 +191,6 @@ fn issue_panel_scrolls() {
         "scrolled past the bottom"
     );
 
-    // Space pages forward, b pages back (shift+space too, where a terminal
-    // reports the shift; less's b is the one every terminal sends), clamped
-    // the same.
     m.update(ch(' '));
     assert_ne!(m.detail.as_ref().unwrap().scroll, 0, "space did not page");
     let at = m.detail.as_ref().unwrap().scroll;
@@ -236,8 +206,6 @@ fn issue_panel_scrolls() {
     );
 }
 
-// The body and the comments go out as the Markdown they are typed in: rows
-// take their own line, headings and lists take their shapes.
 #[test]
 fn issue_panel_markdown() {
     let root = TempDir::new();
@@ -250,14 +218,11 @@ fn issue_panel_markdown() {
     for s in ["The form", "first line", "• one", "fn main() {}"] {
         assert!(panel.contains(s), "{s:?}:\n{panel}");
     }
-    // The rows stayed rows: a newline is not a character it folded away.
     let window = panel.lines().collect::<Vec<_>>();
     let first = window.iter().position(|l| l.contains("first line"));
     let last = window.iter().position(|l| l.contains("• one"));
     assert!(first.is_some() && last.is_some(), "{panel}");
 
-    // The hints line sits on the screen's own bottom row, with no frame
-    // under it, naming the chords.
     let bottom = row_text(&screen(&m), m.h - 1);
     assert!(bottom.contains("ctrl+y"), "{bottom:?}");
 }
@@ -272,7 +237,7 @@ fn detail_lines_are_cached_until_note_or_width_changes() {
 
     crate::finder::detail::DETAIL_LINE_BUILDS.with(|count| count.set(0));
     screen(&m);
-    screen(&m); // repeated idle loop draw
+    screen(&m);
     assert_eq!(
         crate::finder::detail::DETAIL_LINE_BUILDS.with(std::cell::Cell::get),
         1
@@ -293,16 +258,12 @@ fn detail_lines_are_cached_until_note_or_width_changes() {
     );
 }
 
-// ctrl-b opens the issue in a browser on a thread, and ctrl-y copies its URL
-// and says so; both are the detail panel's, and answer where its text was.
 #[test]
 fn issue_panel_browser_and_copy() {
     let root = TempDir::new();
     let (mut m, _) = issue_model(&root);
     open_issue_list(&mut m);
 
-    // Nothing is open yet, so the chords belong to the box: ctrl+b is a
-    // cursor move, and both are no-ops on an empty one.
     m.update(key("ctrl+b"));
     let empty = m.input.value();
     assert!(empty.is_empty() && m.over == Overlay::None, "{:?}", m.note);
@@ -336,16 +297,12 @@ fn issue_panel_browser_and_copy() {
     );
     assert!(m.note.contains("issue URL copied"), "{:?}", m.note);
 
-    // The copy's answer is where the panel's title was, and closing takes
-    // the note with it.
     let panel = text(&screen(&m));
     assert!(panel.contains("issue URL copied"), "{panel}");
     m.update(key("q"));
     assert_eq!(m.note, "");
 }
 
-// gh failing or answering nothing leaves the repository list with a reason,
-// the way the pull request list does.
 #[test]
 fn issue_mode_leaves_the_list_alone_on_error() {
     let root = TempDir::new();

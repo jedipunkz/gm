@@ -1,15 +1,3 @@
-//! The interactive repository picker: a fuzzy filter over the repositories,
-//! ranked by match quality and then by how often they are used.
-//!
-//! The best match sits at the BOTTOM of the list, next to the prompt and the
-//! cursor's resting place, so the most likely repository needs zero
-//! keystrokes.
-//!
-//! It is built the way the Go version's Bubble Tea model was: update takes one
-//! message and returns the commands it wants run, and render draws the state.
-//! Work that talks to git or GitHub runs on a thread and comes back as a
-//! message, so the list never freezes.
-
 mod backend;
 mod branch;
 mod browse;
@@ -57,20 +45,12 @@ use theme::Styles;
 use worktree::Worktrees;
 use worktree::{Mode, Stash};
 
-/// The finder keys gm.toml can move: DEFAULT_WORKTREE_KEY opens the worktree
-/// list, DEFAULT_BRANCH_KEY the branch list, DEFAULT_PR_KEY the pull request
-/// list, DEFAULT_ISSUE_KEY the issue list, and DEFAULT_REMOTE_KEY the selected
-/// repository's remote.
 pub const DEFAULT_WORKTREE_KEY: &str = "ctrl-w";
 pub const DEFAULT_BRANCH_KEY: &str = "ctrl-l";
 pub const DEFAULT_PR_KEY: &str = "ctrl-j";
 pub const DEFAULT_ISSUE_KEY: &str = "ctrl-[";
 pub const DEFAULT_REMOTE_KEY: &str = "ctrl-alt-b";
 
-/// RESERVED are the Ctrl chords the finder already answers to; binding an
-/// action to one of them would shadow quitting, moving or backing out. Only
-/// plain Ctrl chords can collide: the finder's own keys carry no other
-/// modifier.
 const RESERVED: [(char, &str); 4] = [
     ('c', "quit"),
     ('n', "move down"),
@@ -78,19 +58,16 @@ const RESERVED: [(char, &str); 4] = [
     ('g', "back out"),
 ];
 
-/// Keys are the finder's configurable chords.
 #[derive(Debug, Clone, Default)]
 pub struct Keys {
-    pub worktree: Chord, // open and close the worktree list
-    pub branch: Chord,   // open and close the branch list
-    pub pr: Chord,       // open and close the pull request list
-    pub issue: Chord,    // open and close the issue list
-    pub remote: Chord,   // open the selected repository's remote
+    pub worktree: Chord,
+    pub branch: Chord,
+    pub pr: Chord,
+    pub issue: Chord,
+    pub remote: Chord,
 }
 
 impl Keys {
-    /// from_config reads the finder keys gm.toml sets, each falling back to
-    /// its DEFAULT_*_KEY when gm.toml says nothing.
     pub fn from_config(cfg: &config::Config) -> Result<Keys> {
         Ok(Keys {
             worktree: config::parse_chord(&cfg.worktree_key, DEFAULT_WORKTREE_KEY)?,
@@ -101,8 +78,6 @@ impl Keys {
         })
     }
 
-    /// check refuses a binding that would shadow one of the finder's fixed
-    /// keys, or that two actions would answer to at once.
     fn check(&self) -> Result<()> {
         let named = [
             ("worktree_key", &self.worktree),
@@ -130,7 +105,7 @@ impl Keys {
                 ));
             }
             if !chord.plain() {
-                continue; // Alt or Shift can never collide with the fixed keys
+                continue;
             }
             if let Some((_, what)) = RESERVED.iter().find(|(c, _)| *c == chord.letter) {
                 return Err(err!(
@@ -143,20 +118,14 @@ impl Keys {
     }
 }
 
-/// Action is the work the finder could not finish itself. Making and removing
-/// repositories and worktrees happen under it, behind a confirmation; what is
-/// left is going somewhere, and cloning, which wants a terminal of its own for
-/// its progress and its passwords.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Action {
     #[default]
-    None, // the user quit
-    Jump, // go to arg, a repository or worktree path
-    Get,  // clone arg, a repository reference
+    None,
+    Jump,
+    Get,
 }
 
-/// Outcome is what the finder leaves behind for gm to carry out once the
-/// alternate screen is gone.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Outcome {
     pub action: Action,
@@ -189,84 +158,68 @@ impl Key {
     }
 }
 
-/// Msg is everything update answers to.
 pub enum Msg {
     Key(Key),
     Paste(String),
     Resize(u16, u16),
-    /// Probe says the cursor has rested on a path for STATUS_DELAY. It is
-    /// dropped if the selection moved on in the meantime, which is what keeps
-    /// a held arrow key from asking git about every row it swept past.
     Probe(String),
-    Status(String, Status),         // one repository's git status
-    Spin(u64),                      // the spinner's next frame, with its tag
-    Done(Done),                     // a confirmed change has been carried out
-    Worktrees(Worktrees),           // git's worktree list for one repository
-    Branches(Branches),             // git's branch list for one repository
-    RemoteBranches(RemoteBranches), // what the remotes have that was not fetched
-    Prs(Prs),                       // gh's answer about one repository
-    Issues(Issues),                 // gh's answer about one repository's issues
-    IssueDetail(IssueDetail),       // gh's answer about the full text of one issue
-    PrDetail(PrDetail),             // gh's answer about the full text of one pull request
-    ConfirmDetail(ConfirmDetail),   // a branch or repository check for a question
-    RemoveDetail(RemoveDetail),     // what a /remove waiting on git would lose
-    ExpireDetail(ExpireDetail),     // what /expire waiting on git would remove
-    RepoStates(u64, HashMap<String, repo::State>), // the result of a bulk repository status scan
-    RepoState(String, repo::State), // one repository scanned again after a change
+    Status(String, Status),
+    Spin(u64),
+    Done(Done),
+    Worktrees(Worktrees),
+    Branches(Branches),
+    RemoteBranches(RemoteBranches),
+    Prs(Prs),
+    Issues(Issues),
+    IssueDetail(IssueDetail),
+    PrDetail(PrDetail),
+    ConfirmDetail(ConfirmDetail),
+    RemoveDetail(RemoveDetail),
+    ExpireDetail(ExpireDetail),
+    RepoStates(u64, HashMap<String, repo::State>),
+    RepoState(String, repo::State),
 }
 
-/// Task is work off the UI thread; the message it returns is fed back in.
 pub type Task = Box<dyn FnOnce() -> Option<Msg> + Send>;
 
-/// Cmd is what update asks the loop to do.
 pub enum Cmd {
     Quit,
     Task(Task),
     After(Duration, Box<Msg>),
 }
 
-/// STATUS_DELAY is how long a row has to stay selected before git is asked
-/// about it. Key repeat is faster than this, so scrolling through a tree costs
-/// nothing and the row the eye stops on is described right away.
 const STATUS_DELAY: Duration = Duration::from_millis(100);
 
 #[derive(Clone)]
 pub struct Model {
-    all: Vec<Item>,                      // ascending by frecency: the best is last
-    view: Vec<usize>,                    // indices into all, same convention
-    view_stale: bool,                    // view does not describe all; filter starts afresh
-    matched: HashMap<usize, Vec<usize>>, // item index -> matched char positions
-    cursor: usize,                       // index into view
+    all: Vec<Item>,
+    view: Vec<usize>,
+    view_stale: bool,
+    matched: HashMap<usize, Vec<usize>>,
+    cursor: usize,
     input: Input,
     status: HashMap<String, Status>,
-    probing: HashSet<String>, // paths git is being asked about right now
+    probing: HashSet<String>,
     st: Styles,
     w: u16,
     h: u16,
     result: Outcome,
 
     mode: Mode,
-    origin: String,  // in the worktree or branch list, the repository it belongs to
-    repo_at: String, // ...and where it is on disk
+    origin: String,
+    repo_at: String,
     saved: Option<Stash>,
     keys: Keys,
     tree: Tree,
-    query: String, // the query the view was built from; a command is not one
-    over: Overlay, // the panel drawn over the list, if any
-    ask: Pending,  // what a confirmation is waiting on
-    /// detail is the one issue or pull request the panel is showing, held
-    /// while Overlay::Detail is up.
+    query: String,
+    over: Overlay,
+    ask: Pending,
     detail: Option<issues::Detail>,
-    /// repo_states holds the bulk status scan once one of the repository
-    /// filters needs it. Both filters share the same result.
     repo_states: Option<HashMap<String, repo::State>>,
     scanning_states: bool,
     dirty_only: bool,
     unpushed_only: bool,
-    note: String, // a one-line answer under the prompt, cleared on the next keystroke
-    /// busy says what gm is waiting on — git or GitHub, off the UI thread —
-    /// and stays under the prompt, with a spinner and the time taken so far,
-    /// until the answer arrives. Empty when nothing is running.
+    note: String,
     busy: String,
     busy_since: Instant,
     spin: Spinner,
@@ -297,8 +250,6 @@ impl Model {
         });
 
         let mut input = Input::default();
-        // Completing the slash commands as they are typed: the box fills in
-        // the rest of the name, and Tab accepts it.
         input.set_suggestions(command::command_names());
 
         let mut m = Model {
@@ -346,18 +297,14 @@ impl Model {
         self.view.get(self.cursor).map(|&i| &self.all[i])
     }
 
-    /// load_status arms the delay for the selected repository. No git runs
-    /// yet: the probe that follows checks the cursor is still here first.
     fn load_status(&self) -> Option<Cmd> {
         let p = self.current()?.path.clone();
         if p.is_empty() || self.status.contains_key(&p) {
-            return None; // a branch with no worktree yet has nothing to ask git about
+            return None;
         }
         Some(Cmd::After(STATUS_DELAY, Msg::Probe(p).into()))
     }
 
-    /// probe asks git about path, off the UI thread, unless the cursor has
-    /// since moved elsewhere or the answer is already on its way.
     fn probe(&mut self, path: &str) -> Option<Cmd> {
         let here = self.current()?;
         if here.path != path || self.probing.contains(path) || self.status.contains_key(path) {
@@ -384,8 +331,6 @@ impl Model {
                 vec![]
             }
             Msg::Spin(tag) => {
-                // Ticks stop once nothing is running: the chain ends here. A
-                // tick from a chain that has been replaced is dropped too.
                 if self.busy.is_empty() || tag != self.spin.tag {
                     return vec![];
                 }
@@ -404,8 +349,6 @@ impl Model {
             Msg::RemoveDetail(d) => self.fill_detail(d),
             Msg::ExpireDetail(d) => self.fill_expire_detail(d),
             Msg::RepoStates(tag, states) => {
-                // Merged, not replaced: a repository scanned again while this
-                // scan ran may be one it never heard of.
                 self.repo_states.get_or_insert_default().extend(states);
                 self.scanning_states = false;
                 self.note.clear();
@@ -426,7 +369,7 @@ impl Model {
                 self.repo_states.get_or_insert_default().insert(path, state);
                 if self.dirty_only || self.unpushed_only {
                     if self.mode == Mode::Repos {
-                        self.filter(); // the selection stays where it was
+                        self.filter();
                         return self.load_status().into_iter().collect();
                     }
                     if let Some(saved) = self.saved.as_mut() {
@@ -448,13 +391,10 @@ impl Model {
     }
 
     fn key(&mut self, k: Key) -> Vec<Cmd> {
-        // A panel is modal: it answers to its own keys and swallows
-        // everything else, so nothing moves behind it.
         if self.over != Overlay::None {
             return self.panel_key(&k);
         }
 
-        // The configurable keys first: they are not fixed names.
         let name = k.name.as_str();
         if name == self.keys.worktree.key() {
             return self.switch_to(Mode::Worktrees);
@@ -478,17 +418,10 @@ impl Model {
         match name {
             "ctrl+c" => return vec![Cmd::Quit],
             "esc" | "ctrl+g" => {
-                // These back out of whatever is narrowing the list before they
-                // quit gm: the worktree list first, then a filter. From the
-                // repository list with nothing to undo, Ctrl-G does nothing —
-                // it is the key that opened gm in the first place.
                 if self.mode != Mode::Repos {
                     self.restore();
                     return self.load_status().into_iter().collect();
                 }
-                // Clearing the query holds the selection, so this is also how
-                // you get from a repository you found to a command that acts
-                // on it.
                 if !self.input.value().is_empty() {
                     self.input.set_value("");
                     self.filter();
@@ -501,10 +434,6 @@ impl Model {
                     self.cursor = self.view.len().saturating_sub(1);
                     return self.load_status().into_iter().collect();
                 }
-                // The default issue chord is ctrl-[, and the key it arrives
-                // as is esc. By here the back-outs a query or a filter holds
-                // for esc are done with: nothing is left to undo, so esc
-                // opens the issue list, and only ctrl+c quits when it does.
                 if self.keys.issue.letter == '[' {
                     return self.switch_to(Mode::Issues);
                 }
@@ -543,8 +472,6 @@ impl Model {
                 return self.load_status().into_iter().collect();
             }
             "pgdown" | "pgup" => {
-                // One screen at a time: the window move() renders with is the
-                // size a page is measured in.
                 let rows = self.page_rows();
                 if name == "pgdown" {
                     self.cursor = (self.cursor + rows).min(self.view.len().saturating_sub(1));
@@ -561,8 +488,6 @@ impl Model {
         self.after_edit(&before)
     }
 
-    /// after_edit refilters when the box changed, and describes whatever the
-    /// cursor ended up on.
     fn after_edit(&mut self, before: &str) -> Vec<Cmd> {
         let now = self.input.value();
         if now != before {
@@ -572,12 +497,8 @@ impl Model {
         self.load_status().into_iter().collect()
     }
 
-    /// open_remote hands the selected repository's remote to a browser. A
-    /// repository without one, or one whose remote is not a URL, does nothing
-    /// visible: the finder is showing a list, not reporting on git.
     fn open_remote(&self) -> Option<Cmd> {
         let it = self.current()?;
-        // A branch with no worktree: the repository has the remote.
         let path = if it.path.is_empty() {
             self.repo_at.clone()
         } else {
@@ -590,8 +511,6 @@ impl Model {
             .unwrap_or_default();
         let open = self.backend.open_url.clone();
         Some(Cmd::Task(Box::new(move || {
-            // Not fetched yet for this row; ask git now rather than making the
-            // key do nothing on the first press.
             let remote = if known.is_empty() && !path.is_empty() {
                 repo::origin_url(&path)
             } else {
@@ -604,9 +523,6 @@ impl Model {
         })))
     }
 
-    /// start_busy puts what gm now waits on under the prompt and starts the
-    /// spinner that shows it has not hung. The returned command is the first
-    /// tick.
     fn start_busy(&mut self, what: &str) -> (u64, Cmd) {
         self.spin.tag = self.spin.tag.wrapping_add(1);
         self.spin.frame = 0;
@@ -623,8 +539,6 @@ impl Model {
         }
     }
 
-    /// help_line draws the key hints, dropping the ones that do not fit rather
-    /// than wrapping onto a second line.
     fn help_line(&self, width: usize) -> Line<'static> {
         let first = |segs: Vec<Seg>, w: usize| {
             wrap_segs(&segs, w, "")
@@ -633,8 +547,6 @@ impl Model {
                 .unwrap_or_default()
         };
         let st = &self.st;
-        // An answer to something the user just typed displaces the hints: it
-        // is about to be cleared by their next keystroke anyway.
         if !self.note.is_empty() {
             return first(vec![Seg::new(&self.note, st.dirty)], width);
         }
@@ -652,7 +564,6 @@ impl Model {
             ]);
         }
         if self.dirty_only || self.unpushed_only {
-            // The filter has to be visible, or an empty list reads as a bug.
             let label = match (self.dirty_only, self.unpushed_only) {
                 (true, true) => "dirty + unpushed",
                 (true, false) => "dirty only",
@@ -678,7 +589,6 @@ impl Model {
             self.keys.issue.short(),
             self.keys.remote.short(),
         );
-        // Esc undoes one layer of narrowing at a time, so it has to say which.
         let esc = if !self.input.value().is_empty() {
             "clear"
         } else if self.dirty_only || self.unpushed_only {
@@ -750,41 +660,31 @@ impl Model {
         Line::from(spans)
     }
 
-    /// render draws the whole screen: the list hanging from the prompt on the
-    /// left, the details pane on the right, the prompt, the hints, and any
-    /// panel over the lot.
-    /// page_rows is how many rows of the list one turn of `pgup`/`pgdown`
-    /// moves, the height of the window render hangs from the prompt.
     fn page_rows(&self) -> usize {
-        self.h.saturating_sub(4).max(3) as usize // the bordered input box, plus the hint line under it
+        self.h.saturating_sub(4).max(3) as usize
     }
 
     pub fn render(&self, buf: &mut Buffer) {
         let area = *buf.area();
         let w = self.w.min(area.width) as usize;
         let rows = self.page_rows();
-        // The list gets the left 3/5: it is what gets scanned.
         let (list_w, info_w) = if w >= 66 {
             (w - w * 2 / 5 - 3, w * 2 / 5)
         } else {
             (w, 0)
         };
 
-        // A window over the view, anchored so the cursor stays visible.
         let start = self.view.len().saturating_sub(rows).min(self.cursor);
         let end = (start + rows).min(self.view.len());
 
         let mut lines: Vec<Line> = Vec::with_capacity(rows);
         for _ in 0..rows - (end - start) {
-            lines.push(Line::from(" ".repeat(list_w))); // the list hangs from the bottom
+            lines.push(Line::from(" ".repeat(list_w)));
         }
         for i in start..end {
             lines.push(self.render_row(i, i == self.cursor, list_w));
         }
 
-        // The info pane is top-aligned: it reads top-down, unlike the list,
-        // which hangs from the prompt. A pane taller than the window loses its
-        // tail rather than its name and path.
         let mut info = if info_w > 0 {
             self.info_lines(info_w)
         } else {
@@ -805,9 +705,6 @@ impl Model {
             set(buf, y, &line);
         }
 
-        // The prompt box, two columns short of the window, as the Go finder
-        // drew it, with the list being searched boxed at its right end: ten
-        // columns inside, the width of "repository".
         let box_w = (w as u16).saturating_sub(2);
         let mode_w = 12.min(box_w);
         let y = area.y + rows as u16;
@@ -845,7 +742,6 @@ impl Model {
         }
     }
 
-    /// bordered is the rounded box every panel and the prompt wear.
     fn bordered(&self, pad: u16) -> Block<'static> {
         Block::default()
             .borders(Borders::ALL)
@@ -854,8 +750,6 @@ impl Model {
             .padding(ratatui::widgets::Padding::horizontal(pad))
     }
 
-    /// overlay draws a panel over the list, centred, leaving what is behind it
-    /// visible around the edges.
     fn overlay(&self, buf: &mut Buffer, content: Vec<Line<'static>>) {
         let area = *buf.area();
         let inner_w = content.iter().map(Line::width).max().unwrap_or(0) as u16;
@@ -890,10 +784,8 @@ pub fn run(
     let mut timers: Vec<(Instant, Msg)> = Vec::new();
     let mut pending: Vec<Msg> = Vec::new();
     let mut cmds = m.init();
-    // The first frame is mandatory; later frames follow handled messages, not polls.
     let mut redraw = true;
     loop {
-        // Carry out what the last round asked for.
         for cmd in cmds.drain(..) {
             match cmd {
                 Cmd::Quit => return Ok(m.result),
@@ -913,8 +805,6 @@ pub fn run(
             redraw = false;
         }
 
-        // Wait for a key, a finished task, or the next timer, whichever is
-        // first. A task's answer is picked up within a frame.
         let next_timer = timers.iter().map(|(at, _)| *at).min();
         let wait = next_timer
             .map(|at| at.saturating_duration_since(Instant::now()))
@@ -929,7 +819,7 @@ pub fn run(
         timers = later;
         pending.extend(due.into_iter().map(|(_, msg)| msg));
 
-        redraw |= !pending.is_empty(); // input, task and timer answers can change the screen
+        redraw |= !pending.is_empty();
         for msg in pending.drain(..) {
             cmds.extend(m.update(msg));
         }

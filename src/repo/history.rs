@@ -5,14 +5,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::repo::Tree;
 use crate::{Result, paths};
 
-/// Visit is how often and how recently one repository was entered.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Visit {
     pub count: i64,
-    pub last: i64, // unix seconds
+    pub last: i64,
 }
 
-/// now is the current time in unix seconds.
 pub fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -36,9 +34,6 @@ impl Visit {
     }
 }
 
-/// History is the visit log. It holds its own file path, so a test can point
-/// it at a temporary directory instead of the user's state directory, and the
-/// tree, so pruning can tell a deleted repository from an unmounted root.
 #[derive(Debug, Clone, Default)]
 pub struct History {
     pub path: String,
@@ -103,18 +98,12 @@ impl History {
         v.last = now();
         let missing =
             |p: &str| std::fs::metadata(p).is_err_and(|e| e.kind() == ErrorKind::NotFound);
-        // A repository under a root that is not there, an external disk that
-        // is not mounted, is unavailable rather than gone. One under no root
-        // at all, a root since dropped from the config, has nothing to tell
-        // the two apart, so a missing path is pruned as before.
         let tree = &self.tree;
         self.visits
             .retain(|p, _| !missing(p) || tree.at(p).is_some_and(|r| missing(&r.root)));
         self.save()
     }
 
-    /// save writes through a temporary file, so an interrupted write cannot
-    /// leave a half-written log behind.
     fn save(&self) -> Result<()> {
         if self.path.is_empty() {
             return Ok(());
@@ -131,8 +120,6 @@ impl History {
                 )
             })
             .collect();
-        // A unique name, so two gm processes saving at once cannot write and
-        // rename the same temporary file.
         let tmp = paths::join(
             &dir,
             &format!("frecency-{}-{}.tmp", std::process::id(), nanos()),
@@ -148,7 +135,7 @@ impl History {
             std::fs::rename(&tmp, &self.path)
         })();
         if written.is_err() {
-            let _ = std::fs::remove_file(&tmp); // no half-written log left next to the real one
+            let _ = std::fs::remove_file(&tmp);
         }
         Ok(written?)
     }
@@ -181,8 +168,6 @@ mod tests {
         assert_eq!(Visit::default().score(n), 0.0);
     }
 
-    // The log's contract: a bump survives a reload, and a repository that no
-    // longer exists is pruned.
     #[test]
     fn round_trip() {
         let dir = TempDir::new();
@@ -199,9 +184,6 @@ mod tests {
         assert_eq!(again.visit(&dir.join("gone")).count, 0);
     }
 
-    // A root that is not there, an external disk that is not mounted, says
-    // nothing about the repositories on it: their entries must survive a
-    // visit elsewhere. A repository gone from a root that is there is pruned.
     #[test]
     fn bump_keeps_entries_under_a_missing_root() {
         let dir = TempDir::new();
@@ -234,8 +216,6 @@ mod tests {
         assert_eq!(again.visit(&gone).count, 0, "a deleted repository is kept");
     }
 
-    // The window the finder holds open: a visit written by another gm after
-    // this History was opened must survive this History's own bump.
     #[test]
     fn bump_keeps_concurrent_visits() {
         let dir = TempDir::new();
@@ -244,7 +224,7 @@ mod tests {
         mkdir(&a);
         mkdir(&b);
 
-        let mut h = History::open(&path); // the finder opens the log and holds it
+        let mut h = History::open(&path);
         History::open(&path).bump(&b).unwrap();
         h.bump(&a).unwrap();
 

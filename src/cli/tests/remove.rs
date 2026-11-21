@@ -1,9 +1,5 @@
-//! gm remove.
-
 use super::*;
 
-// gm rm takes the worktrees along with --force, so the work in each has
-// to be named before the question, not only the repository's own.
 #[test]
 fn remove_names_the_work_in_the_worktrees() {
     let root = TempDir::new();
@@ -29,13 +25,10 @@ fn remove_names_the_work_in_the_worktrees() {
         "{}",
         res.err
     );
-    // The repository itself is clean, so it is not called dirty.
     assert!(!res.err.contains("alpha has uncommitted"), "{}", res.err);
     assert!(!exists(&r.path()) && !exists(&login));
 }
 
-// The bug where gm remove --dry-run printed the path and nothing else: the
-// warnings a real run gives before asking are what a dry run is for.
 #[test]
 fn remove_dry_run_says_what_would_go() {
     let root = TempDir::new();
@@ -66,9 +59,6 @@ fn remove_dry_run_says_what_would_go() {
     assert!(exists(&r.path()) && exists(&login));
 }
 
-// A checkout whose home is outside gm's worktree directory is named by its
-// path, and gm remove leaves it where it is: the warning is the only thing
-// that says where git's entry points.
 #[test]
 fn remove_names_and_leaves_a_checkout_outside_the_worktree_dir() {
     let root = TempDir::new();
@@ -108,8 +98,6 @@ fn remove_names_and_leaves_a_checkout_outside_the_worktree_dir() {
     assert!(exists(&victim) && exists(&paths::join(&victim, "keep.txt")));
 }
 
-// retarget_worktree points the one worktree entry a repository holds at dir,
-// the way a copied or hand-edited repository would.
 fn retarget_worktree(repo_dir: &str, dir: &str) {
     let admin = paths::join(repo_dir, ".git/worktrees");
     let mut names: Vec<String> = std::fs::read_dir(&admin)

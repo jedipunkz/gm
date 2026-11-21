@@ -1,9 +1,5 @@
-//! The details pane.
-
 use super::*;
 
-// A label sits on its own line above its value, and a value longer than the
-// pane is folded, never cut.
 #[test]
 fn info_pane_stacks_and_wraps() {
     let root = TempDir::new();
@@ -42,17 +38,13 @@ fn info_pane_stacks_and_wraps() {
         assert!(l.chars().count() <= w, "{l:?} is wider than {w}");
     }
     assert!(joined.contains("https://github.com/acme"));
-    // A commit folds too, with its continuations indented.
     assert!(
         joined.contains("abc1234") && joined.contains(&format!("\n{}", info::COMMIT_INDENT)),
         "{joined}"
     );
-    // Nothing is spaced apart: a blank line costs a row of the commits.
     assert!(!joined.contains("\n\n"), "{joined}");
 }
 
-// The hash, HEAD, a local branch, a remote-tracking branch and a tag each get
-// their own colour, the way `git log --oneline --decorate` does.
 #[test]
 fn commit_line_colours() {
     let root = TempDir::new();
@@ -94,8 +86,6 @@ fn commit_line_colours() {
     );
 }
 
-// A long commit folds instead of being cut: no text is lost, no line is wider
-// than the pane, and the continuations are indented.
 #[test]
 fn commit_line_wraps() {
     let root = TempDir::new();
@@ -124,18 +114,14 @@ fn commit_line_wraps() {
             }
             words.push_str(plain.strip_prefix(info::COMMIT_INDENT).unwrap_or(&plain));
         }
-        // Folding must not lose or duplicate anything.
         assert_eq!(squash(&words), squash(whole), "width {w}");
     }
-    // The fold keeps the colours.
     let lines = m.commit_lines(&c, 24);
     assert!(lines.len() >= 2);
     let th = theme();
     assert!(line_painted(&lines[0], &blend(th.blue, th.comment, 0.35)));
 }
 
-// The field names are the quiet half of the pane: the comment colour in bold,
-// against values that keep the theme's own colours.
 #[test]
 fn pane_labels_stand_out() {
     let root = TempDir::new();
@@ -171,8 +157,6 @@ fn pane_labels_stand_out() {
     }
 }
 
-// Worktrees in the pane are how a row says whether the worktree key is worth
-// pressing on it; a repository without any says nothing at all.
 #[test]
 fn worktrees_in_the_details_pane() {
     let root = TempDir::new();
@@ -212,14 +196,12 @@ fn worktrees_in_the_details_pane() {
     );
     let got = pane(&m);
     assert!(got.contains("\nlast 2 worktrees\n"), "{got}");
-    // A detached checkout has no branch to name it, so it goes by its hash.
     assert!(
         got.contains("feat/login") && got.contains("abc1234"),
         "{got}"
     );
     assert!(got.contains("1h ago"), "{got}");
 
-    // Newest first, and only three.
     m.status.insert(
         path,
         Status {
