@@ -6,10 +6,6 @@ use super::deadline::{FETCH_TIMEOUT, LIST_TIMEOUT, run_deadline};
 use super::git::{Branch, failure, git_command_with, git_in, remotes, valid_branch};
 use crate::{Error, Result, err};
 
-/// git_remote runs git for a call that talks to a remote, with every way it
-/// could ask for a password shut. The finder owns the terminal: a prompt would
-/// be drawn over it and wait for input that never comes. What does not need
-/// typing — an ssh agent, a credential helper — still works.
 fn git_remote(timeout: Duration, dir: &str, args: &[&str]) -> Result<String> {
     git_remote_with(OsStr::new("git"), timeout, dir, args)
 }
@@ -65,8 +61,6 @@ pub fn remote_branches(dir: &str) -> (Vec<Branch>, Option<Error>) {
     })
 }
 
-/// list_remote_branches asks each remote independently, then joins and merges
-/// the answers in configuration order so both branches and errors are stable.
 fn list_remote_branches<F>(
     names: &[String],
     fetched: &HashSet<String>,
@@ -187,9 +181,6 @@ mod tests {
             "grandchild did not start"
         );
 
-        // The child would create this after three seconds if it survived the
-        // timeout. Waiting for that deadline avoids relying on process-table
-        // details such as whether a killed orphan is briefly a zombie.
         std::thread::sleep(Duration::from_millis(3_100));
         assert!(
             !std::path::Path::new(&marker).exists(),
@@ -197,8 +188,6 @@ mod tests {
         );
     }
 
-    // What a remote has that the last fetch did not bring is found, and one of
-    // them is fetched into a worktree that tracks it.
     #[test]
     fn remote_branches_finds_the_unfetched() {
         let tmp = TempDir::new();
@@ -207,7 +196,6 @@ mod tests {
         git_in(&upstream, &["branch", "old"]).unwrap();
         let clone = tmp.join("clone");
         git_quiet(&["clone", "-q", &upstream, &clone]).unwrap();
-        // Pushed after the clone: only the remote knows about it.
         git_in(&upstream, &["branch", "feat/new"]).unwrap();
 
         let (bs, e) = remote_branches(&clone);
@@ -229,7 +217,6 @@ mod tests {
             "origin/feat/new"
         );
 
-        // A refspec is never built out of a name git would not take.
         let bad = Branch {
             name: "a:b".into(),
             remote: "origin/a:b".into(),
@@ -238,8 +225,6 @@ mod tests {
         assert!(fetch_branch(&clone, &bad).is_err());
     }
 
-    // A local branch named "origin/x" made git shorten the fetched branch to
-    // "remotes/origin/x", and the fetched branch was offered again as unfetched.
     #[test]
     fn remote_branches_skip_the_fetched_beside_a_local_branch_of_its_name() {
         let tmp = TempDir::new();
@@ -254,7 +239,6 @@ mod tests {
         assert_eq!((bs, e), (vec![], None));
     }
 
-    // The remote it could not reach is named, and nothing is asked on the way.
     #[test]
     fn remote_branches_names_the_unreachable() {
         let tmp = TempDir::new();

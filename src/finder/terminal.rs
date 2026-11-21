@@ -1,6 +1,3 @@
-//! The terminal the finder owns while it is up: /dev/tty in raw mode and
-//! the alternate screen, put back however the finder ends.
-
 use super::*;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{
@@ -24,8 +21,6 @@ pub(crate) fn key_flags() -> KeyboardEnhancementFlags {
         | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
 }
 
-/// tty is the terminal to draw on: /dev/tty, so $(gm) can capture stdout,
-/// or stderr when there is no controlling terminal.
 fn tty() -> Box<dyn Write> {
     match std::fs::OpenOptions::new()
         .read(true)
@@ -40,8 +35,6 @@ fn tty() -> Box<dyn Write> {
 impl Term {
     pub fn open() -> Result<Term> {
         terminal::enable_raw_mode()?;
-        // Until a Term exists nothing will put the terminal back, so a
-        // failure on the way there has to do it here.
         let opened = (|| -> std::io::Result<Term> {
             let mut out = tty();
             // The Kitty keyboard protocol is what lets Ctrl-Shift chords
@@ -78,7 +71,6 @@ impl Term {
         Ok(())
     }
 
-    /// poll waits up to wait for something from the terminal.
     pub fn poll(&mut self, wait: Duration) -> Result<Option<Msg>> {
         if !event::poll(wait)? {
             return Ok(None);
@@ -103,7 +95,6 @@ impl Drop for Term {
     }
 }
 
-/// restore undoes what open did, whichever part of it happened.
 fn restore(out: &mut impl Write) {
     let _ = execute!(
         out,
@@ -115,8 +106,6 @@ fn restore(out: &mut impl Write) {
     let _ = terminal::disable_raw_mode();
 }
 
-/// key_of spells a key press the way Bubble Tea did, modifiers in the
-/// order ctrl, alt, shift.
 pub fn key_of(code: KeyCode, m: KeyModifiers) -> Option<Key> {
     let (ctrl, alt) = (
         m.contains(KeyModifiers::CONTROL),
@@ -200,24 +189,14 @@ mod tests {
             key_of(KeyCode::Char('Y'), KeyModifiers::SHIFT),
             Some(Key::char('Y'))
         );
-        // The shift a Kitty terminal reports on a letter uppercases the text
-        // typed with it.
         assert_eq!(
             key_of(KeyCode::Char('a'), KeyModifiers::SHIFT),
             Some(Key::char('A'))
         );
-        // Every name the finder's key map can answer to is spelled here, so a
-        // terminal's report never hides behind an untested branch.
         for (c, m, want) in [
             (KeyCode::Enter, KeyModifiers::NONE, "enter"),
             (KeyCode::Tab, KeyModifiers::NONE, "tab"),
-            (
-                // BackTab is tab with the shift flag on, whatever the terminal
-                // also said.
-                KeyCode::BackTab,
-                KeyModifiers::SHIFT,
-                "shift+tab",
-            ),
+            (KeyCode::BackTab, KeyModifiers::SHIFT, "shift+tab"),
             (KeyCode::Backspace, KeyModifiers::NONE, "backspace"),
             (KeyCode::Delete, KeyModifiers::NONE, "delete"),
             (KeyCode::Up, KeyModifiers::NONE, "up"),
@@ -241,8 +220,6 @@ mod tests {
         ] {
             assert_eq!(k(c, m), want, "{c:?} with {m:?}");
         }
-        // Space still types in the box, with the shift a Kitty terminal
-        // reports on it too.
         assert_eq!(
             key_of(KeyCode::Char(' '), KeyModifiers::NONE).unwrap().text,
             Some(' ')
@@ -253,12 +230,9 @@ mod tests {
                 .text,
             Some(' ')
         );
-        // A key the finder has no name for is dropped rather than invented.
         assert_eq!(key_of(KeyCode::Null, KeyModifiers::NONE), None);
     }
 
-    // The flags are what shift+space paging needs: all keys reported, so a
-    // terminal can tell the shift apart.
     #[test]
     fn the_flags_ask_for_every_key() {
         let flags = key_flags();

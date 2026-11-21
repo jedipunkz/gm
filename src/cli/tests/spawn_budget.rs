@@ -1,30 +1,12 @@
-//! Budgets for the git processes gm starts.
-
 use super::*;
 
-// Budgets for the git processes gm's work costs. The count is taken in a
-// child process, one per measured operation: tests run in parallel in one
-// process, so a counter shared by threads would sum other tests' spawns into
-// the measurement, and a fresh child counts only its own. The budgets are
-// measured numbers with a little headroom, not aspirations; raising one to
-// fit a slower implementation is a regression, not a fix.
 const SPAWN_BUDGET_OP: &str = "GM_SPAWN_BUDGET_OP";
 const SPAWN_BUDGET_TEST: &str = "cli::tests::spawn_budget::git_spawn_budgets_hold";
 
-/// SPAWN_BUDGETS is the least a run costs today, per measured operation.
-/// Each budget is the measured count with one process of headroom, and list
-/// costs none at all. A repository row costs two git processes in status
-/// (status, remote -v) and one more when it has remotes to count unpushed
-/// work against.
 const SPAWN_BUDGETS: &[(&str, usize)] = &[
-    // gm status over one repository with two worktrees: three rows to read.
     ("status", 7),
-    // gm list over five repositories: the tree walk is the filesystem, so
-    // no row costs a process.
     ("list", 0),
-    // worktrees of one repository, then the changed files of one worktree.
     ("worktrees", 6),
-    // gm wt create of a new branch in a fresh clone.
     ("wt-create", 5),
 ];
 
@@ -44,8 +26,6 @@ fn git_spawn_budgets_hold() {
                 "git spawn budget for {op}:\n{stdout}\n{}",
                 String::from_utf8_lossy(&out.stderr)
             );
-            // A filter that matches nothing passes too: the child must have
-            // run this test, or a renamed module would measure nothing.
             assert!(
                 stdout.contains("test result: ok. 1 passed;"),
                 "git spawn budget for {op} ran no test named {SPAWN_BUDGET_TEST}:\n{stdout}"
@@ -69,8 +49,6 @@ fn git_spawn_budgets_hold() {
     );
 }
 
-// measure_status_spawns sets one repository up with two worktrees, runs
-// gm status over the tree and returns how many git processes that cost.
 fn measure_status_spawns() -> usize {
     let tmp = TempDir::new();
     let root = tmp.join("root");
@@ -89,8 +67,6 @@ fn measure_status_spawns() -> usize {
     repo::git_spawns_reset()
 }
 
-// measure_list_spawns runs gm list over five repositories and returns how
-// many git processes that cost.
 fn measure_list_spawns() -> usize {
     let tmp = TempDir::new();
     let root = tmp.join("root");
@@ -104,8 +80,6 @@ fn measure_list_spawns() -> usize {
     repo::git_spawns_reset()
 }
 
-// measure_worktrees_spawns reads the worktrees of one repository and the
-// changed files of one of them, and returns how many git processes that cost.
 fn measure_worktrees_spawns() -> usize {
     let tmp = TempDir::new();
     let root = tmp.join("root");
@@ -124,8 +98,6 @@ fn measure_worktrees_spawns() -> usize {
     repo::git_spawns_reset()
 }
 
-// measure_wt_create_spawns checks a new branch out of a fresh clone with
-// gm wt create and returns how many git processes that cost.
 fn measure_wt_create_spawns() -> usize {
     let tmp = TempDir::new();
     let origin = tmp.join("origin.git");

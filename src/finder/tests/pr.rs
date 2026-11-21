@@ -1,9 +1,5 @@
-//! The pull request list, the busy line, and the smallest terminals.
-
 use super::*;
 
-/// open_pr_panel presses enter in the pull request list and feeds gh's view
-/// answer, leaving the panel up.
 fn open_pr_panel(m: &mut Model) {
     let n = m.current().unwrap().pr.number;
     let cmds = m.update(key("enter"));
@@ -17,8 +13,6 @@ fn open_pr_panel(m: &mut Model) {
     );
 }
 
-// A pull request row too long for the list keeps its number and cuts the
-// title's tail, the way an issue row does.
 #[test]
 fn pr_row_keeps_its_number() {
     let root = TempDir::new();
@@ -39,8 +33,6 @@ fn pr_row_keeps_its_number() {
     assert_eq!(row, "  #7 Add login …");
 }
 
-// label:, assignee: and author: narrow the pull request list the way they do
-// the issue list; a bot's author is its login as gh names it.
 #[test]
 fn pr_list_qualifiers() {
     let root = TempDir::new();
@@ -70,14 +62,10 @@ fn pr_list_qualifiers() {
     }
 }
 
-// A full page exactly means there were at least that many open pull
-// requests: the hint line says so, so a #42 that is not on the list is not
-// read as "no such pull request".
 #[test]
 fn pr_list_says_when_it_is_cut_short() {
     let root = TempDir::new();
     let (mut m, rs) = pr_model(&root);
-    // Exactly a page: everything the real page wears applies, plus the note.
     let page: Vec<PullRequest> = (1..=repo::PR_LIMIT as u64)
         .map(|n| pull_request(n, "Change something", "feat/x", false, false, "acme"))
         .collect();
@@ -96,8 +84,6 @@ fn pr_list_says_when_it_is_cut_short() {
     );
 }
 
-// Newest at the bottom, drafts marked, a checked-out pull request goes to its
-// worktree, and a fork's main is not mistaken for the repository's own.
 #[test]
 fn pr_mode() {
     let root = TempDir::new();
@@ -117,10 +103,8 @@ fn pr_mode() {
     for s in [rs[1].rel.as_str(), "bob:main", "none yet"] {
         assert!(pane.contains(s), "{s:?}:\n{pane}");
     }
-    // The fork's main is the selected row, and has no worktree of its own.
     assert_eq!(m.current().unwrap().path, "");
 
-    // Enter views; enter in the panel goes to the worktree.
     let mut login = m.clone();
     set_query(&mut login, "login");
     open_pr_panel(&mut login);
@@ -140,8 +124,6 @@ fn pr_mode() {
     assert_eq!(label(&m), rs[1].rel);
 }
 
-// Which pull request is checked out where is git's answer too, so it is
-// worked out in gh's task rather than once the answer is on the UI thread.
 #[test]
 fn pr_mode_asks_git_off_the_ui_thread() {
     let root = TempDir::new();
@@ -154,9 +136,6 @@ fn pr_mode_asks_git_off_the_ui_thread() {
     assert_eq!(m.current().unwrap().path, "/tmp/wt/alpha-login");
 }
 
-// A fork's checkout is found under a symlinked root, where git prints the
-// resolved path, and is filed apart from the repository's own branches: a
-// local bob/main is not fork pull request bob:main.
 #[test]
 fn pr_mode_finds_a_fork_checkout_by_place() {
     let base = TempDir::new();
@@ -196,7 +175,6 @@ fn pr_mode_finds_a_fork_checkout_by_place() {
     let at = m.current().unwrap().path.clone();
     assert!(repo::same_path(&at, &fork), "{at:?}");
 
-    // Without the fork's own checkout, the local bob/main is not offered.
     let l = local.clone();
     m.backend.worktrees_of = Arc::new(move |dir| {
         Ok(vec![
@@ -217,8 +195,6 @@ fn pr_mode_finds_a_fork_checkout_by_place() {
     assert_eq!(m.current().unwrap().path, "");
 }
 
-// The pane beside the list shows the labels and the description the listing
-// carried, as Markdown, ahead of the checkout's fields.
 #[test]
 fn pr_pane_shows_the_body() {
     let root = TempDir::new();
@@ -245,16 +221,12 @@ fn pr_pane_shows_the_body() {
     assert!(body < path, "the body came after the path:\n{pane}");
 }
 
-// Enter opens the panel: the labels, description and comments are drawn,
-// the hint line leads with check out, q goes back to the list, and nothing is
-// checked out until the panel's own enter.
 #[test]
 fn pr_panel() {
     let root = TempDir::new();
     let (mut m, rs) = pr_model(&root);
     (m.w, m.h) = (100, 30);
     open_pr_list(&mut m);
-    // The fork's main, which has no worktree yet.
     open_pr_panel(&mut m);
     let panel = text(&screen(&m));
     for s in [
@@ -276,12 +248,10 @@ fn pr_panel() {
         "{bottom:?}"
     );
 
-    // q closes the panel back onto the list, checking nothing out.
     let cmds = m.update(key("q"));
     assert!(cmds.is_empty() && m.over == Overlay::None && m.detail.is_none());
     assert_eq!(m.mode, Mode::Prs);
 
-    // ctrl-b and ctrl-y act on the pull request's URL.
     let copied = Arc::new(Mutex::new(Vec::new()));
     let had = copied.clone();
     m.backend.copy_url = Arc::new(move |u| {
@@ -297,8 +267,6 @@ fn pr_panel() {
     assert!(m.note.contains("pull request URL copied"), "{:?}", m.note);
 }
 
-// The panel's enter checks out the pull request the panel shows, even when
-// the cursor moved while gh was answering.
 #[test]
 fn pr_panel_checks_out_what_it_shows() {
     let root = TempDir::new();
@@ -314,9 +282,6 @@ fn pr_panel_checks_out_what_it_shows() {
     assert_eq!(m.result.arg, "/tmp/wt/alpha-login");
 }
 
-// gh failing to read the pull request in full still opens the panel, on
-// what the listing carried, with gh's reason in the title's place: the
-// checkout behind the panel's enter stays reachable.
 #[test]
 fn pr_panel_opens_on_the_listing_when_gh_fails() {
     let root = TempDir::new();
@@ -331,7 +296,6 @@ fn pr_panel_opens_on_the_listing_when_gh_fails() {
     assert!(is_quit(&cmds) && m.result.arg == "/tmp/wt/alpha-login");
 }
 
-// An answer about a list the user has left is dropped, panel and all.
 #[test]
 fn pr_panel_drops_a_stale_answer() {
     let root = TempDir::new();
@@ -355,8 +319,6 @@ fn prs_command() {
     assert_eq!(m.mode, Mode::Prs);
 }
 
-// gh is slow, and an answer about a repository the cursor has left must not
-// replace the list.
 #[test]
 fn pr_mode_drops_a_stale_answer() {
     let root = TempDir::new();
@@ -367,8 +329,6 @@ fn pr_mode_drops_a_stale_answer() {
     assert_eq!(m.mode, Mode::Repos);
 }
 
-// The repository list stays when gh fails or has nothing, and the reason is
-// under the prompt.
 #[test]
 fn pr_mode_says_why_not() {
     let root = TempDir::new();
@@ -391,7 +351,6 @@ fn pr_mode_says_why_not() {
     }
 }
 
-// A stand-in gh makes the worktree, and the finder is left for it.
 #[test]
 fn pr_check_out() {
     use std::os::unix::fs::PermissionsExt;
@@ -402,7 +361,6 @@ fn pr_check_out() {
     };
     git_repo(&r.path());
     let bin = TempDir::new();
-    // gh pr checkout <n> --worktree <dir>
     let gh = bin.join("gh");
     std::fs::write(
         &gh,
@@ -450,8 +408,6 @@ fn pr_check_out() {
     );
 }
 
-// What gm waits on stays under the prompt, with a spinner, until the answer
-// arrives, and the spinner stops once it has.
 #[test]
 fn busy_spinner() {
     let root = TempDir::new();
@@ -464,12 +420,10 @@ fn busy_spinner() {
     );
     assert!(line.starts_with(input::SPINNER_FRAMES[0]), "{line:?}");
 
-    // A keystroke answers nothing, so the wait stays on screen.
     let mut typing = m.clone();
     typing.update(ch('x'));
     assert_ne!(typing.busy, "");
 
-    // The spinner keeps ticking while busy.
     let mut ticking = m.clone();
     assert!(!ticking.update(Msg::Spin(ticking.spin.tag)).is_empty());
 
@@ -580,8 +534,6 @@ fn repo_scan_and_done_only_clear_their_own_busy_line() {
     assert!(m.busy.contains("asking GitHub"), "{:?}", m.busy);
 }
 
-// A terminal too small for the layout clips it; nothing may panic drawing it,
-// with or without a panel up.
 #[test]
 fn tiny_terminals_do_not_panic() {
     let root = TempDir::new();
@@ -601,8 +553,6 @@ fn tiny_terminals_do_not_panic() {
             }
         }
     }
-    // And with the issue's panel up, detail and scroll included: it is
-    // nearly the whole screen, so small terminals clip it hardest.
     m.detail = Some(crate::finder::issues::Detail {
         subject: crate::finder::issues::Subject::Issue(issue(
             7,

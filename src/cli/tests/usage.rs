@@ -1,8 +1,5 @@
-//! Usage text, flag parsing and dispatch.
-
 use super::*;
 
-// The help text must not drift away from the table it is built from.
 #[test]
 fn usage_covers_every_command() {
     let u = usage();
@@ -56,8 +53,6 @@ fn usage_covers_every_flag_spelling_without_advertising_wrong_wt_flags() {
     );
 }
 
-// Help and the version answer without gm.toml or the roots: a broken file
-// must not hide how to fix it, or what version is broken.
 #[test]
 fn help_and_version_need_no_config() {
     for a in ["-h", "--help", "help", "-v", "--version", "version"] {
@@ -71,7 +66,6 @@ fn help_and_version_need_no_config() {
         .unwrap_or_else(|e| panic!("gm {a}: {e}"));
         assert!(String::from_utf8(out).unwrap().contains("gm"), "gm {a}");
     }
-    // Every other command still stops on the broken file.
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let e = run_with(
         &args(&["list"]),
@@ -83,7 +77,6 @@ fn help_and_version_need_no_config() {
     assert!(e.0.contains("bogus"), "{e}");
 }
 
-// A new command must not shadow an existing name or alias.
 #[test]
 fn names_are_unique() {
     let mut seen = HashMap::new();
@@ -135,7 +128,6 @@ fn flags_parse_the_go_way() {
     assert_eq!(exit_code(&got(&["-h"]).unwrap_err()), Some(0));
 }
 
-// The spelling each shell needs, and no template placeholder left over.
 #[test]
 fn shell_snippets_bind_the_configured_key() {
     let tmp = TempDir::new();
@@ -168,8 +160,6 @@ fn shell_snippets_bind_the_configured_key() {
             r.out
         );
     }
-    // An unusable key must stop gm rather than print a binding that
-    // silently does nothing.
     // ctrl-m, ctrl-i and ctrl-j are Enter, Tab and line feed in a terminal:
     // binding one takes that key over in the shell.
     for bad in [
@@ -187,7 +177,6 @@ fn shell_snippets_bind_the_configured_key() {
     }
 }
 
-// A command without its argument says what it needs.
 #[test]
 fn reference_commands_report_their_usage() {
     let root = TempDir::new();
@@ -259,8 +248,6 @@ fn missing_arguments_use_the_same_derived_command_syntax() {
     assert!(!error.contains("gm wt create [-y]"), "{error}");
 }
 
-// version is a command as well as a flag: the same answer either way, from
-// the table's own dispatcher.
 #[test]
 fn plain_dispatch_prints_the_version() {
     let root = TempDir::new();
@@ -269,14 +256,12 @@ fn plain_dispatch_prints_the_version() {
     });
     r.res.unwrap();
     assert!(r.out.contains("gm "), "{}", r.out);
-    // An unknown word folds back into the usage, asking for exit status 2.
     let u = run_in(&tree(&root.path()), "", Config::default(), |a| {
         a.dispatch(&args(&["no-such-command"]))
     });
     assert_eq!(exit_code(&u.res.unwrap_err()), Some(2));
 }
 
-// The exit a caller sees when gm ends without a message of its own.
 #[test]
 fn exit_code_matches_the_special_errors() {
     assert_eq!(exit_code(&USAGE_ERROR.into()), Some(2));
@@ -284,7 +269,6 @@ fn exit_code_matches_the_special_errors() {
     assert_eq!(exit_code(&"gm.toml: unknown key".into()), None);
 }
 
-// A missing or unknown verb says what the verbs are rather than doing one.
 #[test]
 fn wt_usage() {
     let root = TempDir::new();

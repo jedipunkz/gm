@@ -1,9 +1,5 @@
-//! What the CLI does with what the finder decided.
-
 use super::*;
 
-// Recording the visit and printing the path is the whole contract between
-// the finder and the shell binding, and one jump is one visit.
 #[test]
 fn act_jump_records_once_and_prints() {
     let root = TempDir::new();
@@ -24,7 +20,6 @@ fn act_jump_records_once_and_prints() {
     assert_eq!(hist.visit(&dst).count, 1);
 }
 
-// Quitting the finder leaves no trace.
 #[test]
 fn act_none_does_nothing() {
     let root = TempDir::new();
@@ -36,21 +31,15 @@ fn act_none_does_nothing() {
     assert_eq!(r.out + &r.err, "");
 }
 
-// gm get writes the visit log itself, in the middle of act(); the copy the
-// finder was handed was read before that. Saving the finder's copy
-// afterwards would throw that write away, and anything else written to the
-// log in that window.
 #[test]
 fn act_get_keeps_what_get_recorded() {
     let root = TempDir::new();
     let state = root.join("state/frecency.json");
     let dst = root.join("example.com/acme/alpha");
-    git_repo(&dst); // already cloned: gm get reports it without the network
+    git_repo(&dst);
     let other = root.join("example.com/acme/other");
     git_repo(&other);
 
-    // The finder reads the log when it opens, and something writes to it
-    // afterwards.
     let mut hist = History::open(&state);
     History::open(&state).bump(&other).unwrap();
 
@@ -79,8 +68,6 @@ fn act_get_keeps_what_get_recorded() {
     );
 }
 
-// /get is split like a command line: flags work the way they do for gm get,
-// and the path printed is the repository's, not the raw argument's.
 #[test]
 fn finder_get_takes_flags() {
     let root = TempDir::new();

@@ -4,7 +4,6 @@ use super::list::Item;
 use super::{Cmd, Model, Msg};
 use crate::repo::Worktree;
 
-/// Mode says which list is on screen.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Mode {
     #[default]
@@ -15,8 +14,6 @@ pub enum Mode {
     Issues,
 }
 
-/// Stash is the repository list put aside while another list is up, so Esc
-/// can put it back exactly as it was.
 #[derive(Debug, Clone)]
 pub struct Stash {
     all: Vec<Item>,
@@ -39,17 +36,13 @@ impl Stash {
     }
 }
 
-/// Worktrees carries git's worktree list for one repository.
 pub struct Worktrees {
-    pub(super) path: String, // the repository it was asked about
+    pub(super) path: String,
     pub(super) busy_tag: u64,
     pub(super) wts: crate::Result<Vec<Worktree>>,
 }
 
 impl Model {
-    /// open_worktrees asks git for the checkouts of the selected repository,
-    /// off the UI thread: with many refs or on a network filesystem git
-    /// takes long enough to freeze the screen, with no spinner to say why.
     pub(super) fn open_worktrees(&mut self) -> Vec<Cmd> {
         let Some(it) = self.current().cloned().filter(|_| self.mode == Mode::Repos) else {
             return vec![];
@@ -69,10 +62,6 @@ impl Model {
         ]
     }
 
-    /// show_worktrees replaces the repository list with git's answer, if the
-    /// repository it is about is still the one selected; otherwise the user
-    /// has moved on. A repository git cannot answer for is left alone: the
-    /// list simply does not change.
     pub(super) fn show_worktrees(&mut self, msg: Worktrees) -> Vec<Cmd> {
         self.finish_busy(msg.busy_tag);
         let Some(it) = self
@@ -82,9 +71,6 @@ impl Model {
         else {
             return vec![];
         };
-        // A git error is worth saying; an empty answer is nearly unreachable
-        // (the main worktree always lists), but gm is not silent about it
-        // either.
         let wts = match msg.wts {
             Ok(wts) if !wts.is_empty() => wts,
             Err(e) => {
@@ -96,13 +82,9 @@ impl Model {
                 return vec![];
             }
         };
-        // Reversed, so git's first worktree — the main one — lands at the
-        // bottom next to the cursor, the way the best match does in the main
-        // list.
         let items = wts.iter().rev().map(|w| Item {
             label: w.label(),
             path: w.path.clone(),
-            // What /remove deletes along with the worktree, if merged.
             branch: crate::repo::Branch {
                 name: w.branch.clone(),
                 ..Default::default()
@@ -113,8 +95,6 @@ impl Model {
         self.load_status().into_iter().collect()
     }
 
-    /// replace_list puts a list that belongs to the repository row it in place
-    /// of the repository list, which is kept aside for restore.
     pub(super) fn replace_list(&mut self, mode: Mode, it: &Item, items: Vec<Item>) {
         self.saved = Some(Stash {
             all: std::mem::replace(&mut self.all, items),
@@ -128,14 +108,10 @@ impl Model {
         self.repo_at = it.path.clone();
         self.mode = mode;
         self.input.set_value("");
-        // A different list entirely: the held selection means nothing in it.
         self.view_stale = true;
         self.filter();
     }
 
-    /// switch_to answers the worktree, branch and pull request keys. Each
-    /// toggles its own list, and goes from another one straight to its own:
-    /// all of them belong to the repository the repository list has selected.
     pub(super) fn switch_to(&mut self, mode: Mode) -> Vec<Cmd> {
         if self.mode == mode {
             self.restore();
@@ -150,7 +126,6 @@ impl Model {
         }
     }
 
-    /// restore puts the repository list back, query and cursor included.
     pub(super) fn restore(&mut self) {
         let Some(s) = self.saved.take() else { return };
         let stale = s.stale;

@@ -8,8 +8,6 @@ use super::worktree::Mode;
 use super::{Action, Cmd, Model, Msg, Outcome};
 use crate::repo::{self, PullRequest, Tree, Worktree};
 
-/// pr_branch is the head branch as GitHub writes it: a fork's with its
-/// owner in front, so bob:main is not read as the repository's main.
 pub(super) fn pr_branch(p: &PullRequest) -> String {
     if p.fork {
         format!("{}:{}", p.head_owner, p.branch)
@@ -18,25 +16,20 @@ pub(super) fn pr_branch(p: &PullRequest) -> String {
     }
 }
 
-/// Prs carries gh's answer about one repository.
 pub struct Prs {
-    pub(super) path: String, // the repository it was asked about
+    pub(super) path: String,
     pub(super) busy_tag: u64,
-    pub(super) prs: crate::Result<Vec<(PullRequest, String)>>, // each with where it is checked out, if anywhere
+    pub(super) prs: crate::Result<Vec<(PullRequest, String)>>,
 }
 
-/// PrDetail carries the full text of one pull request.
 pub struct PrDetail {
-    pub(super) path: String, // the repository it was asked about
+    pub(super) path: String,
     pub(super) busy_tag: u64,
-    pub(super) number: u64, // the pull request it was asked about, kept for when gh fails
+    pub(super) number: u64,
     pub(super) pr: crate::Result<PullRequest>,
 }
 
 impl Model {
-    /// open_prs asks gh for the selected repository's open pull requests, off
-    /// the UI thread: it goes to GitHub, and the finder stays usable while it
-    /// does.
     pub(super) fn open_prs(&mut self) -> Vec<Cmd> {
         let Some(it) = self.current().cloned().filter(|_| self.mode == Mode::Repos) else {
             return vec![];
@@ -50,8 +43,6 @@ impl Model {
         vec![
             busy,
             Cmd::Task(Box::new(move || {
-                // Where each one is checked out is git's to say, so it is
-                // asked here too, not once the answer is on the UI thread.
                 let prs = prs_of(&path).map(|prs| {
                     let wts = if prs.is_empty() {
                         vec![]
@@ -69,9 +60,6 @@ impl Model {
         ]
     }
 
-    /// show_prs puts the answer on screen, if the repository it is about is
-    /// still the one selected in the repository list; otherwise the user has
-    /// moved on.
     pub(super) fn show_prs(&mut self, msg: Prs) -> Vec<Cmd> {
         self.finish_busy(msg.busy_tag);
         let Some(it) = self
@@ -93,8 +81,6 @@ impl Model {
             Ok(prs) => prs,
         };
 
-        // gh lists the newest first; reversed, it lands at the bottom next to
-        // the cursor.
         let items = prs
             .iter()
             .rev()
@@ -106,17 +92,12 @@ impl Model {
             })
             .collect();
         self.replace_list(Mode::Prs, &it, items);
-        // A full page exactly means the next page cost nothing to hide:
-        // #42 not on the list is not "no such pull request".
         if prs.len() >= repo::PR_LIMIT {
             self.note = format!("showing the newest {} open pull requests", repo::PR_LIMIT);
         }
         self.load_status().into_iter().collect()
     }
 
-    /// view_pr is Enter in the pull request list: gh is asked for the one
-    /// pull request in full, off the UI thread, and the panel opens once it
-    /// is back. Checking it out is the panel's enter, not the list's.
     pub(super) fn view_pr(&mut self) -> Vec<Cmd> {
         let Some(it) = self.current().cloned() else {
             return vec![];
@@ -138,11 +119,6 @@ impl Model {
         ]
     }
 
-    /// show_pr_detail puts the panel up, if the answer is still about the
-    /// pull request list on screen. When gh fails the panel still opens, on
-    /// what the listing carried, with gh's reason where the title goes:
-    /// checking out is behind the panel's enter, and a failed read of the
-    /// comments must not take that away.
     pub(super) fn show_pr_detail(&mut self, msg: PrDetail) -> Vec<Cmd> {
         self.finish_busy(msg.busy_tag);
         if self.mode != Mode::Prs || msg.path != self.repo_at {
@@ -168,8 +144,6 @@ impl Model {
         vec![]
     }
 
-    /// pr_row is the pull request list's row for number. The panel goes by
-    /// number, not by the cursor: the cursor can move while gh is answering.
     pub(super) fn pr_row(&self, number: u64) -> Option<&Item> {
         if self.mode != Mode::Prs {
             return None;
@@ -177,8 +151,6 @@ impl Model {
         self.all.iter().find(|it| it.pr.number == number)
     }
 
-    /// check_out_shown_pr is Enter in a pull request's detail panel: the
-    /// panel comes down and the pull request it showed is checked out.
     pub(super) fn check_out_shown_pr(&mut self) -> Vec<Cmd> {
         let Some(n) = self.detail.as_ref().map(|d| d.subject.number()) else {
             return vec![];
@@ -190,8 +162,6 @@ impl Model {
         self.check_out_pr(it)
     }
 
-    /// check_out_pr goes to the pull request's worktree, having gh make it
-    /// first when there is none.
     fn check_out_pr(&mut self, it: Item) -> Vec<Cmd> {
         if !it.path.is_empty() {
             self.result = Outcome {
@@ -229,17 +199,12 @@ impl Model {
     }
 }
 
-/// with_checkouts pairs each of the pull requests of the repository at path
-/// with the worktree it is already checked out in, or "" when there is none.
 fn with_checkouts(
     tree: &Tree,
     path: &str,
     wts: Vec<Worktree>,
     prs: Vec<PullRequest>,
 ) -> Vec<(PullRequest, String)> {
-    // A pull request is already checked out when its branch is, or when
-    // its worktree is where gm files it. A fork's branch is matched by
-    // place only: its main is not the repository's main.
     let (mut by_branch, mut by_path) = (HashMap::new(), Vec::new());
     for w in wts {
         by_path.push(w.path.clone());
@@ -254,8 +219,6 @@ fn with_checkouts(
         }
         if let Some(r) = r.as_ref().filter(|_| repo::valid_branch(&p.checkout())) {
             let dir = tree.worktree_dir(r, &p.worktree_name());
-            // git prints the resolved path, the tree the configured one:
-            // under a symlinked root they differ as text.
             if by_path.iter().any(|w| repo::same_path(w, &dir)) {
                 return dir;
             }

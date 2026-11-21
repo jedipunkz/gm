@@ -16,16 +16,10 @@ use crate::repo::{Branch, Issue, PullRequest, Visit};
 pub struct Item {
     pub label: String,
     pub path: String,
-    pub score: f64,  // frecency; zero outside the repository list
-    pub seen: Visit, // the visit log; empty outside the repository list
-    /// branch is the branch a row of the branch list stands for. Such a row
-    /// has a path only when the branch is already checked out somewhere.
+    pub score: f64,
+    pub seen: Visit,
     pub branch: Branch,
-    /// pr is the pull request a row of the pull request list stands for, with
-    /// a path the same way.
     pub pr: PullRequest,
-    /// issue is the issue a row of the issue list stands for. An issue has no
-    /// worktree, so its path is always empty; enter opens its detail panel.
     pub issue: Issue,
 }
 
@@ -33,16 +27,11 @@ impl Model {
     pub(super) fn filter(&mut self) {
         self.matched.clear();
         self.note.clear();
-        // A command is not a query: the list stays as the query before it left it.
         let value = self.input.value();
         let q = split_input(value.trim())
             .map_or(value.trim().to_string(), |(q, _)| q)
             .trim()
             .to_string();
-        // The selection follows the item, not the row number, whenever the
-        // query is not making a new ranking statement — a command being typed,
-        // or the query being cleared. Clearing it has to hold the selection
-        // still, or there is no way to find a repository and then act on it.
         let hold = !self.view_stale && (q == self.query || q.is_empty());
         let held = if hold {
             self.view.get(self.cursor).copied()
@@ -50,8 +39,6 @@ impl Model {
             None
         };
         self.view_stale = false;
-        // The issue and pull request lists' qualifiers narrow them; the rest
-        // of the query is the pattern the rows are ranked on.
         let (pat, quals) = if matches!(self.mode, Mode::Issues | Mode::Prs) {
             split_qualifiers(&q)
         } else {
@@ -68,8 +55,6 @@ impl Model {
                 let lower = pat.to_lowercase();
                 for mt in find(&pat, &labels) {
                     let rel = labels[mt.index];
-                    // fuzzy finds candidates; where it landed the characters is its
-                    // own guess, and a literal hit beats that guess every time.
                     let pos = substring_match(rel, &lower).unwrap_or(mt.matched);
                     scored.push((mt.index, rank(rel, &pos, &lower)));
                     self.matched.insert(mt.index, char_indexes(rel, &pos));
@@ -84,11 +69,6 @@ impl Model {
                     }
                 }
             }
-            // Ascending, so the strongest match lands at the bottom; frecency
-            // breaks ties between equally good matches. The branch list has
-            // none to speak of, so a longer name that only carries the query
-            // inside it would stay even with the branch it names: "main"
-            // ranks above "fix/foo-main" by being the shorter match.
             let branches = self.mode == Mode::Branches;
             scored.sort_by(|a, b| {
                 a.1.total_cmp(&b.1)
@@ -113,9 +93,6 @@ impl Model {
         self.cursor = self.view.len().saturating_sub(1);
     }
 
-    /// keep_repo_filters applies status filters to the repository list only.
-    /// A row the scan has no answer for yet stays visible, as every row does
-    /// while the first scan is in flight: hiding it would claim it is clean.
     fn keep_repo_filters(&self, view: Vec<usize>) -> Vec<usize> {
         if self.mode != Mode::Repos || !(self.dirty_only || self.unpushed_only) {
             return view;
@@ -133,9 +110,6 @@ impl Model {
             .collect()
     }
 
-    /// keep_qualified keeps the issues or pull requests every qualifier
-    /// accepts: one of its values among the row's labels, assignees or
-    /// author, case aside.
     fn keep_qualified(&self, view: Vec<usize>, quals: &[Qualifier]) -> Vec<usize> {
         if quals.is_empty() {
             return view;
@@ -161,8 +135,6 @@ impl Model {
             .collect()
     }
 
-    /// scan_repo_states asks git about every repository at once, off the UI
-    /// thread. The result serves both the dirty and unpushed filters.
     pub(super) fn scan_repo_states(&self, busy_tag: u64) -> Cmd {
         let paths: Vec<String> = self.all.iter().map(|it| it.path.clone()).collect();
         let scan = self.backend.state_scan_of.clone();
@@ -171,8 +143,6 @@ impl Model {
         }))
     }
 
-    /// rescan_repo_state asks git again about the one repository a change in
-    /// the finder touched, so the status filters answer for it as it is now.
     pub(super) fn rescan_repo_state(&self, path: &str) -> Cmd {
         let path = path.to_string();
         let scan = self.backend.state_scan_of.clone();
@@ -184,8 +154,6 @@ impl Model {
         }))
     }
 
-    /// render_row draws one row, highlighting the characters the query
-    /// matched and, when selected, the whole line.
     pub(super) fn render_row(&self, i: usize, selected: bool, width: usize) -> Line<'static> {
         let idx = self.view[i];
         let it = &self.all[idx];
@@ -216,15 +184,11 @@ impl Model {
     }
 }
 
-/// Qualifier is one `label:`, `assignee:` or `author:` word of the issue or
-/// pull request list's query: the values it accepts, lowercased, any one of
-/// them enough.
 struct Qualifier {
     field: Field,
     any_of: Vec<String>,
 }
 
-/// Field is what of an issue or pull request a qualifier looks at.
 enum Field {
     Label,
     Assignee,
@@ -264,8 +228,6 @@ fn split_qualifiers(q: &str) -> (String, Vec<Qualifier>) {
     (rest.join(" "), quals)
 }
 
-/// char_indexes converts byte offsets into char positions, which is what
-/// matching and rendering use to track highlights.
 fn char_indexes(s: &str, byte_idx: &[usize]) -> Vec<usize> {
     s.char_indices()
         .enumerate()
@@ -274,10 +236,6 @@ fn char_indexes(s: &str, byte_idx: &[usize]) -> Vec<usize> {
         .collect()
 }
 
-/// highlight renders s truncated to width display cells, with the chars at
-/// hits in their own style. The tail is kept by default: the repository name
-/// matters more than the host. keep_head keeps the front instead, for rows
-/// that lead with what names them, like an issue's number.
 fn highlight(
     s: &str,
     hits: &[usize],
@@ -291,7 +249,6 @@ fn highlight(
     }
     let chars: Vec<char> = s.chars().collect();
     let cw = |c: char| Span::raw(c.to_string()).width();
-    // The kept chars are chars[lo..hi]; the cut side gets the ellipsis.
     let (mut lo, mut hi) = (0, chars.len());
     let cut = chars.iter().map(|&c| cw(c)).sum::<usize>() > width;
     if cut {
@@ -315,7 +272,6 @@ fn highlight(
         spans.push(Span::styled("…", base));
     }
     let is_hit: HashSet<usize> = hits.iter().copied().collect();
-    // Runs of same-styled chars, so one span covers many cells.
     let mut i = lo;
     while i < hi {
         let on = is_hit.contains(&i);

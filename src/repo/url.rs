@@ -1,8 +1,5 @@
 use crate::{Result, err};
 
-/// Url is the part of net/url gm needs. Every URL it builds or reads is
-/// scheme://[user@]host[:port]/path, so a full parser would only add ways for
-/// it to rewrite what the user typed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Url {
     pub scheme: String,
@@ -14,7 +11,7 @@ pub struct Url {
 
 impl Url {
     /// parse splits a URL that has a scheme. A missing scheme, or a host with
-    /// a character no host has, is an error, as it was for url.Parse.
+    /// a character no host has, is an error.
     pub fn parse(s: &str) -> Result<Url> {
         let (scheme, after) = s
             .split_once("://")
@@ -38,7 +35,6 @@ impl Url {
         })
     }
 
-    /// hostname is the host without its port.
     pub fn hostname(&self) -> &str {
         if let Some(v6) = self.host.strip_prefix('[') {
             return v6.split(']').next().unwrap_or("");
@@ -94,9 +90,6 @@ pub fn normalize_url(reference: &str, ssh: bool) -> Result<Url> {
     if u.hostname().is_empty() || u.path.trim_matches('/').is_empty() {
         return Err(err!("cannot make a repository URL out of {r:?}"));
     }
-    // Check the exact relative path that becomes directories under the root.
-    // In particular, rel_path_of removes .git first: "..git" must not turn
-    // into a parent segment after this boundary check.
     let rel = rel_path_of(&u);
     let segments: Vec<_> = rel.split('/').collect();
     if segments.iter().any(|seg| *seg == "." || *seg == "..") {
@@ -107,8 +100,6 @@ pub fn normalize_url(reference: &str, ssh: bool) -> Result<Url> {
             "{reference:?} must name a repository below its host and owner"
         ));
     }
-    // Nor does a space or a control character belong in a directory name:
-    // "acme/x --shallow" is a typo, not a repository called "x --shallow".
     if std::iter::once(u.hostname())
         .chain([u.path.as_str()])
         .any(|s| s.chars().any(|c| c.is_whitespace() || c.is_control()))
@@ -124,7 +115,6 @@ pub fn normalize_url(reference: &str, ssh: bool) -> Result<Url> {
     Ok(u)
 }
 
-/// has_scheme is ^[A-Za-z][A-Za-z0-9+.-]*://
 fn has_scheme(s: &str) -> bool {
     let Some(i) = s.find("://") else { return false };
     let mut cs = s[..i].chars();
@@ -132,9 +122,6 @@ fn has_scheme(s: &str) -> bool {
         && cs.all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
 }
 
-/// scp_like is ^(?:([^@/]+)@)?([^:/]+):(/?.+)$, the user@host:path form ssh
-/// and git accept: the user, the host and the path, the way that regular
-/// expression would have split them.
 fn scp_like(s: &str) -> Option<(Option<&str>, &str, &str)> {
     let host_and_path = |s: &str| -> Option<(usize, usize)> {
         let end = s.find([':', '/'])?;
@@ -152,8 +139,6 @@ fn scp_like(s: &str) -> Option<(Option<&str>, &str, &str)> {
     Some((None, &s[..end], &s[from..]))
 }
 
-/// is_host is ^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}(?::\d{1,5})?$: a name
-/// with a dot in it and a top-level label of letters, and maybe a port.
 fn is_host(s: &str) -> bool {
     let (name, port) = match s.split_once(':') {
         Some((n, p)) => (n, Some(p)),
@@ -180,7 +165,6 @@ fn is_host(s: &str) -> bool {
         && tld.chars().all(|c| c.is_ascii_alphabetic())
 }
 
-/// self_name is the GitHub account used for one-word refs like "gm create foo".
 fn self_name() -> Result<String> {
     if let Ok(out) = crate::repo::git_command()
         .args(["config", "--get", "github.user"])
@@ -295,9 +279,6 @@ mod tests {
         }
     }
 
-    // A "." or ".." in the host or the path would put the repository
-    // somewhere other than host/user/repo under the root, or outside the root
-    // altogether, once the path is joined onto it.
     #[test]
     fn normalize_url_refuses_dot_segments() {
         for bad in [
@@ -317,12 +298,9 @@ mod tests {
         ] {
             assert!(normalize_url(bad, false).is_err(), "{bad:?} was accepted");
         }
-        // Nor a space or a control character, which /get's flags used to
-        // turn into a directory named "x --shallow".
         for bad in ["acme/x --shallow", "acme/x\tb", "exa mple.com/u/r"] {
             assert!(normalize_url(bad, false).is_err(), "{bad:?} was accepted");
         }
-        // Dots inside a name are only a name.
         let u = normalize_url("u/foo..bar", false).unwrap();
         assert_eq!(rel_path_of(&u), "github.com/u/foo..bar");
         assert_eq!(
@@ -342,7 +320,6 @@ mod tests {
         ] {
             assert_eq!(browse_url(remote).unwrap(), want, "{remote:?}");
         }
-        // A git URL's port addresses the git service, not the web one.
         assert_eq!(
             browse_url("ssh://git@git.example.com:2222/g/p.git").unwrap(),
             "https://git.example.com/g/p"
@@ -376,17 +353,11 @@ mod tests {
     }
 }
 
-// Property tests. The example-based tests above cover the references someone
-// thought of; these re-check the invariants against inputs proptest invents,
-// garbled or not, so a hand-typed reference can never become a path that
-// walks out of the tree, silently or otherwise.
 #[cfg(test)]
 mod proptests {
     use super::*;
     use proptest::prelude::*;
 
-    /// prefix of the references users type: the schemes gm takes, the scp
-    /// form, or a bare host.
     fn prefix() -> impl Strategy<Value = String> + 'static {
         prop_oneof![
             Just("https://".to_string()),
@@ -396,7 +367,6 @@ mod proptests {
         ]
     }
 
-    /// host of the references users type, port and all.
     fn host() -> impl Strategy<Value = String> + 'static {
         prop_oneof![
             Just("github.com".to_string()),
@@ -406,9 +376,6 @@ mod proptests {
         ]
     }
 
-    /// path of the references users type. Dot segments, stray slashes and
-    /// their like ride in here on purpose: they are what the Ok branch has
-    /// to refuse.
     fn path() -> impl Strategy<Value = String> + 'static {
         prop_oneof![
             Just("/u/r.git".to_string()),
@@ -418,11 +385,7 @@ mod proptests {
         ]
     }
 
-    /// references a gm user types: every shorthand and URL the doc comment
-    /// names, and any garble proptest can invent instead.
     fn reference() -> impl Strategy<Value = String> + 'static {
-        // Weighted towards the forms gm is meant to accept, so the Ok
-        // branch — the one that produces a path — is hit often.
         prop_oneof![
             any::<String>(),
             any::<String>(),
@@ -432,12 +395,8 @@ mod proptests {
     }
 
     proptest! {
-        // 256 cases a head; every proptest in this module runs the same.
         #![proptest_config(ProptestConfig::with_cases(256))]
 
-        // Whatever comes in — a typed reference, a URL a remote reported —
-        // the doors every clone or removal walks through must answer with
-        // an Ok or an Err, never a panic.
         #[test]
         fn normalize_and_browse_never_panic(r in reference(), ssh in any::<bool>()) {
             let _ = normalize_url(&r, ssh);
@@ -445,11 +404,6 @@ mod proptests {
             let _ = Url::parse(&r);
         }
 
-        // When a reference is accepted, where it lands under the root is
-        // the relative path: the host and the path segments. No "." or ".."
-        // segment, no empty segment (a stray "//" in the reference would
-        // make a name gm never meant), nothing absolute, and no space or
-        // control character — the host segment is part of the same answer.
         #[test]
         fn an_accepted_reference_lands_safely_under_the_root(
             r in reference(),
@@ -487,8 +441,6 @@ mod proptests {
             }
         }
 
-        // A URL that parses, printed, parses again: display loses nothing
-        // the parser keeps.
         #[test]
         fn parse_round_trips(s in any::<String>()) {
             if let Ok(u) = Url::parse(&s) {
@@ -500,8 +452,6 @@ mod proptests {
             }
         }
 
-        // The only https URL a browser may be handed is the one browse_url
-        // builds.
         #[test]
         fn browse_url_is_https_when_it_succeeds(r in reference()) {
             if let Ok(url) = browse_url(&r) {

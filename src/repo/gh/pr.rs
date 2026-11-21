@@ -29,8 +29,6 @@ pub struct PullRequest {
 }
 
 impl PullRequest {
-    /// label is how the pull request reads in a list: number first, so typing
-    /// it finds the row, and a draft says so before its title.
     pub fn label(&self) -> String {
         let draft = if self.draft { "[draft] " } else { "" };
         format!("#{} {draft}{}", self.number, self.title)
@@ -62,23 +60,12 @@ impl PullRequest {
 /// have a component starting with a dot, so none can be filed here.
 pub const FORK_DIR: &str = ".forks";
 
-/// PR_LIMIT is how many open pull requests gh is asked for, newest first. A
-/// repository with more than this has the rest invisible: whoever shows the
-/// answer — and gets exactly a full page back — says so.
 pub(crate) const PR_LIMIT: usize = 100;
 
-/// gh talks to the network the way git's remote calls do, so it gets the same
-/// kind of deadline: a listing moves nothing but names, and a checkout
-/// downloads objects like a fetch. A blackholed network or a stalled auth
-/// helper is hung, not waiting, and the deadline turns it into an error.
 pub(crate) const GH_LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const GH_CHECKOUT_TIMEOUT: Duration = FETCH_TIMEOUT;
-/// The detail view moves nothing but words, so it waits as long as the
-/// listing does.
 const PR_VIEW_TIMEOUT: Duration = GH_LIST_TIMEOUT;
 
-/// PR_LIST_FIELDS is what the listing asks gh for; the detail view asks for
-/// the same and the comments, so both go through the same reader.
 const PR_LIST_FIELDS: &str = "number,title,headRefName,isDraft,isCrossRepository,author,\
      headRepositoryOwner,state,labels,assignees,url,body";
 
@@ -126,8 +113,6 @@ fn pull_request_with(gh: &OsStr, timeout: Duration, dir: &str, number: u64) -> R
         return Err(err!("gh pr view: not a pull request"));
     }
     let pr = read_pull_request(&v);
-    // The panel's enter checks out the pull request it shows, so an answer
-    // about another one is a defect, not something to show.
     if pr.number != number {
         return Err(err!("gh pr view: asked for #{n}, got #{}", pr.number));
     }
@@ -140,8 +125,6 @@ pub fn parse_pull_requests(out: &[u8]) -> Result<Vec<PullRequest>> {
     Ok(list.iter().map(read_pull_request).collect())
 }
 
-/// read_pull_request takes one pull request out of gh's JSON, whichever
-/// command it answered.
 fn read_pull_request(p: &serde_json::Value) -> PullRequest {
     let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
     let b = |k: &str| p.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
@@ -169,11 +152,9 @@ fn read_pull_request(p: &serde_json::Value) -> PullRequest {
 }
 
 /// check_out_pull_request has gh check the pull request out as a worktree at
-/// dir. gh names the branch and, for a fork, sets up where it pushes to. gh is
-/// the program to run, which a test replaces with a stand-in.
+/// dir. gh names the branch and, for a fork, sets up where it pushes to.
 pub fn check_out_pull_request(gh: &str, repo_dir: &str, dir: &str, number: u64) -> Result<()> {
     std::fs::create_dir_all(paths::dir(dir))?;
-    // Everything gh prints stays off the terminal: the finder is drawn there.
     let mut cmd = gh_command(OsStr::new(gh));
     cmd.args(["pr", "checkout", &number.to_string(), "--worktree", dir])
         .current_dir(repo_dir)
@@ -207,8 +188,6 @@ mod tests {
     use crate::testutil::{TempDir, git_repo};
     use std::os::unix::fs::PermissionsExt;
 
-    // gh's JSON is read, and a fork's branch is filed under its owner so a
-    // fork's main does not land on the repository's own.
     #[test]
     fn parse_pull_requests_reads_gh() {
         let out = br#"[
@@ -244,8 +223,6 @@ mod tests {
         );
     }
 
-    // gh pr view is asked for the listing's fields and the comments, and its
-    // answer is read the way the listing's is.
     #[test]
     fn pull_request_reads_gh_pr_view() {
         let tmp = TempDir::new();
@@ -271,8 +248,6 @@ echo '{"number":7,"title":"Add login","headRefName":"feat/login","state":"OPEN",
             format!("pr view 7 --json {PR_LIST_FIELDS},comments")
         );
 
-        // An answer about another pull request is refused: the panel's enter
-        // would check out the wrong one.
         let e = pull_request_with(OsStr::new(&gh), Duration::from_secs(10), &repo, 8).unwrap_err();
         assert!(e.0.contains("asked for #8, got #7"), "{e}");
 
@@ -288,8 +263,6 @@ echo '{"number":7,"title":"Add login","headRefName":"feat/login","state":"OPEN",
         p
     }
 
-    // A stand-in gh records its arguments and makes the worktree the way the
-    // real one would.
     #[test]
     fn check_out_pull_request_runs_gh() {
         let tmp = TempDir::new();
@@ -311,7 +284,6 @@ echo '{"number":7,"title":"Add login","headRefName":"feat/login","state":"OPEN",
             "feat/login"
         );
 
-        // A gh that fails says why, in its own words.
         let gh = script(
             &bin,
             "#!/bin/sh\necho 'could not find pull request' >&2\nexit 1\n",
@@ -323,9 +295,6 @@ echo '{"number":7,"title":"Add login","headRefName":"feat/login","state":"OPEN",
         assert!(!crate::testutil::exists(&paths::join(&root, "github.com")));
     }
 
-    // gh runs under a deadline like git's remote calls do: when it hangs, gm
-    // gets an error instead of a spinner forever, and nothing it started
-    // outlives the kill.
     #[test]
     fn pull_requests_times_out() {
         let tmp = TempDir::new();
@@ -349,8 +318,6 @@ echo '{"number":7,"title":"Add login","headRefName":"feat/login","state":"OPEN",
         );
     }
 
-    // gh answering with a failure says what gh said, in the same shape the
-    // rest of gm's errors take.
     #[test]
     fn pull_requests_say_what_gh_said() {
         let tmp = TempDir::new();
@@ -362,7 +329,6 @@ echo '{"number":7,"title":"Add login","headRefName":"feat/login","state":"OPEN",
         let e = pull_request_with(OsStr::new(&gh), Duration::from_secs(10), &repo, 7).unwrap_err();
         assert!(e.0.contains("not logged in"), "{e}");
 
-        // A gh that is not there at all is named as the thing to install.
         let e = gh_missing(std::io::Error::new(std::io::ErrorKind::NotFound, "no gh"));
         assert!(
             e.0.contains("gh is not installed"),

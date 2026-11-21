@@ -1,6 +1,3 @@
-//! The checkouts of a repository: listing them, dating them, and making
-//! and removing the ones gm keeps under its worktree directory.
-
 mod expire;
 mod strays;
 
@@ -17,8 +14,7 @@ use crate::repo::{
 use crate::{Result, err, paths};
 
 /// worktree_labels names checkouts for a warning, each with the work that
-/// would go with it: "feat/login (3 changed), fix/timeout". changed is
-/// changed_files, or what a test puts in its place.
+/// would go with it: "feat/login (3 changed), fix/timeout".
 pub fn worktree_labels(wts: &[Worktree], changed: impl Fn(&str) -> usize) -> String {
     worktree_labels_in("", wts, changed)
 }
@@ -44,13 +40,11 @@ pub fn worktree_labels_in(dir: &str, wts: &[Worktree], changed: impl Fn(&str) ->
         .join(", ")
 }
 
-/// Worktree is one checkout of a repository: the main one, plus whatever
-/// `git worktree add` created.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Worktree {
     pub path: String,
     pub branch: String, // short name, empty when HEAD is detached
-    pub head: String,   // commit hash
+    pub head: String,
     pub bare: bool,
     pub committed_at: i64, // unix seconds of the branch tip; 0 when unknown
     pub used_at: i64,      // unix seconds HEAD last moved in it, from its reflog; 0 when unknown
@@ -89,18 +83,12 @@ pub fn worktrees(dir: &str) -> Result<Vec<Worktree>> {
 }
 
 /// registered_worktrees is Git's checkout list without the branch and reflog
-/// metadata worktree details need. Status scans use this as their shared source
-/// so discovering worktrees costs only the list command.
+/// metadata worktree details need.
 pub fn registered_worktrees(dir: &str) -> Result<Vec<Worktree>> {
     let out = git_in(dir, &["worktree", "list", "--porcelain"])?;
     Ok(parse_worktrees(&out))
 }
 
-/// used_times is when HEAD last moved in each linked worktree of the
-/// repository at dir — its creation, a checkout, a commit — keyed by each
-/// canonical worktree path. It reads only the reflog tail Git keeps beside the
-/// repository, so a broken .git link still has a time without reading its full
-/// history. The main worktree is not among them.
 fn used_times(dir: &str) -> HashMap<PathBuf, i64> {
     let Ok(common) = git_in(
         dir,
@@ -129,7 +117,6 @@ fn used_times(dir: &str) -> HashMap<PathBuf, i64> {
         .collect()
 }
 
-/// last_reflog_line reads only the tail needed to find the last reflog entry.
 fn last_reflog_line(path: &str) -> Option<String> {
     const TAIL: u64 = 4096;
     let mut file = std::fs::File::open(path).ok()?;
@@ -149,8 +136,6 @@ thread_local! {
     static WORKTREE_PATH_CANONICALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// canonicalize_worktree_path resolves one path used to join Git's worktree
-/// list with its administrative reflog metadata.
 fn canonicalize_worktree_path(path: &Path) -> std::io::Result<PathBuf> {
     #[cfg(test)]
     WORKTREE_PATH_CANONICALIZATIONS.with(|count| count.set(count.get() + 1));
@@ -164,11 +149,6 @@ fn reflog_time(line: &str) -> Option<i64> {
     head.split_whitespace().rev().nth(1)?.parse().ok()
 }
 
-/// branch_dates is when each checkout's branch was last committed to. One
-/// call for all of them, so dating the checkouts costs a process and not one
-/// per checkout, and it asks only for the branches that are checked out: a
-/// repository with thousands of branches is no more work than one with three.
-/// A detached HEAD has no branch to ask about and stays undated.
 fn branch_dates(dir: &str, list: &[Worktree]) -> HashMap<String, i64> {
     let refs: Vec<String> = list
         .iter()
@@ -229,20 +209,13 @@ pub fn parse_worktrees(out: &str) -> Vec<Worktree> {
 /// WORKTREE_ROOT is where gm keeps the checkouts it creates:
 ///
 ///   <root>/.worktrees/<host>/<user>/<repo>/<branch>
-///
-/// The dot matters. A worktree has a .git file, so is_repo answers yes for
-/// one, and a worktree in the open would be listed as a repository and
-/// refused by gm migrate. find_repos never descends into a dotted directory,
-/// so this one stays out of the way.
 pub const WORKTREE_ROOT: &str = ".worktrees";
 
-/// worktrees_dir is where gm keeps every checkout of one repository.
 pub fn worktrees_dir(r: &Repo) -> String {
     paths::join(&paths::join(&r.root, WORKTREE_ROOT), &r.rel)
 }
 
 impl Tree {
-    /// worktree_dir is where a branch's checkout of r belongs.
     pub fn worktree_dir(&self, r: &Repo, branch: &str) -> String {
         paths::join(&worktrees_dir(r), branch)
     }
@@ -327,7 +300,6 @@ pub fn other_worktrees(r: &Repo) -> Vec<Worktree> {
     other_worktrees_of(&r.path())
 }
 
-/// other_worktrees_of is the same thing for a path, which is all describe has.
 pub fn other_worktrees_of(dir: &str) -> Vec<Worktree> {
     exclude_main_worktree(worktrees(dir).unwrap_or_default(), dir)
 }
@@ -340,14 +312,13 @@ pub fn live_worktrees_of(dir: &str) -> Vec<Worktree> {
 }
 
 /// other_live_worktrees_of is the registered list without the main checkout.
-/// Status and the finder use it so both see exactly the paths Git reports.
 pub fn other_live_worktrees_of(dir: &str) -> Vec<Worktree> {
     exclude_main_worktree(live_worktrees_of(dir), dir)
 }
 
 fn exclude_main_worktree(wts: Vec<Worktree>, dir: &str) -> Vec<Worktree> {
     wts.into_iter()
-        .filter(|w| !same_path(&w.path, dir)) // the main worktree is the repository
+        .filter(|w| !same_path(&w.path, dir))
         .collect()
 }
 
@@ -373,7 +344,6 @@ detached
 ";
         let got = parse_worktrees(out);
         assert_eq!(got.len(), 3, "{got:?}");
-        // The main worktree comes first, the way git reports it.
         assert_eq!(
             (got[0].path.as_str(), got[0].branch.as_str()),
             ("/home/u/ghq/github.com/u/agx", "main")
@@ -486,8 +456,6 @@ detached
         );
     }
 
-    // A tag named like the checked-out branch made git shorten the branch to
-    // "heads/main", and the worktree went undated.
     #[test]
     fn worktrees_date_a_branch_with_a_tag_of_its_name() {
         let tmp = TempDir::new();
@@ -498,8 +466,6 @@ detached
         assert!(got[0].committed_at > 0, "{got:?}");
     }
 
-    // A branch with commits nothing else has stays when its worktree goes,
-    // however the worktree was removed.
     #[test]
     fn remove_worktree_keeps_an_unmerged_branch() {
         let base = TempDir::new();

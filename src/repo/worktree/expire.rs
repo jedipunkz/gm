@@ -1,6 +1,3 @@
-//! Expiry: the worktrees whose HEAD has not moved for a given age, and
-//! taking them away with their merged branches.
-
 use crate::repo::{Repo, Worktree, remove_worktree_and_branch, same_path};
 use crate::{Result, err};
 
@@ -23,8 +20,6 @@ pub fn expired(dir: &str, wts: &[Worktree], days: i64, now: i64) -> Vec<Worktree
         .collect()
 }
 
-/// Expiry is what expire did: the worktrees it removed, how many of their
-/// branches went with them, and a line for each worktree git refused.
 #[derive(Debug, Default)]
 pub struct Expiry {
     pub removed: Vec<String>,
@@ -63,9 +58,6 @@ mod tests {
         }
     }
 
-    // Against real git: the age comes from the worktree's own reflog, the
-    // main worktree never expires, and expire takes a clean worktree with its
-    // merged branch while git keeps the one with work in it.
     #[test]
     fn expire_removes_idle_worktrees_and_keeps_work() {
         let base = TempDir::new();

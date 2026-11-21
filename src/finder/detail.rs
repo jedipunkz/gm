@@ -1,5 +1,3 @@
-//! The shared full-screen detail panel for issues and pull requests.
-
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -13,12 +11,9 @@ use super::{Cmd, Model};
 use crate::plural;
 use crate::repo::{Comment, Issue, PullRequest};
 
-// Width changes wrapping; note changes the line displayed in place of the title.
 pub(super) type CachedLines = (usize, String, Arc<Vec<Line<'static>>>);
 
 impl Model {
-    /// scroll_detail moves the panel's window, one line or a pane's worth,
-    /// never further than the end of what the issue wraps to.
     pub(super) fn scroll_detail(&mut self, page: bool, down: bool) {
         let avail = self.detail_avail();
         let by = if page { avail } else { 1 };
@@ -36,16 +31,12 @@ impl Model {
         }
     }
 
-    /// close_detail takes the panel down, back to the list it came from.
     pub(super) fn close_detail(&mut self) {
         self.over = Overlay::None;
         self.detail = None;
         self.note.clear();
     }
 
-    /// open_detail_in_browser hands the issue's or pull request's URL to the
-    /// platform's browser, on a thread the way the remote key does, since a
-    /// browser that starts slowly must not hold the panel.
     pub(super) fn open_detail_in_browser(&mut self) -> Vec<Cmd> {
         let Some(d) = self.detail.as_ref() else {
             return vec![];
@@ -62,10 +53,6 @@ impl Model {
             None
         }))]
     }
-    /// copy_detail_url puts the issue's or pull request's URL on the
-    /// clipboard the terminal remembers, and says so: a terminal that ignores
-    /// OSC52 stays silent on its own side, so the note is the only
-    /// confirmation there is.
     pub(super) fn copy_detail_url(&mut self) -> Vec<Cmd> {
         let Some(d) = self.detail.as_ref() else {
             return vec![];
@@ -82,20 +69,14 @@ impl Model {
         vec![]
     }
 
-    /// panel_w is the width the detail panel's lines wrap to: the whole
-    /// screen, a single cell of air either side.
     fn panel_w(&self) -> usize {
         (self.w as usize).saturating_sub(2).max(20)
     }
 
-    /// detail_avail is how many rows of the panel show at once: the whole
-    /// screen, the hint line's last row beside.
     fn detail_avail(&self) -> usize {
         (self.h as usize).saturating_sub(2).max(4)
     }
 
-    /// detail_lines is every line the panel holds: the issue or pull request
-    /// on top, then its body, then its comments after it.
     fn detail_lines(&self, w: usize) -> Arc<Vec<Line<'static>>> {
         let Some(detail) = self.detail.as_ref() else {
             return Arc::new(vec![]);
@@ -126,8 +107,6 @@ impl Model {
         let subject = &d.subject;
 
         let mut out = Vec::new();
-        // A note — a copy's answer, a browser opening — is the one word the
-        // user is waiting for, so it goes where the title usually is.
         if !self.note.is_empty() {
             out.push(Line::from(Span::styled(self.note.clone(), st.dirty)));
         } else {
@@ -159,9 +138,6 @@ impl Model {
                 field(&mut out, "author", &p.author, st.remote);
                 field(&mut out, "labels", &p.labels.join(", "), st.branch);
                 field(&mut out, "branch", &super::pr::pr_branch(p), st.branch);
-                // Where enter goes is what the panel is opened to decide, so
-                // it says whether that is a worktree there already or one gh
-                // has yet to make.
                 let at = self
                     .pr_row(p.number)
                     .map(|it| it.path.clone())
@@ -177,8 +153,6 @@ impl Model {
 
         if !subject.body().is_empty() {
             out.push(Line::default());
-            // The description carries its own frame, the way the comments
-            // each do; the screen holds no box around the lot.
             let body = md::render(subject.body(), w.saturating_sub(6), st);
             out.extend(framed("description", &body, w, st));
         }
@@ -191,8 +165,6 @@ impl Model {
         }
         for c in comments {
             out.push(Line::default());
-            // Each comment comes in its own Rounded frame, the author as
-            // its title.
             let who = if c.author.is_empty() {
                 "comment"
             } else {
@@ -208,9 +180,6 @@ impl Model {
         out
     }
 
-    /// render_detail draws the issue or pull request full screen with no
-    /// frame of its own: the text, the description's and the comments'
-    /// frames inside, and one hint line naming the keys along the bottom.
     pub(super) fn render_detail(&self, buf: &mut ratatui::buffer::Buffer) {
         let area = *buf.area();
         let w = self.panel_w();
@@ -224,16 +193,11 @@ impl Model {
         );
         let hint = detail_hints(&self.st, w, is_pr);
         let avail = self.detail_avail();
-        // The text window leaves the hint line its row; it keeps to the end
-        // of what fits, so a tall one folds under the window, never the
-        // hint.
         let max = lines.len().saturating_sub(avail);
         let scroll = self.detail.as_ref().map(|d| d.scroll.min(max)).unwrap_or(0);
         let shown = lines[scroll..(scroll + avail).min(lines.len())].to_vec();
 
         Clear.render(area, buf);
-        // One cell of air at either edge keeps the text off the very
-        // corners without a frame around the lot.
         let text = Rect::new(area.x + 1, area.y, w as u16, avail as u16).intersection(area);
         Paragraph::new(shown).render(text, buf);
         let row = area.y + area.height.saturating_sub(1);
@@ -242,10 +206,6 @@ impl Model {
     }
 }
 
-/// detail_hints is the panel's hint line, one row at the bottom: its keys
-/// and what each does, the tail dropped when the pane is too narrow, the
-/// way the finder's own hint line is. A pull request's panel leads with
-/// enter, since checking it out is what the panel is opened to decide.
 fn detail_hints(st: &super::theme::Styles, w: usize, is_pr: bool) -> Line<'static> {
     const SEP: &str = "  ·  ";
     let mut keys = Vec::with_capacity(7);
@@ -276,10 +236,6 @@ fn detail_hints(st: &super::theme::Styles, w: usize, is_pr: bool) -> Line<'stati
     Line::from(spans)
 }
 
-/// framed draws one comment in its own rounded frame: the author as its
-/// title, the body's Markdown between the sides, and the pane's edge on the
-/// right where the frame ends. The rows are exactly one pane wide, so the
-/// frame's corners line up.
 pub(super) fn framed(
     title: &str,
     body: &[Line<'static>],
@@ -290,8 +246,6 @@ pub(super) fn framed(
     if w < 8 {
         return rows;
     }
-    // The title rides the top rail, where a named worktree row does; an
-    // author too long for the rail loses the rail's decoration first.
     let mut top = vec![Span::styled("╭", st.border)];
     let title_w = Span::raw(title).width();
     if w >= title_w + 6 {
@@ -323,9 +277,6 @@ pub(super) fn framed(
     rows
 }
 
-/// Detail is the one issue or pull request the panel is showing, held until
-/// the key that closes it, with the scroll its window is at and the Markdown
-/// lines shared by draws of the same width and note.
 #[derive(Clone)]
 pub struct Detail {
     pub(super) subject: Subject,
@@ -338,9 +289,6 @@ thread_local! {
     pub(super) static DETAIL_LINE_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// Subject is what the detail panel is about. Both kinds share the panel's
-/// body, comments, scrolling and URL keys; the fields under the title and
-/// what enter does are each kind's own.
 #[derive(Clone)]
 pub enum Subject {
     Issue(Issue),
@@ -362,8 +310,6 @@ impl Subject {
         }
     }
 
-    /// state is the tag after the title. A draft says so in place of OPEN,
-    /// the way its list row does.
     fn state(&self) -> &str {
         match self {
             Subject::Issue(i) => &i.state,
@@ -393,7 +339,6 @@ impl Subject {
         }
     }
 
-    /// noun is what the notes call it.
     fn noun(&self) -> &'static str {
         match self {
             Subject::Issue(_) => "issue",

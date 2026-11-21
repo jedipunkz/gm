@@ -1,7 +1,3 @@
-//! The commands that only read the tree: list and status answer what is
-//! where, root says where the tree is, and shell prints the key binding that
-//! opens the finder.
-
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
@@ -26,8 +22,6 @@ impl App<'_> {
             .collect();
         hits.sort_by(|a, b| a.rel.cmp(&b.rel));
 
-        // Uniqueness is a property of the whole tree, not of the query: a
-        // name that only the hits agree on would still be ambiguous to gm rm.
         let short: HashMap<String, String> = if p.on("unique") {
             repos
                 .iter()
@@ -47,7 +41,6 @@ impl App<'_> {
                 writeln!(out, "{}", r.rel)?;
             }
         }
-        // One check for the lot: a closed pipe or a full disk shows up here.
         out.flush()?;
         Ok(())
     }
@@ -65,10 +58,6 @@ impl App<'_> {
         Ok(())
     }
 
-    /// status answers "what did I leave unfinished?" across the whole tree. It
-    /// never fetches: ahead and behind are counted against the refs already on
-    /// disk, so it is fast and works offline, and behind is as stale as the
-    /// last fetch was.
     pub(super) fn status(&mut self, args: &[String]) -> Result<()> {
         let p = parse(self, "gm status", STATUS_FLAGS, args)?;
         let (dirty_only, unpushed, all) = (p.on("dirty"), p.on("unpushed"), p.on("a"));
@@ -82,8 +71,6 @@ impl App<'_> {
             repo::status_of,
         );
 
-        // The name column is as wide as the widest name that survives the
-        // filter, so a run that prints two rows is not padded for a hundred.
         let keep: Vec<&(String, String)> = rows
             .iter()
             .filter(|(_, path)| {
@@ -105,10 +92,6 @@ impl App<'_> {
         Ok(())
     }
 
-    /// everything lists repositories and the worktrees Git registers for them,
-    /// as (name, path). The main checkout keeps the root's spelling; linked
-    /// worktrees use Git's path, resolved against the configured roots for a
-    /// short name.
     fn everything(&self, full: bool) -> Vec<(String, String)> {
         let mut rows: Vec<(String, String)> = Vec::new();
         let mut seen = std::collections::HashSet::<PathBuf>::new();
@@ -135,8 +118,6 @@ impl App<'_> {
         rows
     }
 
-    /// worktree_name is a root-relative name when Git's canonical path is
-    /// inside one of the roots, and the full path when it is outside them.
     fn worktree_name(&self, path: &str) -> String {
         let path =
             std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(paths::clean(path)));
@@ -166,15 +147,12 @@ impl App<'_> {
             _ => return Err(err!("unsupported shell {sh:?} (fish, zsh, bash)")),
         };
         let k = config::parse_chord(&self.cfg.launch_key, DEFAULT_LAUNCH_KEY)?;
-        // The snippets bind a control character, which is all a plain Ctrl
-        // chord is. Printing a binding that cannot fire is worse than refusing.
         if !k.plain() {
             return Err(err!(
                 "launch_key cannot be {}: use a plain Ctrl chord, such as ctrl-g",
                 k.display
             ));
         }
-        // Bound in the shell, these would take Enter or Tab over.
         if let Some((_, key)) = config::DISGUISED.iter().find(|(c, _)| *c == k.letter) {
             return Err(err!(
                 "launch_key cannot be {}: a terminal sends it as {key}",
@@ -191,14 +169,11 @@ impl App<'_> {
     }
 }
 
-/// summarize says what is unfinished in as few words as it takes.
 fn summarize(s: &State) -> String {
     let mut parts = Vec::new();
     if s.dirty > 0 {
         parts.push(plural(s.dirty, "changed file", "changed files"));
     }
-    // Unpushed is the count the default listing works from; naming it covers
-    // every branch, so " ahead" is said only when there is no other count.
     if s.unpushed > 0 {
         parts.push(format!("{} unpushed", s.unpushed));
     } else if s.ahead > 0 {
@@ -207,8 +182,6 @@ fn summarize(s: &State) -> String {
     if s.behind > 0 {
         parts.push(format!("{} behind", s.behind));
     }
-    // Worth saying once the row is printed: those commits have nowhere to go.
-    // It is not a reason to print one, or every local-only repository would.
     if !s.upstream {
         parts.push("no upstream".into());
     }
@@ -218,11 +191,8 @@ fn summarize(s: &State) -> String {
     parts.join(", ")
 }
 
-/// DEFAULT_LAUNCH_KEY is the shell key gm binds when gm.toml says nothing.
 const DEFAULT_LAUNCH_KEY: &str = "ctrl-g";
 
-// The bindings gm prints. {{key}} is the chord's letter and {{name}} its human
-// spelling; each shell writes the Ctrl prefix its own way.
 const FISH: &str = r#"# gm: {{name}} jumps to a repository. Add to ~/.config/fish/config.fish:
 #   gm shell fish | source
 function __gm_jump

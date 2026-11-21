@@ -1,7 +1,3 @@
-//! Everything about locally cloned repositories: where the roots are, what
-//! lives under them, and how a shorthand reference turns into a URL and a
-//! directory.
-
 mod deadline;
 mod gh;
 mod git;
@@ -42,11 +38,10 @@ pub use worktree::{
 use crate::config::Config;
 use crate::{Result, err, paths};
 
-/// Repo is a locally cloned repository living under one of the roots.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Repo {
-    pub root: String, // root directory it was found under
-    pub rel: String,  // slash-separated path relative to root, e.g. "github.com/x-motemen/ghq"
+    pub root: String,
+    pub rel: String, // slash-separated path relative to root, e.g. "github.com/x-motemen/ghq"
 }
 
 impl Repo {
@@ -55,9 +50,6 @@ impl Repo {
     }
 }
 
-/// Tree is the set of roots gm keeps repositories in, resolved once and then
-/// carried around: every command works against the same answer, and gm.toml
-/// is read a single time per run.
 #[derive(Debug, Clone, Default)]
 pub struct Tree {
     pub roots: Vec<String>, // most preferred first
@@ -68,15 +60,10 @@ impl Tree {
     ///
     ///   $GM_ROOT > gm.toml root > git config gm.root >
     ///   $GHQ_ROOT > git config ghq.root > ~/ghq
-    ///
-    /// The ghq fallbacks make gm a drop-in replacement for an existing ghq
-    /// tree.
     pub fn open(cfg: &Config) -> Result<Tree> {
         Tree::open_with(cfg, |k| std::env::var(k).ok())
     }
 
-    /// open_with is open reading the environment through env, so a test can
-    /// hand it one.
     pub fn open_with(cfg: &Config, env: impl Fn(&str) -> Option<String>) -> Result<Tree> {
         let set = |k: &str| env(k).filter(|v| !v.is_empty());
         let split = |v: String| {
@@ -104,20 +91,16 @@ impl Tree {
         })
     }
 
-    /// primary is the root new repositories are cloned into.
     pub fn primary(&self) -> &str {
         &self.roots[0]
     }
 
-    /// path_for is where a URL lands under the primary root.
     pub fn path_for(&self, rel: &str) -> String {
         paths::join(self.primary(), rel)
     }
 
     /// existing_paths finds every root a repository at rel already lives
-    /// under, most preferred first: one repository can be cloned under two
-    /// roots, and a caller that would clone or update one of them has to say
-    /// which instead of picking silently.
+    /// under, most preferred first.
     pub fn existing_paths(&self, rel: &str) -> Vec<String> {
         self.roots
             .iter()
@@ -126,9 +109,6 @@ impl Tree {
             .collect()
     }
 
-    /// refuse_existing errors when a repository at rel already lives under any
-    /// root: creating it under the primary one would make a second, empty
-    /// copy of it.
     pub fn refuse_existing(&self, rel: &str) -> Result<()> {
         let existing = self.existing_paths(rel);
         if existing.is_empty() {
@@ -137,7 +117,6 @@ impl Tree {
         Err(err!("{rel} already exists: {}", existing.join(", ")))
     }
 
-    /// list walks every root and returns the repositories found.
     pub fn list(&self) -> Vec<Repo> {
         let mut repos = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -156,15 +135,13 @@ impl Tree {
         repos
     }
 
-    /// contains reports whether path already lives under one of the roots.
     pub fn contains(&self, path: &str) -> bool {
         self.roots
             .iter()
             .any(|root| path == root || path.starts_with(&under(root)))
     }
 
-    /// at names the repository whose directory is exactly path, which is what
-    /// the finder hands back: it picked a row, so there is nothing to resolve.
+    /// at names the repository whose directory is exactly path.
     pub fn at(&self, path: &str) -> Option<Repo> {
         let path = paths::clean(path);
         self.roots.iter().find_map(|root| {
@@ -219,14 +196,11 @@ impl Tree {
             return Err(err!("{dst} already exists and is not empty"));
         }
         std::fs::create_dir_all(&dst)?;
-        // Quietly: this runs under the finder as well as from the command line.
         if let Err(e) = git_quiet(&["-C", &dst, "init", "--quiet"]) {
             prune_empty_parents(self.primary(), paths::dir(&dst));
             return Err(e);
         }
         if let Err(e) = git_quiet(&["-C", &dst, "remote", "add", "origin", &u.to_string()]) {
-            // A repository without the origin it was asked for is not what
-            // was created, so it does not stay.
             remove_all(&dst)?;
             prune_empty_parents(self.primary(), paths::dir(&dst));
             return Err(e);
@@ -238,7 +212,6 @@ impl Tree {
     }
 }
 
-/// under is the prefix every path inside dir starts with.
 fn under(dir: &str) -> String {
     format!("{}/", dir.trim_end_matches('/'))
 }
@@ -269,7 +242,6 @@ fn expand_all(roots: &[String]) -> Result<Vec<String>> {
 
 const VCS_DIRS: [&str; 3] = [".git", ".hg", ".svn"];
 
-/// is_repo reports whether dir is the top of a working copy.
 pub fn is_repo(dir: &str) -> bool {
     // .git is a file, not a directory, inside a worktree or submodule.
     VCS_DIRS
@@ -283,10 +255,6 @@ pub fn is_repo(dir: &str) -> bool {
 /// has not cloned into yet is normal, and an unreadable entry is skipped.
 pub fn find_repos(dir: &str) -> Vec<String> {
     let mut found = Vec::new();
-    // The walk does not follow symlinks below the root, as WalkDir did. The
-    // root itself is followed: a root that is a symlink — ~/ghq pointing at
-    // another disk — is a setup, not a mistake, and metadata keeps the
-    // repositories' paths in the spelling the user configured.
     if std::fs::metadata(dir).is_ok_and(|m| m.is_dir()) {
         walk(&paths::clean(dir), true, &mut found);
     }
@@ -307,14 +275,10 @@ fn walk(dir: &str, top: bool, found: &mut Vec<String>) {
     let mut names: Vec<String> = entries
         .flatten()
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        // ponytail: a name that is not UTF-8 is carried lossily and then not
-        // found again; convert paths to OsString throughout if that matters.
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     names.sort();
     for n in names {
-        // dir is already clean and a directory name never holds a slash or
-        // dots, so the child needs no cleaning pass of its own.
         let child = if dir.ends_with('/') {
             format!("{dir}{n}")
         } else {
@@ -332,11 +296,6 @@ pub fn matches(rel: &str, query: &str, exact: bool) -> bool {
         return true;
     }
     if !exact {
-        // Smart case, as in fd/rg/fzf: no uppercase letter in the query means
-        // match without case, and an uppercase letter means match as written.
-        // Tree::resolve refuses ambiguity before anything is removed or moved,
-        // so the looser branch can only turn "no match" into a match, never
-        // the wrong removal.
         if !query.chars().any(char::is_uppercase) {
             return rel.to_lowercase().contains(&query.to_lowercase());
         }
@@ -348,8 +307,7 @@ pub fn matches(rel: &str, query: &str, exact: bool) -> bool {
 
 /// shortest_unique gives each repository the shortest trailing path that no
 /// other repository in the set shares ("ghq", else "x-motemen/ghq", else the
-/// full path). Suffixes are counted as slices of rel, so only the keys a map
-/// has not seen yet cost a fresh string.
+/// full path).
 pub fn shortest_unique(repos: &[Repo]) -> Vec<String> {
     let mut rel_count = std::collections::HashMap::<String, usize>::new();
     let mut count = std::collections::HashMap::<String, usize>::new();
@@ -372,8 +330,6 @@ pub fn shortest_unique(repos: &[Repo]) -> Vec<String> {
             if rel_count[&r.rel] > 1 {
                 return r.path();
             }
-            // The suffixes are rel's trailing parts, shortest first: the name,
-            // then name and user, up to the whole path.
             let starts: Vec<usize> = std::iter::once(0)
                 .chain(r.rel.match_indices('/').map(|(i, _)| i + 1))
                 .collect();
@@ -399,7 +355,6 @@ pub fn prune_empty_parents(root: &str, mut dir: String) {
     }
 }
 
-/// remove_all is os.RemoveAll: what is not there is already removed.
 fn remove_all(p: &str) -> Result<()> {
     match std::fs::remove_dir_all(p) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(err!("remove {p}: {e}")),
@@ -420,14 +375,6 @@ pub fn delete(r: &Repo) -> Result<Vec<String>> {
     let mut left = vec![];
     for w in other_worktrees(r) {
         if remove_worktree(&r.path(), &w.path, true).is_err() {
-            // The repository is going anyway, so git's bookkeeping about this
-            // checkout does not need to survive; the directory does not
-            // either. This is the path a worktree git has lost track of
-            // takes, and it must not block the removal. Only a checkout
-            // inside gm's own worktree directory may be deleted by hand,
-            // though: git's entry decides where a checkout is, and nothing
-            // ties it to the tree, so the warning the caller showed named a
-            // path the reader could not have guessed.
             if is_under(&w.path, &worktrees_dir(r)) {
                 remove_all(&w.path)?;
             } else {
@@ -460,12 +407,6 @@ pub fn same_path(a: &str, b: &str) -> bool {
     }
 }
 
-/// is_under reports whether p names a directory inside dir, both resolved the
-/// way same_path resolves them. A symlinked checkout resolves to wherever it
-/// points, which is the honest answer about where deleting it would reach.
-/// dir is gone while delete is working, so a missing dir means outside: the
-/// one worktree git refused is left where it is rather than deleted on a
-/// guess.
 pub(crate) fn is_under(p: &str, dir: &str) -> bool {
     match (std::fs::canonicalize(p), std::fs::canonicalize(dir)) {
         (Ok(rp), Ok(rd)) => rp != rd && rp.starts_with(&rd),
@@ -486,7 +427,7 @@ mod tests {
             ("ghq", true, true),
             ("x-motemen/ghq", true, true),
             ("github.com/x-motemen/ghq", true, true),
-            ("motemen/ghq", true, false), // exact means whole segments
+            ("motemen/ghq", true, false),
             ("motemen", false, true),
             ("nope", false, false),
             ("", false, true),
@@ -495,8 +436,6 @@ mod tests {
         }
     }
 
-    // Smart case, as in fd/rg/fzf: the query reads without case unless it
-    // carries an uppercase letter, which keeps the exact spelling.
     #[test]
     fn matches_lowercase_queries_without_case() {
         for (rel, query, want) in [
@@ -519,7 +458,6 @@ mod tests {
         }
     }
 
-    // -e means byte-exact even when the query has no uppercase letter.
     #[test]
     fn matches_exact_queries_by_case() {
         for (rel, query, want) in [
@@ -573,11 +511,9 @@ mod tests {
         let cfg = |body: &str| crate::config::parse(body).unwrap();
         let none = |_: &str| None;
 
-        // The config file, with ~ expanded.
         let tree = Tree::open_with(&cfg("root = \"~/code\""), none).unwrap();
         assert_eq!(tree.roots, vec![paths::join(&home, "code")]);
 
-        // GM_ROOT still wins.
         let env = |k: &str| (k == "GM_ROOT").then(|| "/from-env".to_string());
         assert_eq!(
             Tree::open_with(&cfg("root = \"/from-file\""), env)
@@ -586,7 +522,6 @@ mod tests {
             "/from-env"
         );
 
-        // A broken config stops gm.
         assert!(Tree::open_with(&cfg("root = 42"), none).is_err());
     }
 
@@ -613,8 +548,6 @@ mod tests {
         assert!(Tree::open_with(&cfg("root = \"src\""), |_| None).is_err());
     }
 
-    // A real directory tree: repositories are found, nested ones are not
-    // descended into, and an ambiguous query is refused.
     #[test]
     fn list_and_resolve() {
         let root = TempDir::new();
@@ -622,7 +555,7 @@ mod tests {
             "github.com/acme/alpha",
             "github.com/acme/bravo",
             "github.com/other/alpha",
-            "github.com/acme/alpha/vendor/nested", // inside a repository: skipped
+            "github.com/acme/alpha/vendor/nested",
         ] {
             mkdir(&root.join(&format!("{rel}/.git")));
         }
@@ -661,17 +594,14 @@ mod tests {
         );
     }
 
-    // The walk gm migrate -r relies on: every working copy is found once,
-    // nothing inside one is descended into, dotted directories are left alone,
-    // and a missing directory is not an error.
     #[test]
     fn find_repos_and_contains() {
         let dir = TempDir::new();
         for rel in [
             "projects/alpha",
             "projects/nested/bravo",
-            "projects/alpha/vendor/inner", // inside a repository: not reported
-            ".cache/charlie",              // dotted: not descended into
+            "projects/alpha/vendor/inner",
+            ".cache/charlie",
         ] {
             mkdir(&dir.join(&format!("{rel}/.git")));
         }
@@ -691,14 +621,12 @@ mod tests {
             (dir.join("projects"), true),
             (dir.join("projects/alpha"), true),
             (dir.join(".cache/charlie"), false),
-            (dir.join("projects-other"), false), // a prefix, not a parent
+            (dir.join("projects-other"), false),
         ] {
             assert_eq!(tree.contains(&path), want, "{path}");
         }
     }
 
-    // A root that is itself a symlink is a setup, not a mistake: the walk
-    // follows it, and the repositories keep the spelling the user configured.
     #[test]
     fn find_repos_follows_a_symlinked_root() {
         let dir = TempDir::new();
@@ -709,7 +637,6 @@ mod tests {
             vec![dir.join("link/github.com/acme/alpha")]
         );
 
-        // A symlink below the root is still not descended into.
         std::os::unix::fs::symlink(
             dir.join("real/github.com/acme"),
             dir.join("real/github.com/elsewhere"),
@@ -743,8 +670,6 @@ mod tests {
         );
     }
 
-    // The bug where a removed repository left its checkouts behind, pointing
-    // at a .git that was gone.
     #[test]
     fn delete_takes_the_worktrees() {
         let base = TempDir::new();
@@ -760,8 +685,6 @@ mod tests {
         let timeout = tree.worktree_dir(&r, "fix/timeout");
         add_worktree(&base.path(), &r.path(), &login, "feat/login").unwrap();
         add_worktree(&base.path(), &r.path(), &timeout, "fix/timeout").unwrap();
-        // One of them has work in it: the repository is going regardless, so
-        // this must not stop the removal half way.
         write(&paths::join(&login, "scratch.txt"), "wip\n");
         assert_eq!(other_worktrees(&r).len(), 2);
 
@@ -777,8 +700,6 @@ mod tests {
         }
     }
 
-    // A checkout git can no longer remove must not block the removal, or the
-    // repository can never be deleted.
     #[test]
     fn delete_with_a_worktree_git_lost_track_of() {
         let base = TempDir::new();
@@ -792,17 +713,12 @@ mod tests {
         }
         .worktree_dir(&r, "feat/login");
         add_worktree(&base.path(), &r.path(), &dir, "feat/login").unwrap();
-        // Break git's link to it, the way deleting .git by hand would.
         std::fs::remove_file(paths::join(&dir, ".git")).unwrap();
 
         delete(&r).unwrap();
         assert!(!exists(&r.path()) && !exists(&dir));
     }
 
-    // The bug behind the security label: the checkout paths come from the
-    // repository's own .git, and nothing ties them to gm's tree. An entry
-    // naming a directory outside the worktree directory must be left where it
-    // is, not deleted with the repository.
     #[test]
     fn delete_leaves_a_checkout_outside_the_worktree_dir() {
         let base = TempDir::new();
@@ -817,8 +733,6 @@ mod tests {
         };
         let login = tree.worktree_dir(&r, "feat/login");
         add_worktree(&base.path(), &r.path(), &login, "feat/login").unwrap();
-        // Point the entry at a directory outside the tree, the way a copied
-        // or hand-edited repository would.
         let victim = paths::join(&other.path(), "victim");
         mkdir(&victim);
         write(&paths::join(&victim, "keep.txt"), "keep\n");
@@ -840,8 +754,6 @@ mod tests {
         );
     }
 
-    // A path inside gm's tree that resolves elsewhere is outside the same way:
-    // symlinks are resolved on both sides, exactly where deleting would land.
     #[test]
     fn delete_leaves_a_symlink_that_resolves_outwards() {
         let base = TempDir::new();
@@ -856,8 +768,6 @@ mod tests {
         };
         let login = tree.worktree_dir(&r, "feat/login");
         add_worktree(&base.path(), &r.path(), &login, "feat/login").unwrap();
-        // The entry names a symlink inside gm's worktree directory whose
-        // target is outside the tree.
         let victim = paths::join(&other.path(), "victim");
         mkdir(&victim);
         write(&paths::join(&victim, "keep.txt"), "keep\n");
@@ -869,14 +779,9 @@ mod tests {
         let left = delete(&r).unwrap();
         assert!(!exists(&r.path()), "the repository went");
         assert!(exists(&victim) && exists(&paths::join(&victim, "keep.txt")));
-        // The entry itself, named as git's list reported it. The symlink is
-        // gm's own and goes with the worktree directory; its target is what
-        // must survive, and does.
         assert_eq!(left, vec![evil]);
     }
 
-    // retarget_worktree points the one worktree entry a repository holds at
-    // dir, as git's gitdir file does.
     fn retarget_worktree(repo_dir: &str, dir: &str) {
         let admin = paths::join(repo_dir, ".git/worktrees");
         let mut names: Vec<String> = std::fs::read_dir(&admin)
@@ -890,8 +795,6 @@ mod tests {
         write(&paths::join(&entry, "gitdir"), &format!("{dir}/.git\n"));
     }
 
-    // The bug where gm create made an empty second copy under the primary
-    // root of a repository that lived under another one.
     #[test]
     fn create_refuses_a_repository_under_another_root() {
         let base = TempDir::new();
@@ -919,9 +822,6 @@ mod tests {
         assert!(!exists(&r.path()));
     }
 
-    // The field the details pane draws. The main worktree is the repository
-    // itself and must not be in it, which on macOS means comparing
-    // /private/var with /var.
     #[test]
     fn describe_reports_the_other_worktrees() {
         let base = TempDir::new();
@@ -945,8 +845,6 @@ mod tests {
         let got = describe(&r.path()).worktrees;
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].label(), "feat/login");
-        // The date is what ranks the checkouts in the details pane, so an
-        // undated worktree would silently sort to the bottom.
         assert!(got[0].committed_at > 0);
     }
 }

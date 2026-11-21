@@ -1,6 +1,3 @@
-//! The CLI's tests: one run per behavior, both streams read back. They live
-//! apart from the code the way the finder's do.
-
 use super::*;
 use ratatui::text::Span;
 
@@ -8,7 +5,6 @@ use crate::paths;
 use crate::repo::Repo;
 use crate::testutil::{TempDir, exists, git, git_repo, mkdir, write};
 
-/// Run is one command run against a tree, with both streams captured.
 struct Run {
     out: String,
     err: String,

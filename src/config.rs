@@ -1,6 +1,3 @@
-//! gm's own settings file, and nothing else: where the repositories live,
-//! which theme the finder wears, and which keys it answers to.
-
 use crate::{Error, Result, err, paths};
 
 /// Config mirrors gm.toml.
@@ -15,8 +12,6 @@ use crate::{Error, Result, err, paths};
 /// issue_key    = "ctrl-["      # the finder key that lists issues
 /// remote_key   = "ctrl-alt-b"  # the finder key that opens the remote
 /// ```
-///
-/// Root stays untyped because it takes either form; roots resolves it.
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub root: Option<toml::Value>,
@@ -29,7 +24,6 @@ pub struct Config {
     pub remote_key: String,
 }
 
-/// KEYS are every setting gm.toml may hold.
 const KEYS: [&str; 8] = [
     "root",
     "theme",
@@ -53,8 +47,7 @@ pub fn path() -> Result<String> {
 }
 
 /// load reads gm.toml. A missing file is the default Config, but a file that
-/// cannot be parsed is an error: silently cloning into the wrong tree is worse
-/// than refusing to run.
+/// cannot be parsed is an error.
 pub fn load() -> Result<Config> {
     load_from(&path()?)
 }
@@ -67,15 +60,11 @@ pub fn load_from(path: &str) -> Result<Config> {
     }
 }
 
-/// parse reads the body of a gm.toml.
 pub fn parse(body: &str) -> Result<Config> {
     let table: toml::Table = body
         .parse()
         .map_err(|e: toml::de::Error| Error(e.to_string().trim_end().to_string()))?;
 
-    // A key gm does not know is a typo or a setting that has been renamed.
-    // Ignoring it silently leaves the user staring at a file that says one
-    // thing while gm does another.
     let unknown: Vec<String> = table
         .keys()
         .filter(|k| !KEYS.contains(&k.as_str()))
@@ -138,10 +127,10 @@ impl Config {
 /// finder's own esc key does.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Chord {
-    pub letter: char,    // lowercase, e.g. 'w'
-    pub alt: bool,       // Ctrl-Alt-<letter>
-    pub shift: bool,     // Ctrl-Shift-<letter>
-    pub display: String, // "Ctrl-Alt-B", for help text and comments
+    pub letter: char,
+    pub alt: bool,
+    pub shift: bool,
+    pub display: String,
 }
 
 impl Chord {
@@ -176,8 +165,6 @@ impl Chord {
 /// so binding one takes that key over, or never fires at all.
 pub const DISGUISED: [(char, &str); 3] = [('m', "Enter"), ('i', "Tab"), ('j', "Enter (line feed)")];
 
-/// MODIFIERS are the optional prefixes accepted after the required ctrl, in
-/// any order: ctrl-alt-shift-b and ctrl-shift-alt-b are the same chord.
 const ALT: [&str; 6] = ["alt-", "alt+", "a-", "meta-", "meta+", "m-"];
 const SHIFT: [&str; 3] = ["shift-", "shift+", "s-"];
 
@@ -197,7 +184,7 @@ pub fn parse_chord(s: &str, fallback: &str) -> Result<Chord> {
     let mut t = ["ctrl-", "ctrl+", "c-", "^"]
         .iter()
         .find_map(|p| lower.strip_prefix(p))
-        .unwrap_or(""); // no ctrl, so nothing left that could be a chord
+        .unwrap_or("");
 
     let mut c = Chord::default();
     loop {
@@ -262,7 +249,6 @@ mod tests {
         );
     }
 
-    // A broken config must stop gm rather than silently send clones elsewhere.
     #[test]
     fn a_broken_config_is_an_error() {
         for (name, body) in [
@@ -270,8 +256,6 @@ mod tests {
             ("wrong type", "root = 42\n"),
             ("mixed list", "root = [\"/a\", 7]\n"),
             ("empty list", "root = []\n"),
-            // A key gm does not know is a typo or a renamed setting; either
-            // way the file says one thing and gm would do another.
             ("unknown key", "root = \"/a\"\nkeybind = \"ctrl-g\"\n"),
             ("typo", "root = \"/a\"\nthemes = \"dracula\"\n"),
             ("a key that is not a string", "theme = 3\n"),
@@ -332,7 +316,6 @@ mod tests {
                 "{s:?}"
             );
         }
-        // The empty string means "unset" and takes the fallback.
         assert_eq!(parse_chord("", "ctrl-g").unwrap().letter, 'g');
 
         for bad in ["r", "ctrl-", "ctrl-rr", "alt-r", "ctrl-1", "f5"] {
@@ -342,8 +325,6 @@ mod tests {
 
     #[test]
     fn parse_chord_with_alt() {
-        // The chord the remote key defaults to. Alt travels as an ESC prefix,
-        // so unlike Ctrl-Shift it reaches a program on an ordinary terminal.
         for s in [
             "ctrl-alt-b",
             "ctrl+alt+b",
@@ -363,7 +344,6 @@ mod tests {
                 "{s:?}"
             );
         }
-        // Both modifiers, in either order, are the same chord.
         for s in ["ctrl-alt-shift-b", "ctrl-shift-alt-b"] {
             let c = parse_chord(s, "ctrl-w").unwrap();
             assert!(
@@ -371,7 +351,6 @@ mod tests {
                 "{s:?}: {c:?}"
             );
         }
-        // Alt without Ctrl is not a chord gm binds.
         for bad in ["alt-b", "a-b", "ctrl-alt-", "ctrl-alt-bb"] {
             assert!(parse_chord(bad, "ctrl-w").is_err(), "{bad:?}");
         }
@@ -380,8 +359,6 @@ mod tests {
 
     #[test]
     fn parse_chord_with_bracket() {
-        // The issue key's default: ctrl-[, the byte ESC arrives as. The
-        // uppercased display keeps the bracket whole.
         for s in ["ctrl-[", "ctrl+[", "Ctrl-[", "c-[", "^["] {
             let c = parse_chord(s, "ctrl-e").unwrap();
             assert_eq!(
@@ -395,7 +372,6 @@ mod tests {
                 "{s:?}"
             );
         }
-        // A bracket is the one punctuation the chords take.
         for bad in ["[", "ctrl-]", "ctrl-2"] {
             assert!(parse_chord(bad, "ctrl-e").is_err(), "{bad:?}");
         }
@@ -418,17 +394,11 @@ mod tests {
     }
 }
 
-// Property tests: gm.toml is the user's file, so parse and parse_chord can
-// be handed anything, and must answer with an Ok or an Err, never a panic.
-// (Which chords must then be refused — Enter and Tab in disguise — is judged
-// by the finder and the shell snippets, and is checked at their level.)
 #[cfg(test)]
 mod proptests {
     use super::*;
     use proptest::prelude::*;
 
-    /// a TOML value: the string every setting is, the list root may be, and
-    /// the bare word or number root must refuse.
     fn value() -> impl Strategy<Value = String> + 'static {
         prop_oneof![
             "[a-zA-Z0-9 ~/._-]{0,12}".prop_map(|s| format!("\"{s}\"")),
@@ -439,8 +409,6 @@ mod proptests {
         ]
     }
 
-    /// one line of a gm.toml: a known key with a value of every kind it may
-    /// take, or a key gm does not know at all.
     fn line() -> impl Strategy<Value = String> + 'static {
         prop_oneof![
             Just(KEYS).prop_flat_map(|keys| {
@@ -454,8 +422,6 @@ mod proptests {
         ]
     }
 
-    /// chord spellings, the ways the docs write the modifiers in any order,
-    /// beside any garble proptest can invent.
     fn spelling() -> impl Strategy<Value = String> + 'static {
         prop_oneof![
             any::<String>(),
@@ -467,12 +433,8 @@ mod proptests {
     }
 
     proptest! {
-        // 256 cases a head; every proptest in this module runs the same.
         #![proptest_config(ProptestConfig::with_cases(256))]
 
-        // A gm.toml the user wrote a garble into, lines in any order, values
-        // of any kind, keys gm does not know: read it as a config or an
-        // error, never a panic.
         #[test]
         fn parse_never_panics_on_a_garbled_body(
             lines in proptest::collection::vec(line(), 0..4),
@@ -480,15 +442,11 @@ mod proptests {
             let _ = parse(&lines.concat());
         }
 
-        // Nor on any text at all: a pasted file, a rewritten one, anything.
         #[test]
         fn parse_never_panics_on_any_text(body in any::<String>()) {
             let _ = parse(&body);
         }
 
-        // No spelling, garbled or not, may panic parse_chord. And a chord
-        // that parses answers to the key it prints: key prints what
-        // parse_chord reads back, unchanged.
         #[test]
         fn a_bound_chord_answers_to_what_it_parses_from(
             s in spelling(),

@@ -1,7 +1,3 @@
-// The browser half of the finder demo. It follows src/finder closely
-// enough to show how gm behaves — the ranking is a port of score.rs and the
-// list hangs from the prompt the same way — but it only ever moves between
-// rows of sample data: nothing is cloned, created, removed or opened.
 import type { DemoCommit, DemoRepo } from "./demo";
 
 interface Payload {
@@ -13,7 +9,7 @@ interface Payload {
 interface Item {
   label: string;
   path: string;
-  score: number; // frecency; zero for worktrees
+  score: number;
   repo: DemoRepo;
   branch: string;
   dirty: number;
@@ -21,7 +17,6 @@ interface Item {
   commits: DemoCommit[];
 }
 
-// ---- score.rs ----------------------------------------------------------
 
 const bonusBoundary = 8;
 const bonusConsecutive = 6;
@@ -69,9 +64,6 @@ function substringMatch(text: string, lowerQuery: string): number[] | null {
   return [...lowerQuery].map((_, i) => at + i);
 }
 
-// The candidate finder: every query character, in order, anywhere in the
-// text. gm uses sahilm/fuzzy for this step; a left-to-right scan is the same
-// idea and finds the same candidates.
 function subsequence(text: string, lowerQuery: string): number[] | null {
   const lower = text.toLowerCase();
   const out: number[] = [];
@@ -85,7 +77,6 @@ function subsequence(text: string, lowerQuery: string): number[] | null {
   return out;
 }
 
-// ---- command.rs ---------------------------------------------------------
 
 const COMMANDS: { name: string; arg: string; what: string }[] = [
   { name: "/help", arg: "", what: "show this list" },
@@ -101,7 +92,6 @@ const COMMANDS: { name: string; arg: string; what: string }[] = [
   { name: "/unpushed", arg: "", what: "show only repositories with unpushed commits" },
 ];
 
-// A command is the whole input, or follows the query after ";": "gm;/browse".
 function splitInput(s: string): [query: string, cmd: string, ok: boolean] {
   if (s.trimStart().startsWith("/")) return ["", s, true];
   const i = s.indexOf(";");
@@ -109,7 +99,6 @@ function splitInput(s: string): [query: string, cmd: string, ok: boolean] {
 }
 const isCommand = (s: string) => splitInput(s)[2];
 
-// ---- helpers ------------------------------------------------------------
 
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -121,7 +110,6 @@ function browseURL(remote: string): string {
   return remote.replace(/\.git$/, "");
 }
 
-// ---- the finder ---------------------------------------------------------
 
 export function mount(root: HTMLElement) {
   const data: Payload = JSON.parse(root.querySelector("script[type='application/json']")!.textContent!);
@@ -133,8 +121,6 @@ export function mount(root: HTMLElement) {
   const select = root.querySelector<HTMLSelectElement>(".theme-pick select")!;
   const screen = root.querySelector<HTMLElement>(".screen")!;
 
-  // Kept in step with --rows in FinderDemo.astro: the list draws as many rows
-  // as the pane is tall.
   const ROWS = 22;
 
   const repoItems: Item[] = data.repos
@@ -188,8 +174,6 @@ export function mount(root: HTMLElement) {
         st.matched.set(i, pos);
         view.push(i);
       });
-      // Ascending, so the strongest match lands at the bottom; frecency
-      // breaks ties between equally good matches.
       view.sort((a, b) => score.get(a)! - score.get(b)! || st.all[a].score - st.all[b].score);
     }
     if (st.mode === "repos") {
@@ -205,7 +189,6 @@ export function mount(root: HTMLElement) {
     st.cursor = at >= 0 ? at : view.length - 1;
   }
 
-  // ---- drawing ----
 
   let charW = 0;
   function measure() {
@@ -282,8 +265,6 @@ export function mount(root: HTMLElement) {
     }
     const label = it.commits.length === 1 ? "last commit" : `last ${it.commits.length} commits`;
     html += `<div>${span("lbl", label)}</div>`;
-    // A commit that does not fit folds under itself, indented, the way
-    // wrapSegs lays it out in the finder.
     for (const c of it.commits)
       html += `<div class="commit">${span("hash", c.hash)}${refs(c)} ${span("subject", c.subject)}</div>`;
     infoEl.innerHTML = html;
@@ -351,7 +332,6 @@ export function mount(root: HTMLElement) {
     drawOverlay();
   }
 
-  // ---- actions ----
 
   function say(note: string, cls = "dirty") {
     st.note = note;
@@ -366,7 +346,6 @@ export function mount(root: HTMLElement) {
     const it = current();
     if (!it || st.mode !== "repos") return;
     const r = it.repo;
-    // Reversed, so git's first worktree — the main one — lands at the bottom.
     const wts: Item[] = [
       ...(r.worktrees ?? []).slice().reverse().map((w) => ({
         label: w.label,
@@ -491,13 +470,11 @@ export function mount(root: HTMLElement) {
     st.note = "";
   }
 
-  // ---- wiring ----
 
   let touched = false;
   let autoplay: ReturnType<typeof setTimeout> | undefined;
   const touch = () => {
     touched = true;
-    // Whatever the demo was about to type next, the visitor is driving now.
     clearTimeout(autoplay);
   };
 
@@ -573,15 +550,11 @@ export function mount(root: HTMLElement) {
   filter();
   draw();
 
-  // The demo types a query, rests on the result long enough to read it, wipes
-  // itself and goes round again — so a visitor who looks up a moment too late
-  // still sees it happen. It stops for good the first time they touch it, and
-  // never runs at all for someone who asked for less motion.
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const script = "api";
-  const typeDelay = 220; // between keystrokes
-  const readDelay = 5000; // on the finished query, before starting over
-  const startDelay = 900; // after it scrolls into view
+  const typeDelay = 220;
+  const readDelay = 5000;
+  const startDelay = 900;
 
   let i = 0;
   const tick = () => {
@@ -603,8 +576,6 @@ export function mount(root: HTMLElement) {
     }, readDelay);
   };
 
-  // Only while it is on screen: a loop left running behind a scrolled-past
-  // page is work nobody sees.
   const io = new IntersectionObserver((entries) => {
     if (touched) {
       io.disconnect();

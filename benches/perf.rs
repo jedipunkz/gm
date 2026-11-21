@@ -1,7 +1,3 @@
-//! divan benchmarks for gm's hot paths: the work every run or every
-//! keystroke does. Run with `make bench`, or cargo bench --bench perf.
-//! The bench profile is optimized, so the timings are release-grade.
-
 fn main() {
     divan::main();
 }
@@ -35,8 +31,6 @@ fn branch_refs() -> &'static BranchRefs {
     })
 }
 
-// The benchmark data mirrors a real ghq tree: a handful of hosts, dozens of
-// users, tens of repositories each, names the way GitHub spells them.
 const NAMES: [&str; 20] = [
     "ghq",
     "miniecs",
@@ -86,7 +80,6 @@ fn strs() -> &'static Vec<&'static str> {
     S.get_or_init(|| labels().iter().map(String::as_str).collect())
 }
 
-/// repos builds the Repository slice shortest_unique works on.
 fn repos() -> &'static Vec<Repo> {
     static R: OnceLock<Vec<Repo>> = OnceLock::new();
     R.get_or_init(|| {
@@ -107,7 +100,6 @@ fn finder_find_typical_query() {
 
 #[divan::bench]
 fn finder_find_wide_query() {
-    // One character: nearly everything matches, ranking does the work.
     score::find("u", strs());
 }
 
@@ -164,8 +156,6 @@ fn config_parse_toml() {
     .unwrap();
 }
 
-// The filesystem walk fixture: a tree of hosts/users/repositories with .git
-// directories and stray files, built once and left in the OS temp dir.
 fn tree() -> &'static str {
     static T: OnceLock<String> = OnceLock::new();
     T.get_or_init(|| {

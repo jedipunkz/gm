@@ -118,8 +118,6 @@ const payload = JSON.stringify({
     display: grid;
     grid-template-columns: 3fr auto 2fr;
     gap: 0 10px;
-    /* Tall enough for the details pane to finish: name, six fields and three
-       commits, the last of which the old height cut off entirely. */
     height: calc(var(--row) * var(--rows));
   }
   .list {
@@ -146,9 +144,6 @@ const payload = JSON.stringify({
     .info {
       display: none;
     }
-    /* Without the details beside it, the list alone need not be this tall.
-       It hangs from the prompt, so the rows that go are the ones furthest
-       from the cursor. */
     .term {
       --rows: 12;
     }
@@ -258,8 +253,6 @@ const payload = JSON.stringify({
   .term :global(.subject) {
     color: var(--t-row);
   }
-  /* One commit stays one entry: the continuations are set in from the hash,
-     and a line breaks at a space unless a single word is wider than the pane. */
   .term :global(.commit) {
     padding-left: 2ch;
     text-indent: -2ch;

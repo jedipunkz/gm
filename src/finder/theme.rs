@@ -2,26 +2,22 @@ use ratatui::style::{Color, Modifier, Style};
 
 use crate::{Result, err};
 
-/// Theme is every color the finder paints with. Adding a theme means adding
-/// one entry to THEMES; nothing else in the UI names a color. The site reads
-/// this table at build time, so keep one theme per entry in this shape.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Theme {
-    pub bg_hi: &'static str,   // selected row background
-    pub border: &'static str,  // box border and the column divider
-    pub comment: &'static str, // unselected rows, labels, dim text
-    pub fg: &'static str,      // selected row text
-    pub blue: &'static str,    // repository name
-    pub cyan: &'static str,    // remote
-    pub magenta: &'static str, // branch
-    pub green: &'static str,   // path, clean status
-    pub yellow: &'static str,  // commit
-    pub orange: &'static str,  // matched characters, visit count
-    pub red: &'static str,     // dirty status
-    pub light: bool,           // the terminal background is light
+    pub bg_hi: &'static str,
+    pub border: &'static str,
+    pub comment: &'static str,
+    pub fg: &'static str,
+    pub blue: &'static str,
+    pub cyan: &'static str,
+    pub magenta: &'static str,
+    pub green: &'static str,
+    pub yellow: &'static str,
+    pub orange: &'static str,
+    pub red: &'static str,
+    pub light: bool,
 }
 
-/// DEFAULT_THEME is what gm wears when gm.toml says nothing.
 pub const DEFAULT_THEME: &str = "tokyonight";
 
 const DARK: bool = false;
@@ -102,45 +98,42 @@ pub fn lookup_theme(name: &str) -> Result<Theme> {
         .ok_or_else(|| err!("unknown theme {name:?} (have {})", theme_names().join(", ")))
 }
 
-/// theme_names lists every theme, sorted.
 pub fn theme_names() -> Vec<&'static str> {
     let mut names: Vec<&str> = THEMES.iter().map(|(n, _)| *n).collect();
     names.sort();
     names
 }
 
-/// Styles is the theme turned into the styles the view draws with. The model
-/// owns one, so nothing about the palette is global state.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Styles {
-    pub row: Style,     // an unselected row: the comment colour, lifted
-    pub row_sel: Style, // the selected row
-    pub hit: Style,     // matched characters
-    pub hit_sel: Style, // ...inside the selected row
-    pub marker: Style,  // the ▸ cursor
+    pub row: Style,
+    pub row_sel: Style,
+    pub hit: Style,
+    pub hit_sel: Style,
+    pub marker: Style,
     pub divider: Style,
-    pub label: Style, // the field names in the details pane
+    pub label: Style,
     pub name: Style,
     pub path: Style,
     pub remote: Style,
     pub branch: Style,
-    pub commit: Style,     // a commit hash
-    pub subject: Style,    // a commit subject
-    pub ref_head: Style,   // HEAD in the decorations
-    pub ref_local: Style,  // a local branch
-    pub ref_remote: Style, // a remote-tracking branch
-    pub ref_tag: Style,    // a tag
-    pub punct: Style,      // the parentheses and commas between them
+    pub commit: Style,
+    pub subject: Style,
+    pub ref_head: Style,
+    pub ref_local: Style,
+    pub ref_remote: Style,
+    pub ref_tag: Style,
+    pub punct: Style,
     pub clean: Style,
     pub dirty: Style,
     pub visits: Style,
     pub dim: Style,
-    pub border: Style,   // the rounded boxes
-    pub help: Style,     // the hint line's prose
-    pub help_key: Style, // the key names inside it
+    pub border: Style,
+    pub help: Style,
+    pub help_key: Style,
     pub prompt: Style,
-    pub text: Style,       // what is typed into the box
-    pub suggestion: Style, // the rest of a command the box offers
+    pub text: Style,
+    pub suggestion: Style,
 }
 
 /// rgb reads a #rrggbb colour. An unparseable one is the terminal's own.
@@ -162,13 +155,6 @@ fn fg(hex: &str) -> Style {
     Style::new().fg(rgb(hex))
 }
 
-/// ROW_LIFT is how far an unselected row is pulled from the comment colour
-/// towards the foreground: far enough to read, not so far that the selected
-/// row stops standing out. It works in both polarities, since a light theme's
-/// foreground is the darker of the two.
-///
-/// ponytail: one global factor, give a theme its own row colour if this lands
-/// badly on it.
 pub const ROW_LIFT: f64 = 0.35;
 
 /// blend mixes two #rrggbb colours, t running from a (0) to b (1). An
@@ -188,7 +174,6 @@ pub fn blend(a: &str, b: &str, t: f64) -> String {
 }
 
 impl Theme {
-    /// styles builds the drawing styles for a theme.
     pub fn styles(&self) -> Styles {
         let bold = Modifier::BOLD;
         let on = |hex: &str| fg(hex).bg(rgb(self.bg_hi)).add_modifier(bold);
@@ -199,21 +184,11 @@ impl Theme {
             hit_sel: on(self.orange),
             marker: on(self.blue),
             divider: fg(self.border),
-            // The field names are the quiet half of the pane: the comment
-            // colour, in bold. The values keep the theme's own colours, so the
-            // pane alternates dim grey and colour down its length and the
-            // fields come apart — a label as bright as its value left both
-            // competing and neither reading as a heading. Bold, because the
-            // comment colour on its own is the dimmest thing the theme has.
             label: fg(self.comment).add_modifier(bold),
             name: fg(self.blue).add_modifier(bold),
             path: fg(self.green),
             remote: fg(self.cyan),
             branch: fg(self.magenta),
-            // The commit block stays inside one cool family — the theme's blue
-            // and cyan, lightened towards the foreground or darkened towards
-            // the comment colour. Brightness carries the distinction between
-            // the parts, so five different hues do not compete down the pane.
             commit: fg(&blend(self.blue, self.comment, 0.35)),
             subject: fg(&blend(self.comment, self.fg, ROW_LIFT)),
             ref_head: fg(self.cyan).add_modifier(bold),
@@ -243,8 +218,6 @@ mod tests {
     fn every_theme_is_complete() {
         for name in theme_names() {
             let t = lookup_theme(name).unwrap();
-            // A missing colour renders as the terminal default, which reads as
-            // a hole in the palette.
             for (field, v) in [
                 ("bg_hi", t.bg_hi),
                 ("border", t.border),
@@ -278,9 +251,6 @@ mod tests {
         assert_eq!(blend("#000000", "#ffffff", 1.0), "#ffffff");
     }
 
-    // The contrast ladder in the list: an unselected row sits between the
-    // comment colour and the foreground, closer to the comment colour, so the
-    // selected row stays the brightest thing in the list.
     #[test]
     fn unselected_rows_are_lifted() {
         let dist = |a: &str, b: &str| {

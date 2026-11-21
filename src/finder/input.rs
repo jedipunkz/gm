@@ -1,18 +1,14 @@
-//! The two widgets the finder borrowed from bubbles: a one-line text box that
-//! completes what is typed from a list of suggestions, and a spinner.
-
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
 use super::Key;
 
-/// Input is the box the query and the slash commands are typed into.
 #[derive(Debug, Clone, Default)]
 pub struct Input {
     value: Vec<char>,
-    pos: usize, // the cursor, in chars
+    pos: usize,
     suggestions: Vec<String>,
-    matched: Vec<String>, // the suggestions the value is a prefix of
+    matched: Vec<String>,
 }
 
 impl Input {
@@ -32,8 +28,6 @@ impl Input {
         self.update_matches();
     }
 
-    /// update_matches keeps the suggestions the value starts, ignoring case.
-    /// An empty box suggests nothing.
     fn update_matches(&mut self) {
         let v = self.value().to_lowercase();
         self.matched = if v.is_empty() {
@@ -47,16 +41,11 @@ impl Input {
         };
     }
 
-    /// completion is the part of the suggestion past what was typed: what
-    /// Tab adds to the value, though Tab also gives the typed part the
-    /// suggestion's case.
     fn completion(&self) -> Option<String> {
         let s: Vec<char> = self.matched.first()?.chars().collect();
         (s.len() > self.value.len()).then(|| s[self.value.len()..].iter().collect())
     }
 
-    /// update edits the box for one key press, the way bubbles' textinput did
-    /// with its default key map.
     pub fn update(&mut self, k: &Key) {
         if let Some(c) = k.text {
             self.value.insert(self.pos, c);
@@ -92,9 +81,6 @@ impl Input {
                 self.pos = 0;
             }
             "ctrl+k" => self.value.truncate(self.pos),
-            // The suggestion replaces what was typed rather than being added
-            // after it: matching ignores case and command names do not, so
-            // /CR has to become /create, not /CReate.
             "tab" if self.completion().is_some() => {
                 self.value = self.matched[0].chars().collect();
                 self.pos = self.value.len();
@@ -135,9 +121,6 @@ impl Input {
         i
     }
 
-    /// view draws the prompt, the value with the cursor on it, and the rest of
-    /// the command the box offers. The cursor is drawn rather than the
-    /// terminal's own, and it does not blink.
     pub fn view(
         &self,
         prompt: &str,
@@ -169,11 +152,10 @@ impl Input {
     }
 }
 
-/// Spinner is bubbles' MiniDot: what shows gm is waiting and has not hung.
 #[derive(Debug, Clone, Default)]
 pub struct Spinner {
     pub frame: usize,
-    pub tag: u64, // a tick carries the tag it was issued with; a stale one is dropped
+    pub tag: u64,
 }
 
 pub const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -221,54 +203,39 @@ mod tests {
         i.set_suggestions(vec!["/help".into(), "/worktrees".into()]);
         assert_eq!(i.completion().as_deref(), Some("rktrees"));
         i.update(&Key::named("tab"));
-        // The suggestion replaces what was typed, so the box holds the name
-        // as the command spells it.
         assert_eq!(i.value(), "/worktrees");
-        // An empty box offers nothing.
         let mut e = Input::default();
         e.set_suggestions(vec!["/help".into()]);
         assert_eq!(e.completion(), None);
     }
 
-    // The keys a word editor answers to: cutting at the cursor, jumping by
-    // word, and a key nothing answers to changing nothing.
     #[test]
     fn cuts_and_jumps_by_word() {
         let mut i = typed("a b c");
-        // alt+d at the end has nothing ahead, so nothing goes.
         i.update(&Key::named("alt+d"));
         assert_eq!(i.value(), "a b c");
         i.update(&Key::named("ctrl+a"));
-        // From the start, the word ahead is cut off.
         i.update(&Key::named("alt+d"));
         assert_eq!(i.value(), " b c");
         i.update(&Key::named("ctrl+e"));
-        // ctrl+w takes the word before the cursor, separators with it.
         i.update(&Key::named("ctrl+w"));
         assert_eq!(i.value(), " b ");
-        // alt+b lands at the start of the word behind the cursor: from a
-        // clean value, what the tail is worth is then cut away.
         let mut j = typed("a b");
         j.update(&Key::named("alt+b"));
         j.update(&Key::named("ctrl+k"));
         assert_eq!(j.value(), "a ");
     }
 
-    // paste lays text over the one line there is, without the control
-    // characters a copy could pick up with it, and matches again.
     #[test]
     fn paste_keeps_printable_characters() {
         let mut i = typed("ab");
         i.update(&Key::named("left"));
-        // A tab or an escape is a control character; square brackets and
-        // digits are not.
         i.paste("X\t[0m\nY");
         assert_eq!(i.value(), "aX[0mYb");
         i.set_suggestions(vec!["/help".into()]);
         assert_eq!(i.completion(), None, "a match would be a mistake here");
     }
 
-    // A key the box does not know is ignored, which an unknown name reaches.
     #[test]
     fn an_unknown_key_is_a_no_op() {
         let mut i = typed("ab");
@@ -278,8 +245,6 @@ mod tests {
         }
     }
 
-    // The cursor is drawn over the text, and over the next character of the
-    // suggestion where there is one.
     #[test]
     fn view_draws_the_cursor() {
         let mut i = typed("ab");
